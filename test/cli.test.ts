@@ -746,34 +746,33 @@ describe("resolveTier", () => {
 });
 
 describe("resolveFastTier", () => {
-  it("FAST_CANDIDATES está na ordem mercury-2 → luna low → haiku → grok-4.5 low", () => {
+  it("FAST_CANDIDATES está na ordem luna low → mercury-2 → haiku → grok-4.5 low", () => {
     expect(FAST_CANDIDATES).toEqual([
-      { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
+      { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "claude", model: "haiku", effort: "low" },
       { engine: "grok", model: "grok-4.5", effort: "low" },
     ]);
   });
 
-  it("escolhe a engine saudável mais rápida na ordem opencode, codex, claude, grok", () => {
+  it("escolhe a engine saudável mais rápida na ordem codex, opencode, claude, grok", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all)).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
+    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
   });
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
-    expect(resolveFastTier((e) => e !== "opencode")).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
-    expect(resolveFastTier((e) => e !== "opencode" && e !== "codex")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
+    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
+    expect(resolveFastTier((e) => e !== "codex" && e !== "opencode")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
     expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
 
   it("pula engine instalada mas unhealthy", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all, false, { opencode: 0.29, codex: 0.8 })).toEqual({
-      engine: "codex",
-      model: "gpt-5.6-luna",
-      effort: "low",
+    expect(resolveFastTier(all, false, { codex: 0.29, opencode: 0.8 })).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
     });
-    expect(resolveFastTier(all, false, { opencode: 0.29, codex: 0.29, claude: 0.8 })).toEqual({
+    expect(resolveFastTier(all, false, { codex: 0.29, opencode: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
       model: "haiku",
       effort: "low",

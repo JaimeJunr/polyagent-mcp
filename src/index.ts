@@ -6,7 +6,7 @@ import {
   runCursor, EXPLORE_MODEL, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle,
-  raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveAuxTool,
+  raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveAuxTool, resolveRunFiltered,
   type CliResult, type Engine,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
@@ -16,7 +16,7 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome,
+  logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
   type TierReceipt, type UsageRun,
 } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
@@ -78,7 +78,8 @@ function format(
 /** Saúde atual das engines a partir do log. I/O + Date.now() ficam aqui — os resolvers permanecem puros. */
 function currentEngineHealth(): Record<string, number> {
   // O teto acompanha o budget real: sucesso dentro do timeout não deve parecer engine quebrada só por latência.
-  return computeEngineHealth(readUsage(), Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS);
+  // Janela curta (30 min) pra failure/timeout; janela longa (QUOTA_WINDOW_MS) pra cota — ver usage.ts.
+  return computeEngineHealth(readUsage(), Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
 }
 
 /**
@@ -176,7 +177,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first candidate is pay-per-token (OpenRouter), traded for latency. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first candidate is subscription (codex luna low, marginal-zero); pay-per-token OpenRouter (mercury-2) is the 2nd fallback, used only when codex is missing, quota-exhausted or unhealthy. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
@@ -292,7 +293,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. run_filtered accepts any engine."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex luna low first). run_filtered accepts any engine."),
       want: z.string().optional().describe("What matters in the output, e.g. 'only failing tests'. Omit for meaningful-signal-only."),
       ...routing,
     },
@@ -300,8 +301,15 @@ server.registerTool(
   async ({ command, want, cwd, model, effort, engine: engineParam }) => {
     // sem mode → bypass total: rodar o comando (que pode escrever) É o propósito do tool.
     // force mantém a paridade quando o fallback é cursor. O worker filtra o output por relevância.
-    const { engine, model: auxModel } = resolveAuxTool("run_filtered", { engine: engineParam, model });
-    return format("run_filtered", await runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered" }));
+    // Default = cascata do fast_delegate (resolveFastTier); param/env ainda vencem.
+    const { engine, model: auxModel, effort: auxEffort } = resolveRunFiltered(
+      { engine: engineParam, model, effort },
+      process.env,
+      hasEngine,
+      CURSOR_ENABLED,
+      currentEngineHealth(),
+    );
+    return format("run_filtered", await runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered" }));
   },
 );
 
