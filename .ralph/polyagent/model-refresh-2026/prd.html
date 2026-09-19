@@ -1,0 +1,199 @@
+<title>Refresh de modelos e engines do polyagent</title>
+<meta name="prd-tier" content="starter">
+<meta name="prd-previous-file" content="">
+<meta name="prd-approved" content="true">
+<style>
+  :root{--primary:#3B8091;--ink:#1f2933;--muted:#6b7a86;--line:#dde5e8;--bg:#fff;--soft:#f4f8f9}
+  body{font-family:Lato,system-ui,sans-serif;color:var(--ink);background:var(--bg);max-width:860px;margin:0 auto;padding:32px 24px;line-height:1.55}
+  h1{color:var(--primary);border-bottom:2px solid var(--primary);padding-bottom:8px;margin-bottom:4px}
+  h2{color:var(--primary);margin-top:32px;font-size:1.15rem}
+  h3{font-size:1rem;margin-bottom:4px}
+  .timebox{background:var(--soft);border-left:4px solid var(--primary);padding:10px 14px;font-size:.9rem}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  th{background:var(--soft)}
+  code{background:var(--soft);padding:1px 5px;border-radius:3px;font-size:.87em}
+  .user-story{border:1px solid var(--line);border-radius:6px;padding:14px 18px;margin:16px 0}
+  .user-story h3{color:var(--primary)}
+  .meta{color:var(--muted);font-size:.83rem;margin:2px 0 8px}
+  ul.ac{margin:6px 0}
+  ul.open-questions{list-style:none;padding-left:0}
+  .oq{margin:7px 0}
+  .pill{display:inline-block;font-size:.72rem;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:10px;margin-right:6px;color:#fff}
+  .oq-answered .pill{background:#2e7d5b}.oq-po .pill{background:#8a5a2b}.oq-se .pill{background:var(--primary)}.oq-parked .pill{background:var(--muted)}
+</style>
+
+<h1>Refresh de modelos e engines do polyagent</h1>
+<p class="meta">Workspace <code>.ralph/polyagent/model-refresh-2026</code> · tier <strong>starter</strong> · framework CRIA</p>
+<p class="timebox">⏱ <strong>Time-box:</strong> este PRD deve fechar em 1 sessão. Escopo &gt; tempo = subir de tier (quick→starter→full).</p>
+
+<h2>C — Contexto</h2>
+<p>O <code>polyagent-mcp</code> roteia trabalho para CLIs de coding agent headless. A matriz <code>TIERS</code>
+(<code>src/cli.ts</code>) congela um mapa nível→modelo escrito quando GPT-5.6 Sol e Grok 4.5 eram o topo.
+Os rankings públicos de setembro/2026 (Artificial Analysis Coding Agent Index, Code Arena WebDev) mostram
+outra fronteira: <strong>Claude Fable 5.1 (max)</strong> e <strong>GPT-6 Astra (max)</strong> lideram, o
+Sol caiu para o meio da tabela e o Grok 4.5 é geração anterior. Como o nível é a única alavanca que o
+chamador tem, um mapa desatualizado degrada silenciosamente toda delegação.</p>
+<p>Em paralelo, o host já tem instaladas CLIs headless que o bridge não sabe dirigir — <code>agy</code>
+(Google), <code>opencode</code> (multi-provider), <code>kimi</code> (Moonshot) e <code>muse</code> (Meta).
+O spike <a href="spikes/cli-dialects.md">cli-dialects.md</a> confirmou que as quatro são spawnáveis e
+mapeou o dialeto completo de <code>agy</code>, <code>opencode</code> e <code>kimi</code>; o de <code>muse</code> ficou parcial.</p>
+<p><strong>Achado que define o critério:</strong> os rankings medem <code>$/task</code> de API
+pay-per-token, mas <code>codex</code>, <code>grok</code>, <code>claude</code>, <code>agy</code> e
+<code>kimi</code> rodam em <em>assinatura</em> (custo marginal ≈ 0). Só <code>opencode</code> (Google,
+Groq, OpenRouter) e <code>muse</code> cobram por token. Portanto cada nível deve escolher
+<strong>o modelo mais capaz que a assinatura já paga</strong>; engine de API key só se justifica para
+alcançar o que assinatura nenhuma alcança. A economia que o bridge existe para dar é de
+<strong>contexto</strong>, não de token.</p>
+
+<h2>I — Impacto esperado</h2>
+<ul>
+  <li>Cada nível de <code>delegate</code>/<code>fan_out</code> aponta para o melhor modelo disponível
+      na assinatura correspondente, sem aumentar custo marginal.</li>
+  <li>O bridge deixa de estar preso a 3 assinaturas: engine nova vira acréscimo de dialeto, não
+      reescrita — o padrão <code>buildArgs</code>/<code>parseOutput</code>/<code>ENGINE_CAPABILITIES</code>
+      absorve as quatro candidatas.</li>
+  <li>Falha de cota em uma assinatura passa a ter mais alternativas reais de fallback.</li>
+</ul>
+
+<h2>R — Requisitos</h2>
+
+<h3>Matriz-alvo proposta (US-1)</h3>
+<table>
+  <tr><th>Nível</th><th>Hoje</th><th>Proposto</th><th>Razão</th></tr>
+  <tr><td>1</td><td>codex gpt-5.6-luna max</td><td>manter</td><td>segue no quadrante mais atrativo de custo-benefício</td></tr>
+  <tr><td>2</td><td>grok grok-4.5 high</td><td>agy gemini-3.8-flash-high</td><td>4.5 é geração anterior; Flash é assinatura Google, rápido e barato</td></tr>
+  <tr><td>3</td><td>codex gpt-5.6-sol xhigh</td><td>grok grok-4.6 high</td><td>Sol caiu para #7; 4.6 é o topo do catálogo grok</td></tr>
+  <tr><td>4</td><td>grok grok-4.6 high</td><td>codex gpt-6-astra max</td><td>#1 WebDev arena, #2 Coding Index</td></tr>
+  <tr><td>5</td><td>claude opus max</td><td>claude fable 5.1 max</td><td>#1 Coding Index e #1 net improvement</td></tr>
+</table>
+<p class="meta">Distribuição resultante: codex ×2, grok ×1, claude ×1, agy ×1 — nenhuma assinatura
+concentra o consumo. Kimi K3, opencode e muse ficam disponíveis pelo <code>engine</code> explícito criado na US-3, sem ocupar nível fixo.</p>
+
+<div class="user-story">
+  <h3>US-1 — Atualizar a matriz de modelos</h3>
+  <p class="meta">Repo: cursor-mcp-bridge · Blocked by: US-2 (a matriz cita <code>agy</code>, que só existe como <code>Engine</code> depois dela)</p>
+  <p>Como orquestrador que chama <code>delegate(level)</code>, quero que cada nível aponte para o modelo
+  mais capaz da assinatura, para que a dificuldade declarada volte a corresponder à capacidade entregue.</p>
+  <ul class="ac">
+    <li>[ ] <code>TIERS</code> reflete a matriz-alvo acima, com <code>cursorModel</code> de fallback intacto</li>
+    <li>[ ] <code>FAST_CANDIDATES</code> passa a ser Luna low → Gemini 3.8 Flash low → Haiku → Grok 4.5 low</li>
+    <li>[ ] <code>EXPLORE_MODEL</code> segue igual ao modelo do nível 1; <code>IMAGE_MODEL</code> inalterado</li>
+    <li>[ ] Cada id novo é confirmado em execução real, não só no catálogo (evidência no PR)</li>
+    <li>[ ] <code>test/cli.test.ts</code> cobre a matriz nova em <code>resolveTier</code> e <code>resolveFastTier</code></li>
+    <li>[ ] Os contratos que o caller enxerga deixam de anunciar a matriz antiga: descrição e schema de <code>level</code> em <code>src/index.ts</code>, a mensagem fixa de <code>resolveFastTier</code>, as listas de engines aceitas nas descrições das quatro tools auxiliares e o texto do hook <code>hooks/prefer-polyagent.mjs</code></li>
+    <li>[ ] Typecheck passa (<code>npm run build</code>)</li>
+  </ul>
+</div>
+
+<div class="user-story">
+  <h3>US-2 — Engine <code>agy</code> (Google)</h3>
+  <p class="meta">Repo: cursor-mcp-bridge · Blocked by: —</p>
+  <p>Como caller, quero delegar à CLI da Google, para usar Gemini 3.8 Flash com custo marginal zero.</p>
+  <ul class="ac">
+    <li>[ ] <code>buildAgyArgs</code> puro e testado: <code>-p</code>, <code>--output-format json</code>,
+        <code>--model</code>, <code>--effort</code>, <code>--conversation</code> no resume,
+        <code>--dangerously-skip-permissions</code> sob force/mode</li>
+    <li>[ ] Parser devolve texto + session id; entrada em <code>SANDBOX_ENGINE_RO/RW</code> para o HOME dela</li>
+    <li>[ ] <code>ENGINE_CAPABILITIES</code> declara honestamente se <code>--sandbox</code>/<code>--mode plan</code>
+        contam como read-only de engine (default: <strong>não</strong> — read-only segue vindo do bwrap)</li>
+    <li>[ ] Delegação real de ponta a ponta dentro do sandbox, com stdin fechado</li>
+    <li>[ ] Typecheck passa</li>
+  </ul>
+</div>
+
+<div class="user-story">
+  <h3>US-3 — Engine <code>opencode</code> + <code>engine</code> explícito no <code>delegate</code></h3>
+  <p class="meta">Repo: cursor-mcp-bridge · Blocked by: US-2</p>
+  <p>Como caller, quero uma engine cujo modelo é parâmetro — e uma forma de pedi-la — para alcançar modelos
+  que assinatura nenhuma do host oferece, sem criar uma engine por vendor. Hoje <code>engine</code> só existe
+  nas quatro tools auxiliares, então uma engine fora de <code>TIERS</code> seria inalcançável para delegação.</p>
+  <ul class="ac">
+    <li>[ ] <code>buildOpencodeArgs</code> puro e testado: <code>run</code>, <code>-m provider/model</code>,
+        <code>--format json</code>, <code>--variant</code>, <code>-s</code> no resume, <code>--auto</code>, <code>--dir</code></li>
+    <li>[ ] Parser de eventos JSON tolerante a linha malformada, no mesmo posture best-effort de <code>parseCodexJsonl</code></li>
+    <li>[ ] Como cobra por token, NÃO ocupa nenhum nível de <code>TIERS</code>: só por <code>engine</code> explícito</li>
+    <li>[ ] Modelo sem provider prefixado é recusado com mensagem que mostra o recebido e o formato esperado</li>
+    <li>[ ] <code>delegate</code> ganha <code>engine</code> opcional no próprio inputSchema (nunca no <code>routing</code> compartilhado, que é spread em dez registrações); <code>level</code> segue obrigatório e exprime a dificuldade</li>
+    <li>[ ] Quando o <code>engine</code> explícito difere da engine primária do nível, <code>model</code>/<code>effort</code> do tier <strong>não</strong> são herdados — um id de uma engine quebraria na outra, como <code>resolveAuxTool</code> já reconhece ao deixar o modelo <code>undefined</code> fora do codex. Ou o caller passa <code>model</code>, ou vale o default da engine escolhida</li>
+    <li>[ ] <code>quotaCandidates</code> só oferece engine que a tool chamadora consegue de fato selecionar — sugerir troca inalcançável é pior que não sugerir</li>
+    <li>[ ] Typecheck passa</li>
+  </ul>
+</div>
+
+<div class="user-story">
+  <h3>US-4 — Engine <code>kimi</code> (Moonshot)</h3>
+  <p class="meta">Repo: cursor-mcp-bridge · Blocked by: US-2</p>
+  <p>Como caller, quero Kimi K3 por assinatura OAuth, para ter mais uma alternativa quando outra assinatura estoura cota.</p>
+  <ul class="ac">
+    <li>[ ] <code>buildKimiArgs</code> puro e testado: <code>-p</code>, <code>--output-format stream-json</code>,
+        <code>-S</code> no resume, <code>--auto</code>, <code>-m</code></li>
+    <li>[ ] Entra em <code>quotaCandidates</code>. <strong>NÃO</strong> entra em <code>FALLBACK_ENGINE_ORDER</code>: aquela lista é retry de falha de <em>ambiente</em> do codex, não de cota, e seu <code>fallbackOpts</code> descarta o <code>mode</code> — o que montaria o workspace RW e derrubaria a garantia read-only</li>
+    <li>[ ] Parser próprio para <code>stream-json</code> despachado em <code>parseOutput</code>: <code>parseCliJson</code> devolveria o stdout cru diante de JSONL, perdendo texto e session id e despejando todos os eventos no contexto</li>
+    <li>[ ] Binds de HOME cobrem <code>credentials/</code> e <code>oauth/</code> com a mesma regra do claude
+        (RW onde o CLI renova credencial, para não queimar o token do host)</li>
+    <li>[ ] Typecheck passa</li>
+  </ul>
+</div>
+
+<div class="user-story">
+  <h3>US-5 — Engine <code>muse</code> (Meta)</h3>
+  <p class="meta">Repo: cursor-mcp-bridge · Blocked by: US-3</p>
+  <p>Como caller, quero Muse Spark 1.3, o melhor custo-benefício de coding dos rankings, ciente de que é
+  API key.</p>
+  <ul class="ac">
+    <li>[ ] O spike registra, com saída real de comando, os sete pontos que faltam: como o prompt é passado, formato de saída, onde sai o session id, flag de resume, flag de autonomia, flag de modelo/effort e canal aditivo de persona</li>
+    <li>[ ] Só então <code>buildMuseArgs</code> puro e testado (o canal de persona sai do spike, não é presumido como <code>--agents</code>)</li>
+    <li>[ ] Como cobra por token, NÃO ocupa nível de <code>TIERS</code>; só por <code>engine</code> explícito</li>
+    <li>[ ] Typecheck passa</li>
+  </ul>
+</div>
+
+<h3>Non-Goals</h3>
+<ul>
+  <li><code>antigravity</code>: é IDE Electron, não CLI headless — descartado pelo spike.</li>
+  <li><code>cursorModel</code> e <code>DEFAULT_MODEL</code>: fora de escopo por decisão explícita.</li>
+  <li>Afrouxar o sandbox bwrap ou o contrato read-only das tools auxiliares.</li>
+  <li>Trocar o critério de <code>resolveFastTier</code> (segue speed-first, só muda a lista).</li>
+</ul>
+
+<h2>A — Alinhamento</h2>
+<h3>Requirements Checklist</h3>
+<ul>
+  <li>[ ] Toda engine nova respeita os invariantes do CLAUDE.md: spawn só em <code>cli.ts</code>, helpers
+      de args puros e testados, stdin fechado, HOME isolado com binds declarados.</li>
+  <li>[ ] Nenhuma engine nova ganha acesso total em silêncio onde uma auxiliar exige read-only.</li>
+  <li>[ ] Cada engine nova fecha o par <code>format()</code>/<code>follow_up</code>: <code>parseSessionHandle</code> reconhece seu prefixo (hoje são quatro) e uma retomada real é exercitada — prefixo desconhecido hoje vira parte do id e o <code>follow_up</code> fica sem engine.</li>
+  <li>[ ] <code>test/tools.test.ts</code> segue fixando a superfície de dez tools (nenhuma tool nova aqui).</li>
+  <li>[ ] CLAUDE.md atualizado com a matriz e os dialetos novos.</li>
+</ul>
+
+<h3>Open Questions</h3>
+<ul class="open-questions">
+  <li class="oq oq-answered"><span class="pill">answered</span> Critério de ordenação dos níveis — melhor
+      capacidade dentro da assinatura; API key só para o que assinatura não alcança.</li>
+  <li class="oq oq-answered"><span class="pill">answered</span> <code>antigravity</code> entra? Não — a CLI
+      headless equivalente é <code>agy</code>, e é ela que entra.</li>
+  <li class="oq oq-se"><span class="pill">SE</span> <code>gpt-6-astra</code> está liberado nesta assinatura
+      Codex? O id aparece no cache do CLI, mas não foi exercitado — é AC de execução real da US-1.</li>
+  <li class="oq oq-po"><span class="pill">PO</span> Nível 5 deve ser Fable 5.1 (max) ou GPT-6 Astra (max)?
+      Fable lidera net improvement e Coding Index; Astra lidera a WebDev arena. Decisão tática: Fable no 5,
+      Astra no 4, ambos em <code>max</code>, revisível após uso real.</li>
+  <li class="oq oq-answered"><span class="pill">answered</span> Como alcançar engine que não ocupa nível?
+      <code>delegate</code> ganha <code>engine</code> opcional na US-3; a alternativa de restringi-las às tools
+      auxiliares foi descartada porque nenhuma delas é superfície de delegação geral — mesmo o <code>run_filtered</code>,
+      que executa comando, roda sob um prompt de filtragem, não de implementação.</li>
+  <li class="oq oq-parked"><span class="pill">parked</span> Política de gasto do <code>opencode</code>/<code>muse</code>
+      (teto, alerta de consumo). Enquanto isso: nenhuma das duas ocupa nível de <code>TIERS</code>, então só
+      são acionadas por escolha explícita do caller.</li>
+  <li class="oq oq-parked"><span class="pill">parked</span> Padrões de cota/rate-limit das quatro engines novas
+      para <code>classifyQuotaError</code>. Enquanto isso: sem padrão declarado, a falha propaga crua — classificar
+      errado é pior que não classificar.</li>
+  <li class="oq oq-parked"><span class="pill">parked</span> <code>opencode</code> expõe
+      <code>muse-spark-1.3-contributor-free</code>; se for realmente gratuito, pode tornar a US-5 desnecessária.
+      Verificar ao chegar na US-5.</li>
+</ul>
+
+<h3>Verification</h3>
+<p>Por US: <code>npx vitest run test/cli.test.ts</code> nos helpers puros, <code>npm run build</code> como gate
+de tipo, e uma delegação real dentro do bwrap por engine nova. Nenhum teste falhando na entrega.</p>

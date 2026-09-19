@@ -1,0 +1,81 @@
+<title>Update 1 — agy adiada, matriz sem Google</title>
+<meta name="prd-tier" content="starter">
+<meta name="prd-previous-file" content="prd.html">
+<meta name="prd-approved" content="false">
+<style>
+  :root{--primary:#3B8091;--ink:#1f2933;--muted:#6b7a86;--line:#dde5e8;--soft:#f4f8f9}
+  body{font-family:Lato,system-ui,sans-serif;color:var(--ink);max-width:860px;margin:0 auto;padding:32px 24px;line-height:1.55}
+  h1{color:var(--primary);border-bottom:2px solid var(--primary);padding-bottom:8px}
+  h2{color:var(--primary);margin-top:28px;font-size:1.1rem}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;margin:12px 0}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+  th{background:var(--soft)}
+  code{background:var(--soft);padding:1px 5px;border-radius:3px;font-size:.87em}
+  .timebox{background:var(--soft);border-left:4px solid var(--primary);padding:10px 14px;font-size:.9rem}
+  .meta{color:var(--muted);font-size:.83rem}
+</style>
+
+<h1>Update 1 — <code>agy</code> adiada, matriz sem Google</h1>
+<p class="meta">Itera <code>prd.html</code> (selado em 2026-09-14). Herda tier <strong>starter</strong>.</p>
+<p class="timebox">⏱ <strong>Time-box:</strong> este PRD deve fechar em 1 sessão.</p>
+
+<h2>O que mudou e por quê</h2>
+<p>A US-2 (engine <code>agy</code>) foi implementada, revisada e <strong>revertida da árvore</strong>. O caminho
+feliz funcionava — delegação real dentro do sandbox, com stdin fechado, devolvendo texto e session id. O que
+a reprovou foi a retomada: <code>--conversation</code> não continua a conversa e <strong>falha em silêncio</strong>,
+devolvendo id novo e contexto vazio. Como o <code>follow_up</code> existe justamente para não reenviar contexto,
+uma engine que finge retomar é pior que uma engine ausente.</p>
+<p>O código está preservado em <a href="spikes/agy-engine.patch">spikes/agy-engine.patch</a> e toda a investigação
+em <a href="spikes/agy-google-cli.md">spikes/agy-google-cli.md</a> — inclusive as três armadilhas que custaram
+caro (a IDE não é a CLI; a credencial vem do keyring por DBus, não de arquivo; e bindar o diretório de conversas
+faz a CLI abandonar o keyring). Retomar depois deve custar uma fração do que custou descobrir.</p>
+
+<h2>Matriz revisada (sem a assinatura Google)</h2>
+<table>
+  <tr><th>Nível</th><th>Antes (prd.html)</th><th>Agora</th><th>Razão</th></tr>
+  <tr><td>1</td><td>codex gpt-5.6-luna max</td><td>inalterado</td><td>melhor custo-benefício do quadrante atrativo</td></tr>
+  <tr><td>2</td><td>agy gemini-3.8-flash-high</td><td>codex gpt-5.6-sol xhigh</td><td>sem Google; o Sol caiu para o meio da tabela, então desce de nível em vez de sair</td></tr>
+  <tr><td>3</td><td>grok grok-4.6 high</td><td>inalterado</td><td>topo do catálogo grok</td></tr>
+  <tr><td>4</td><td>codex gpt-6-astra max</td><td>inalterado</td><td>#1 WebDev arena, #2 Coding Index</td></tr>
+  <tr><td>5</td><td>claude fable 5.1 max</td><td>inalterado</td><td>#1 Coding Index e #1 net improvement</td></tr>
+</table>
+<p class="meta"><strong>Consequência declarada:</strong> a distribuição fica codex ×3, grok ×1, claude ×1 — mais
+concentrada do que o PRD original pretendia. É o preço de perder a assinatura Google, e fica registrado em vez de
+disfarçado. <code>grok-4.5</code> sai da matriz (geração anterior), mas segue em <code>FAST_CANDIDATES</code>.</p>
+
+<h2>Escopo restante</h2>
+<ul>
+  <li><strong>US-1</strong> — matriz de modelos. <strong>Desbloqueada:</strong> não depende mais da US-2.</li>
+  <li><strong>US-3</strong> — engine <code>opencode</code> + <code>engine</code> explícito no <code>delegate</code>.</li>
+  <li><strong>US-4</strong> — engine <code>kimi</code>.</li>
+  <li><strong>US-5</strong> — engine <code>muse</code>.</li>
+  <li><strong>US-2</strong> — <code>agy</code>: <span class="meta">ADIADA, não cancelada. Volta como PRD próprio se e quando o resume for resolvido.</span></li>
+</ul>
+
+<h2>Pendências declaradas da US-1 (não apagadas)</h2>
+<ul>
+  <li><strong>AC de execução real: CUMPRIDO</strong> em 2026-09-14, depois que a credencial voltou.
+  <code>gpt-6-astra</code> (nível 4) e <code>fable</code> (nível 5) foram exercitados de verdade dentro
+  do bwrap e ambos responderam <code>PONG</code>. Ficou aberto por algumas horas — com a pendência
+  registrada no código, não apagada — porque as três assinaturas estavam indisponíveis. Foi este mesmo
+  AC que derrubou a US-2; dispensá-lo aqui teria sido assimetria de rigor.</li>
+  <li><strong>Os <code>cursorModel</code> dos níveis 4 e 5 são deduzidos</strong>, não verificados. O
+  padrão de nomenclatura tem exceção comprovada no próprio diff (o id antigo do nível 2 usava prefixo
+  <code>cursor-</code> e o do 4 não), e o CLAUDE.md já registra uma cicatriz desse tipo
+  (<code>composer-2.5[fast=true]</code> recusado pelo CLI). Marcados como palpite no código.</li>
+</ul>
+
+<h2>Correção a um Impacto declarado no PRD-pai</h2>
+<p>O <code>prd.html</code> listava como impacto esperado <em>"falha de cota em uma assinatura passa a ter
+mais alternativas reais de fallback"</em>. Com codex em 3 dos 5 níveis, o efeito é o <strong>oposto</strong>:
+cota estourada no codex agora derruba os níveis 1, 2 e 4 — três de cinco, contra dois antes. A concentração
+é aceita (é o preço de perder a assinatura Google), mas o impacto do PRD-pai fica <strong>revogado</strong>
+aqui em vez de seguir valendo no papel.</p>
+
+<h2>Lição que vale para as US restantes</h2>
+<p>A US-2 quase passou com os testes todos verdes: o que a derrubou foi um AC exigindo <strong>execução real</strong>.
+O caminho feliz e a suíte unitária não detectaram nem os binds errados nem o resume quebrado. Portanto, cada engine
+restante mantém o AC de rodar de verdade dentro do sandbox <strong>e</strong> de exercitar uma retomada real — este
+último foi o que pegou o defeito, e é barato comparado a descobrir em produção.</p>
+<p class="meta">Nota operacional: workers do <code>delegate</code> rodam dentro do bwrap e não conseguem aninhar
+outro sandbox nem enxergar o HOME real, então validação de sandbox tem de ser feita pelo orquestrador no host.</p>
