@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { aggregate, buildUsageEntry, classifyOutcome, computeEngineHealth, LATENCY_FLOOR, type UsageEntry } from "../src/usage.js";
-import { HEALTH_THRESHOLD } from "../src/cli.js";
+import { aggregate, buildUsageEntry, classifyOutcome, computeEngineHealth, LATENCY_FLOOR, QUOTA_WINDOW_MS, type UsageEntry } from "../src/usage.js";
+import { HEALTH_THRESHOLD, resolveFastTier, type Engine } from "../src/cli.js";
 
 describe("aggregate", () => {
   it("sums calls and returned chars per tool", () => {
@@ -176,5 +176,95 @@ describe("computeEngineHealth", () => {
 
   it("returns empty object for no records", () => {
     expect(computeEngineHealth([], NOW, WINDOW)).toEqual({});
+  });
+
+  it("a quota record DROPS engine health (score 0 — not ignored, not 1)", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - 1000, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    expect(computeEngineHealth(records, NOW, WINDOW).codex).toBe(0);
+  });
+
+  it("quota on one engine does not affect another engine's health", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - 1000, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+      { ts: NOW - 1000, tool: "delegate", outChars: 10, engine: "grok", outcome: "success" },
+    ];
+    const health = computeEngineHealth(records, NOW, WINDOW);
+    expect(health.codex).toBe(0);
+    expect(health.grok).toBe(1);
+    expect(health).not.toHaveProperty("claude");
+  });
+
+  it("old quota weighs less than recent success — decay recovers health without its own expiry", () => {
+    const recovered: UsageEntry[] = [
+      { ts: NOW - WINDOW + 1000, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+      { ts: NOW - 500, tool: "delegate", outChars: 10, engine: "codex", outcome: "success" },
+    ];
+    const stillDown: UsageEntry[] = [
+      { ts: NOW - WINDOW + 1000, tool: "delegate", outChars: 10, engine: "codex", outcome: "success" },
+      { ts: NOW - 500, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    const recoveredHealth = computeEngineHealth(recovered, NOW, WINDOW).codex;
+    const downHealth = computeEngineHealth(stillDown, NOW, WINDOW).codex;
+    expect(recoveredHealth).toBeGreaterThan(downHealth);
+    expect(recoveredHealth).toBeGreaterThan(HEALTH_THRESHOLD);
+    expect(downHealth).toBeLessThan(HEALTH_THRESHOLD);
+  });
+
+  it("resolveFastTier skips an engine whose health dropped below threshold because of quota", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - 1000, tool: "fast_delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    const health = computeEngineHealth(records, NOW, WINDOW);
+    expect(health.codex).toBeLessThan(HEALTH_THRESHOLD);
+    const all: (e: Engine) => boolean = () => true;
+    expect(resolveFastTier(all, false, health)).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
+    });
+  });
+
+  it("quota OUTSIDE the short window but INSIDE the long window still drops health — the measured host gap", () => {
+    // 31 min: fora dos 30 min de failure/timeout, dentro das 6h de cota. Sem a janela longa
+    // o registro some do mapa e a engine é tratada como saudável por omissão.
+    const age = WINDOW + 60_000;
+    const records: UsageEntry[] = [
+      { ts: NOW - age, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    expect(computeEngineHealth(records, NOW, WINDOW, 300_000, WINDOW)).toEqual({});
+    expect(computeEngineHealth(records, NOW, WINDOW).codex).toBe(0);
+  });
+
+  it("failure outside the short window does NOT count — transient signal stays short", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - WINDOW - 60_000, tool: "delegate", outChars: 0, engine: "codex", outcome: "failure" },
+    ];
+    expect(computeEngineHealth(records, NOW, WINDOW)).toEqual({});
+  });
+
+  it("quota outside the LONG window no longer counts — recovery still exists", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - QUOTA_WINDOW_MS - 1, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    expect(computeEngineHealth(records, NOW, WINDOW)).toEqual({});
+  });
+
+  it("stale quota (outside 30 min, inside 6h) makes resolveFastTier skip the exhausted engine", () => {
+    // Cenário medido no host: cota de 2h atrás, janela de produção de 30 min. Sem a janela
+    // longa o codex nem aparece no mapa e a cascata o escolhe de novo.
+    const twoHours = 2 * 60 * 60 * 1000;
+    const records: UsageEntry[] = [
+      { ts: NOW - twoHours, tool: "fast_delegate", outChars: 0, engine: "codex", outcome: "quota" },
+    ];
+    const health = computeEngineHealth(records, NOW, WINDOW);
+    expect(health).toHaveProperty("codex");
+    expect(health.codex).toBe(0);
+    expect(health.codex).toBeLessThan(HEALTH_THRESHOLD);
+    const all: (e: Engine) => boolean = () => true;
+    expect(resolveFastTier(all, false, health)).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
+    });
   });
 });

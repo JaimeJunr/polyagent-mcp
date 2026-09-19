@@ -50,7 +50,7 @@ the **pure logic is testable without spawning a worker process**:
 - `cli.ts` — the only module that touches the child process. `runCursor()` spawns the engine's CLI;
   `buildCursorArgs()`/`buildGrokArgs()`/`buildCodexArgs()`/`buildClaudeArgs()`/`buildOpencodeArgs()`/`buildKimiArgs()`/`buildMuseArgs()` (+ `buildArgs`
   dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()`/`parseOpencodeJsonl()`/`parseKimiJsonl()`/`parseMuseJsonl()` (+ `parseOutput` dispatcher),
-  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
+  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `resolveRunFiltered()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
@@ -90,9 +90,10 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   continuation via `-c`, but the bridge does not use `-c`. Autonomy uses `--auto`, persona uses a
   prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it
   stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
-  It is the first `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — a conscious owner
-  trade of subscription-free latency for real OpenRouter spend on every `fast_delegate` call. It has
-  no engine-level read-only mode; bwrap supplies that guard.
+  It is the second `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — pay-per-token
+  fallback when the first (codex luna low, subscription) is missing, quota-exhausted or unhealthy.
+  The common `fast_delegate` path is subscription again; OpenRouter spend only happens on that
+  fallback. It has no engine-level read-only mode; bwrap supplies that guard.
 - **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
   resume via `-S`. `-p` already is non-interactive and **rejects** `--auto`/`-y`/`--yolo`; persona
   is a prompt prefix. No engine-level read-only; bwrap supplies that guard. Subscription OAuth, so
@@ -127,16 +128,17 @@ is missing, it falls back to the equivalent Cursor model only when `cursorEnable
 otherwise it throws a clear error naming the missing CLI.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
-healthy candidate in `FAST_CANDIDATES` (OpenCode mercury-2 → Codex Luna low → Claude Haiku →
+healthy candidate in `FAST_CANDIDATES` (Codex Luna low → OpenCode mercury-2 → Claude Haiku →
 Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first candidate is
-**pay-per-token** (OpenRouter API key); the other three are subscription. Conscious owner decision:
-every `fast_delegate` call spends real money by default in exchange for latency. Measured wall-clock
-(host, `runCursor`, sandbox on, same long-output prompt, 2 runs): mercury-2 7006ms (7885, 6126);
-haiku 10736ms (11330, 10141); grok-4.5 low 16301ms. Luna low was **not measured** (codex quota
-exhausted) — its 2nd place is owner choice, not measurement, and is still pending. Discarded: gemini-flash-lite-latest
-(unstable, 18519ms with a 30s outlier), gpt-oss-120b OpenRouter (19251ms), groq gpt-oss-120b
-(120s timeout + wrong answer). It keeps the same full read/edit/shell access, persona resolution,
-timeout budget note, and explicit `model`/`effort` overrides as `delegate`.
+**subscription** (codex); the second is **pay-per-token** (OpenRouter API key / mercury-2); the
+other two are subscription. On the common path `fast_delegate` is marginal-zero cost; it only
+spends real money when codex is missing, quota-exhausted or unhealthy. Luna low was **not
+measured** (codex quota exhausted — still pending) — its 1st place is owner knowledge, not
+measurement. Measured wall-clock (host, `runCursor`, sandbox on, same long-output prompt, 2 runs):
+mercury-2 7006ms (7885, 6126); haiku 10736ms (11330, 10141); grok-4.5 low 16301ms. Discarded:
+gemini-flash-lite-latest (unstable, 18519ms with a 30s outlier), gpt-oss-120b OpenRouter (19251ms),
+groq gpt-oss-120b (120s timeout + wrong answer). It keeps the same full read/edit/shell access,
+persona resolution, timeout budget note, and explicit `model`/`effort` overrides as `delegate`.
 - `prompts.ts` — pure prompt builders (`readSlicePrompt`, `runFilteredPrompt`, `explorePrompt`,
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
@@ -249,35 +251,63 @@ points, all in `cli.ts`:
   `DEFAULT_MODEL` (env `POLYAGENT_MODEL`) applies to the opt-in Cursor path. The current
   cursor-agent rejects `composer-2.5[fast=true]`. `resolveModel` still accepts caller-supplied
   `auto`, but it is not the default.
-- **Health latency uses the real runtime timeout.** `computeEngineHealth` ignora
-  **explicitamente** o outcome `"quota"` (registrado por `classifyOutcome` a partir do `name` da
-  `QuotaError`, sem importar `cli.ts`): sem esse `continue`, cota cairia no ramo "não é failure nem
-  timeout" e pontuaria 1, inflando o health justamente do engine que não pode mais ser usado.
+- **Health latency uses the real runtime timeout.** `computeEngineHealth` trata o outcome
+  `"quota"` (registrado por `classifyOutcome` a partir do `name` da `QuotaError`, sem importar
+  `cli.ts`) como score 0, junto de `failure` e `timeout` — não 1, não ignorado. O `continue`
+  antigo existia para impedir que cota INFLASSE o health (cairia no ramo "não é failure nem
+  timeout" e pontuaria 1); pontuar 0 é a mesma intenção levada até o fim: engine sem saldo é
+  engine indisponível. Duas janelas, porque os sinais têm memórias diferentes: `success`/
+  `failure`/`timeout` usam a janela curta (30 min — falha e timeout são transitórios, duram
+  minutos); `quota` usa uma janela própria e longa (`quotaWindowMs`, default 6h — cota dura
+  horas, às vezes até o próximo ciclo de cobrança). Sem a janela longa, um registro de cota
+  fora dos 30 min some do mapa; engine sem registro é tratada como saudável (`health[e] ?? 1`)
+  e a cascata escolhe de novo a engine esgotada. Cada registro decai na escala da SUA janela
+  (halfLife = recWindow/4): cota recupera o health sozinha quando o saldo volta, só que mais
+  devagar, sem lógica de expiração própria. Isto NÃO é fallback imediato: o health só reflete
+  a cota DEPOIS de pelo menos uma chamada ter falhado e sido registrada no log de uso — a
+  primeira chamada após a cota estourar ainda falha; as seguintes é que evitam a engine. A
+  proteção é por aprendizado, e depende de `POLYAGENT_LOG` estar configurada: sem log não há
+  registros, `computeEngineHealth` devolve vazio e todo engine fica com health 1 (omissão =
+  saudável). Dado real (host, 2026-09): o log tinha 3162 linhas (272 `success`, 21 `failure`,
+  2 `timeout`, 19 `quota` — todos os de cota do codex); com o `continue` antigo esses 19 eram
+  descartados e não influenciavam a seleção. Medido de novo: janela de 2h via o registro de
+  cota (health 0.00, cascata cai no opencode); janela de 30 min omitia o codex do mapa — a
+  lacuna que a janela longa fecha.
   `computeEngineHealth(records, now, windowMs,
-  latencyCeilMs)` retains 300,000ms as its optional-parameter default for backward compatibility,
-  but `currentEngineHealth()` passes `DEFAULT_TIMEOUT_MS` (30min by default). The old fixed 5min
+  latencyCeilMs, quotaWindowMs)` retains 300,000ms as its optional-parameter default for backward compatibility,
+  but `currentEngineHealth()` passes `DEFAULT_TIMEOUT_MS` (30min by default) and the 6h quota
+  window. The old fixed 5min
   ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
   timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
-- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered OpenCode
-  `openrouter/inception/mercury-2` (pay-per-token, measured fastest at ~7s) → Codex Luna low
-  (2nd by owner choice, not measurement — quota blocked the run; still pending) → Claude
+- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered Codex Luna low
+  (1st by owner knowledge, not measurement — quota blocked every timing run; still pending) →
+  OpenCode `openrouter/inception/mercury-2` (pay-per-token, measured fastest at ~7s) → Claude
   Haiku (~11s) → Grok 4.5 low (~16s). `resolveFastTier` skips missing or unhealthy native
   engines before the opt-in Cursor fallback. Keep it level-free, with the neutral usage receipt
   `{ requestedLevel: 0, matchedRequest: true }`. It IS marked `alwaysLoad`: while deferred it
   was never called, the same adoption bug that motivated alwaysLoad on the five core tools
-  (deferred schemas lose to always-loaded native Read/Grep).
-- **`explore`/`read_slice`/`run_filtered`/`web_lookup` resolvem engine e modelo por tool, com
-  default codex + `EXPLORE_MODEL=gpt-5.6-luna`.** Não há mais `engine: "codex"` hardcoded no
-  handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita um parâmetro `engine` opcional no
-  **próprio inputSchema** — nunca no objeto `routing` compartilhado, que é spread em 10 registrações
-  e daria `engine` também a `delegate`/`fan_out`/`follow_up`. A resolução é a função pura
-  `resolveAuxTool(tool, params, env, sandboxOn)` em `cli.ts`; precedência: parâmetro da chamada >
-  env da tool > default. Ela recusa, nomeando o motivo, um engine que não atenda o requisito
-  declarado em `AUX_TOOL_REQUIREMENTS` — read-only para as três de leitura, web search (só codex)
-  para `web_lookup` — e nunca degrada para acesso total em silêncio; `run_filtered` aceita qualquer
-  engine porque roda com `force: true` por desenho. Com engine não-codex e nenhum modelo definido, o
-  modelo fica `undefined` de propósito: `gpt-5.6-luna` é id de codex e quebraria em grok/claude.
-  An explicit `model` still wins. `explore` and `read_slice` pass a
+  (deferred schemas lose to always-loaded native Read/Grep). **Custo:** o 1º é assinatura, então
+  o caminho comum é custo marginal zero; o pago (opencode) só entra quando o codex está ausente,
+  sem cota ou unhealthy.
+- **`explore`/`read_slice`/`web_lookup` resolvem engine e modelo por `resolveAuxTool`, com
+  default codex + `EXPLORE_MODEL=gpt-5.6-luna`.** `run_filtered` é a exceção: o default dele é a
+  cascata do `fast_delegate` (`resolveRunFiltered` → `resolveFastTier`), pelos mesmos motivos de
+  velocidade — e para não falhar quando a cota do codex está esgotada, caindo no próximo engine
+  saudável. **Custo novo dessa tool:** a cascata pode cair no opencode (pay-per-token); o
+  `run_filtered` passa a poder gastar dinheiro quando o codex não estiver disponível. Não há mais
+  `engine: "codex"` hardcoded no handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita
+  um parâmetro `engine` opcional no **próprio inputSchema** — nunca no objeto `routing`
+  compartilhado, que é spread em 10 registrações e daria `engine` também a
+  `delegate`/`fan_out`/`follow_up`. Precedência (inalterada): parâmetro da chamada > env da tool >
+  default. Nas três de leitura a resolução é a função pura `resolveAuxTool(tool, params, env,
+  sandboxOn)` em `cli.ts`; no `run_filtered` é `resolveRunFiltered` (param/env explícitos reusam
+  `resolveAuxTool`; só o default muda). Ela recusa, nomeando o motivo, um engine que não atenda o
+  requisito declarado em `AUX_TOOL_REQUIREMENTS` — read-only para as três de leitura, web search
+  (só codex) para `web_lookup` — e nunca degrada para acesso total em silêncio; `run_filtered`
+  aceita qualquer engine porque roda com `force: true` por desenho, e a cascata não esbarra em
+  `assertReadOnlyEngine` (essa guard vale só para as três de leitura). Com engine não-codex e
+  nenhum modelo definido, o modelo fica `undefined` de propósito: `gpt-5.6-luna` é id de codex e
+  quebraria em grok/claude. An explicit `model` still wins. `explore` and `read_slice` pass a
   mode for `-s read-only`; `web_lookup` also sets `RunOpts.web`, which adds
   `-c tools.web_search=true` for real web search; `run_filtered` deliberately omits mode and uses
   bypass so it can run the requested command. `explore` takes `breadth` (`medium`|`thorough`) and
@@ -296,8 +326,8 @@ points, all in `cli.ts`:
   without `engine`, `resolveDelegate` uses `resolveTier`. When the explicit engine differs from the level's
   primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
   caller values). `opencode` and `muse` (pay-per-token) stay outside `TIERS`. `muse` also stays
-  outside `FAST_CANDIDATES`; `opencode` is the first `FAST_CANDIDATES` entry by owner decision
-  (latency over subscription-only spend — see the `fast_delegate` invariant).
+  outside `FAST_CANDIDATES`; `opencode` is the second `FAST_CANDIDATES` entry (pay-per-token
+  fallback after subscription luna low — see the `fast_delegate` invariant).
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in

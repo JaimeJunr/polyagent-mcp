@@ -262,15 +262,15 @@ describe("QuotaError e o registro de uso (US-006)", () => {
     expect(classifyOutcome(new Error("grok agent timed out after 1000ms: "))).toBe("timeout");
   });
 
-  it("computeEngineHealth ignora registros de cota — não inflam nem derrubam o health", () => {
+  it("computeEngineHealth pontua cota em 0 — derruba o health, não infla nem ignora", () => {
     const now = 1_000_000;
     const quotaOnly: UsageEntry[] = [
       { ts: now - 1000, tool: "delegate", outChars: 0, engine: "grok", outcome: "quota" },
       { ts: now - 2000, tool: "delegate", outChars: 0, engine: "grok", outcome: "quota" },
     ];
-    // Sem nenhum registro atribuível, a engine fica fora do mapa (tratada como saudável por omissão)
-    // em vez de pontuar 1 como se fosse sucesso — era o bug de usage.ts:130.
-    expect(computeEngineHealth(quotaOnly, now)).toEqual({});
+    // Cota pontua 0: engine sem saldo é indisponível. O `continue` antigo descartava o registro
+    // (health omitido = 1 na seleção) — mesma intenção de não inflar, agora levada até o fim.
+    expect(computeEngineHealth(quotaOnly, now).grok).toBe(0);
 
     const mixed: UsageEntry[] = [
       ...quotaOnly,

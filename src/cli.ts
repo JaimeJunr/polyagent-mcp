@@ -83,10 +83,11 @@ export const MUSE_BIN = process.env.POLYAGENT_MUSE_BIN ?? "muse";
 export const DEFAULT_MODEL = process.env.POLYAGENT_MODEL ?? "composer-2.5-fast";
 
 /**
- * Modelo barato de leitura do `explore`/`read_slice`/`run_filtered`/`web_lookup`: GPT-5.6 Luna via
+ * Modelo barato de leitura do `explore`/`read_slice`/`web_lookup`: GPT-5.6 Luna via
  * codex (keyless, pela assinatura Codex), rodando read-only (`-s read-only`). Substitui o composer do
- * cursor cancelado — localizar/ler/filtrar pede o modelo mais barato e ágil. Override via
+ * cursor cancelado — localizar/ler pede o modelo mais barato e ágil. Override via
  * POLYAGENT_EXPLORE_MODEL. Só se aplica quando o chamador não passa `model`.
+ * `run_filtered` NÃO usa este default: o default dele é a cascata do `resolveFastTier`.
  */
 const EXPLORE_MODEL_FALLBACK = "gpt-5.6-luna";
 export const EXPLORE_MODEL = process.env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK;
@@ -416,10 +417,11 @@ function parseEngine(raw: string, source: string): Engine {
 
 /**
  * Resolve (engine, modelo) de uma tool auxiliar. Precedência: parâmetro da chamada > env própria da
- * tool (POLYAGENT_<TOOL>_ENGINE/_MODEL) > default de hoje (codex + POLYAGENT_EXPLORE_MODEL, que
- * segue sendo o modelo barato de leitura das quatro). Com engine não-codex e sem modelo explícito
- * devolve `undefined`: o modelo default é um id de codex, mandá-lo para grok/claude falharia —
- * melhor deixar o CLI usar o próprio default.
+ * tool (POLYAGENT_<TOOL>_ENGINE/_MODEL) > default (codex + POLYAGENT_EXPLORE_MODEL, o modelo barato
+ * de leitura das três tools de leitura). `run_filtered` no handler NÃO passa por aqui no caminho
+ * default — usa `resolveRunFiltered`, cuja cascata substitui esse default. Com engine não-codex e
+ * sem modelo explícito devolve `undefined`: o modelo default é um id de codex, mandá-lo para
+ * grok/claude falharia — melhor deixar o CLI usar o próprio default.
  *
  * Recusa, nomeando o motivo, engine que não atenda o requisito da tool (read-only, web search).
  * Função pura: `env` e `sandboxOn` são injetados para teste.
@@ -450,6 +452,49 @@ export function resolveAuxTool(
     ? env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK
     : undefined;
   return { engine, model: params.model ?? env[`${prefix}_MODEL`] ?? defaultModel };
+}
+
+/**
+ * Resolve (engine, modelo, effort) do `run_filtered`.
+ *
+ * Precedência igual às outras auxiliares: parâmetro da chamada > env
+ * POLYAGENT_RUN_FILTERED_ENGINE/_MODEL > default. Só o default muda: em vez de
+ * codex + EXPLORE_MODEL, é a cascata do fast_delegate (`resolveFastTier` /
+ * FAST_CANDIDATES). Motivo: velocidade — e com a cota do codex esgotada a tool
+ * antiga falhava; a cascata cai no próximo engine saudável.
+ *
+ * CUSTO: o 1º da cascata é assinatura (codex luna low) — caminho comum é custo
+ * marginal zero. O 2º é pay-per-token (opencode/mercury-2). `run_filtered` passa
+ * a poder gastar dinheiro quando o codex está ausente, sem cota ou unhealthy.
+ * Engine/modelo explícitos ainda vencem e não disparam a cascata.
+ *
+ * Engine explícito (param ou env) reusa `resolveAuxTool`: mesmo parse, mesmas
+ * recusas, mesmo default de modelo no override (codex → EXPLORE_MODEL; outros
+ * → undefined). Não exige read-only (`AUX_TOOL_REQUIREMENTS.run_filtered`), então
+ * a cascata não esbarra em `assertReadOnlyEngine`. Roda com `force: true` e sem
+ * `mode` — quem aplica isso é o handler, não esta função.
+ *
+ * Função pura: `env`/`has`/`cursorEnabled`/`health`/`sandboxOn` injetados para teste.
+ */
+export function resolveRunFiltered(
+  params: { engine?: string; model?: string; effort?: string } = {},
+  env: NodeJS.ProcessEnv = process.env,
+  has: (e: Engine) => boolean = hasEngine,
+  cursorEnabled: boolean = CURSOR_ENABLED,
+  health?: Record<string, number>,
+  sandboxOn = SANDBOX_ON,
+): { engine: Engine; model: string | undefined; effort?: string } {
+  const prefix = AUX_TOOL_ENV.run_filtered;
+  if (params.engine || env[`${prefix}_ENGINE`]) {
+    const resolved = resolveAuxTool("run_filtered", params, env, sandboxOn);
+    return { ...resolved, effort: params.effort };
+  }
+  const tier = resolveFastTier(has, cursorEnabled, health);
+  return {
+    engine: tier.engine,
+    model: params.model ?? env[`${prefix}_MODEL`] ?? tier.model,
+    effort: params.effort ?? tier.effort,
+  };
 }
 
 /** Cota do plano acabou (trocar de engine resolve) versus throttle transitório (só esperar resolve). */
@@ -1407,28 +1452,31 @@ export const HEALTH_THRESHOLD = 0.3;
  * Descartados: gemini-flash-lite-latest (18519ms, instável, outlier 30s);
  * openrouter/openai/gpt-oss-120b (19251ms); groq/openai/gpt-oss-120b (timeout 120s + resposta errada).
  *
- * Luna low fica em 2º (à frente do haiku) por ESCOLHA do dono, NÃO por medição —
- * falta medir; a cota do codex estava esgotada no momento do teste.
+ * Luna low fica em 1º por ESCOLHA do dono, NÃO por medição — tentei medir de
+ * novo e a cota do codex segue esgotada. As medições reais (mercury-2 / haiku /
+ * grok-4.5) continuam valendo; a ordem não as segue.
  *
- * CUSTO: o 1º candidato é pay-per-token (API key do OpenRouter). Os outros três são
- * assinatura. O fast_delegate escolhe sozinho (sem `level` nem `engine`), então toda
- * chamada gasta dinheiro real por padrão. Decisão consciente do dono: latência em
- * troca de custo. cursor só entra como fallback final, igual ao resolveTier.
+ * CUSTO: o 1º candidato é assinatura (codex). O 2º é pay-per-token (API key do
+ * OpenRouter / mercury-2). No caminho comum o fast_delegate volta a ser custo
+ * marginal zero; só cai no pago quando o codex está ausente, sem cota ou
+ * unhealthy. Os outros dois (claude, grok) também são assinatura. cursor só
+ * entra como fallback final, igual ao resolveTier.
  *
- * Duas consequências da promoção do opencode a 1º candidato, ainda EM ABERTO:
+ * Duas consequências do opencode como 2º candidato (antes era 1º), ainda EM ABERTO:
  * - `QUOTA_PATTERNS.opencode` está vazio (nenhuma captura de cota foi observada, e o
  *   projeto não classifica por aproximação). Como este é o único candidato que gasta
- *   crédito, 'acabou o saldo' é justamente o modo de falha que propaga erro cru em vez
- *   da mensagem acionável. Autocura só parcial: as falhas derrubam o health e a seleção
- *   acaba caindo pro codex, mas depois de N erros ilegíveis. Fechar isso exige capturar
+ *   crédito, 'acabou o saldo' é o modo de falha que propaga erro cru em vez da
+ *   mensagem acionável — agora só no fallback, quando o caminho comum (codex) já
+ *   falhou. Autocura só parcial: as falhas derrubam o health e a seleção acaba
+ *   caindo pro claude, mas depois de N erros ilegíveis. Fechar isso exige capturar
  *   um 402/insufficient-credits real do OpenRouter — não inventar regex.
  * - `hasEngine("opencode")` só prova que o binário existe, não que há provider
- *   configurado nem crédito. Num host com opencode instalado e OpenRouter ausente, todo
- *   fast_delegate erra na 1ª escolha até o health decair.
+ *   configurado nem crédito. Num host com opencode instalado e OpenRouter ausente,
+ *   o fast_delegate só erra nessa 2ª escolha quando o codex já não estava disponível.
  */
 export const FAST_CANDIDATES: Tier[] = [
-  { engine: "opencode", model: "openrouter/inception/mercury-2" },
   { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
+  { engine: "opencode", model: "openrouter/inception/mercury-2" },
   // effort low no haiku é consistência com os vizinhos, não ganho: medido em 10100ms sem
   // effort contra 10125ms com low (2 runs cada) — diferença dentro do ruído.
   { engine: "claude", model: "haiku", effort: "low" },
@@ -1459,7 +1507,7 @@ export function resolveFastTier(
     ? " The cursor-agent fallback is also unhealthy."
     : " Set POLYAGENT_ENABLE_CURSOR=1 to fall back to cursor-agent.";
   throw new Error(
-    `fast_delegate needs at least one healthy CLI among opencode, codex, claude, or grok, but ${reason}.${cursorNote}`,
+    `fast_delegate needs at least one healthy CLI among codex, opencode, claude, or grok, but ${reason}.${cursorNote}`,
   );
 }
 

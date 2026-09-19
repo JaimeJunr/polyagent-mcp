@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
-  resolveAuxTool, ENGINE_CAPABILITIES, AUX_TOOL_REQUIREMENTS, AUX_TOOL_ENV,
+  resolveAuxTool, resolveRunFiltered, ENGINE_CAPABILITIES, AUX_TOOL_REQUIREMENTS, AUX_TOOL_ENV,
   type Engine,
 } from "../src/cli.js";
 
@@ -60,8 +60,8 @@ describe("matriz de capacidade por engine (US-004)", () => {
 });
 
 describe("resolveAuxTool — precedência (US-004)", () => {
-  it("sem override, as quatro mantêm codex + gpt-5.6-luna", () => {
-    for (const tool of AUX) {
+  it("sem override, as três de leitura mantêm codex + gpt-5.6-luna", () => {
+    for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
       expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-5.6-luna" });
     }
   });
@@ -87,9 +87,11 @@ describe("resolveAuxTool — precedência (US-004)", () => {
     });
   });
 
-  it("POLYAGENT_EXPLORE_MODEL segue valendo como default de modelo do codex nas quatro", () => {
+  it("POLYAGENT_EXPLORE_MODEL segue valendo como default de modelo do codex nas três de leitura", () => {
     const env = { POLYAGENT_EXPLORE_MODEL: "gpt-5.6-sol" };
-    expect(resolveAuxTool("run_filtered", {}, env, true).model).toBe("gpt-5.6-sol");
+    expect(resolveAuxTool("explore", {}, env, true).model).toBe("gpt-5.6-sol");
+    expect(resolveAuxTool("read_slice", {}, env, true).model).toBe("gpt-5.6-sol");
+    expect(resolveAuxTool("web_lookup", {}, env, true).model).toBe("gpt-5.6-sol");
   });
 
   it("engine não-codex sem modelo explícito usa o default do próprio CLI", () => {
@@ -143,8 +145,101 @@ describe("superfície das tools auxiliares (US-004)", () => {
     }
   });
 
-  it("as quatro auxiliares resolvem engine/modelo pelo resolver puro", () => {
-    const calls = indexSrc.match(/resolveAuxTool\(/g) ?? [];
-    expect(calls).toHaveLength(4);
+  it("as três de leitura resolvem por resolveAuxTool; run_filtered por resolveRunFiltered", () => {
+    const auxCalls = indexSrc.match(/resolveAuxTool\(/g) ?? [];
+    const runCalls = indexSrc.match(/resolveRunFiltered\(/g) ?? [];
+    expect(auxCalls).toHaveLength(3);
+    expect(runCalls).toHaveLength(1);
+  });
+});
+
+describe("resolveRunFiltered — cascata do fast_delegate", () => {
+  const all: (e: Engine) => boolean = () => true;
+
+  it("sem param nem env, usa a cascata (codex luna low primeiro)", () => {
+    expect(resolveRunFiltered({}, {}, all, false)).toEqual({
+      engine: "codex",
+      model: "gpt-5.6-luna",
+      effort: "low",
+    });
+  });
+
+  it("pula o primeiro da cascata quando está ausente ou unhealthy", () => {
+    expect(resolveRunFiltered({}, {}, (e) => e !== "codex", false)).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
+      effort: undefined,
+    });
+    expect(resolveRunFiltered({}, {}, all, false, { codex: 0.29, opencode: 0.8 })).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
+      effort: undefined,
+    });
+  });
+
+  it("parâmetro engine vence a cascata", () => {
+    expect(resolveRunFiltered({ engine: "grok" }, {}, all, false)).toEqual({
+      engine: "grok",
+      model: undefined,
+      effort: undefined,
+    });
+    expect(resolveRunFiltered({ engine: "claude", model: "haiku" }, {}, all, false)).toEqual({
+      engine: "claude",
+      model: "haiku",
+      effort: undefined,
+    });
+  });
+
+  it("env POLYAGENT_RUN_FILTERED_ENGINE vence a cascata", () => {
+    const env = { POLYAGENT_RUN_FILTERED_ENGINE: "grok" };
+    expect(resolveRunFiltered({}, env, all, false)).toEqual({
+      engine: "grok",
+      model: undefined,
+      effort: undefined,
+    });
+  });
+
+  it("parâmetro engine vence a env da tool, que vence a cascata", () => {
+    const env = { POLYAGENT_RUN_FILTERED_ENGINE: "grok" };
+    expect(resolveRunFiltered({ engine: "claude" }, env, all, false).engine).toBe("claude");
+  });
+
+  it("env POLYAGENT_RUN_FILTERED_MODEL vence o modelo da cascata", () => {
+    const env = { POLYAGENT_RUN_FILTERED_MODEL: "custom-model" };
+    expect(resolveRunFiltered({}, env, all, false)).toEqual({
+      engine: "codex",
+      model: "custom-model",
+      effort: "low",
+    });
+  });
+
+  it("parâmetro model vence env e cascata", () => {
+    const env = { POLYAGENT_RUN_FILTERED_MODEL: "from-env" };
+    expect(resolveRunFiltered({ model: "from-param" }, env, all, false).model).toBe("from-param");
+  });
+
+  it("POLYAGENT_EXPLORE_MODEL não é o default do run_filtered (só da cascata / override codex)", () => {
+    const env = { POLYAGENT_EXPLORE_MODEL: "gpt-5.6-sol" };
+    expect(resolveRunFiltered({}, env, all, false).model).toBe("gpt-5.6-luna");
+  });
+
+  it("cascata não esbarra em assertReadOnlyEngine — aceita grok com sandbox desligado", () => {
+    expect(resolveRunFiltered({}, {}, (e) => e === "grok", false, undefined, false)).toEqual({
+      engine: "grok",
+      model: "grok-4.5",
+      effort: "low",
+    });
+  });
+
+  it("override explícito aceita qualquer engine, inclusive com sandbox desligado", () => {
+    for (const engine of Object.keys(ENGINE_CAPABILITIES) as Engine[]) {
+      expect(resolveRunFiltered({ engine }, {}, all, false, undefined, false).engine).toBe(engine);
+    }
+  });
+
+  it("as três de leitura NÃO usam a cascata — continuam em codex + EXPLORE_MODEL", () => {
+    for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
+      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-5.6-luna" });
+    }
   });
 });
