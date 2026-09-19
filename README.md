@@ -58,8 +58,8 @@ propagates as the raw CLI failure instead of being guessed at.
 > Codex, Grok, or any generic MCP host.
 
 ```bash
-git clone https://github.com/JaimeJunr/cursor-mcp-bridge.git
-cd cursor-mcp-bridge
+git clone https://github.com/JaimeJunr/polyagent-mcp.git
+cd polyagent-mcp
 npm install
 npm run build
 ```
@@ -68,7 +68,7 @@ npm run build
 
 **Claude Code:**
 ```bash
-claude mcp add polyagent -s user -- node /abs/path/to/cursor-mcp-bridge/dist/index.js
+claude mcp add polyagent -s user -- node /abs/path/to/polyagent-mcp/dist/index.js
 ```
 
 **Any host** — add to its `mcp.json`:
@@ -77,7 +77,7 @@ claude mcp add polyagent -s user -- node /abs/path/to/cursor-mcp-bridge/dist/ind
   "mcpServers": {
     "polyagent": {
       "command": "node",
-      "args": ["/abs/path/to/cursor-mcp-bridge/dist/index.js"]
+      "args": ["/abs/path/to/polyagent-mcp/dist/index.js"]
     }
   }
 }
@@ -180,7 +180,7 @@ nudges. Wire it into your host's settings (Claude Code `settings.json`):
       {
         "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "node /abs/path/to/cursor-mcp-bridge/hooks/prefer-polyagent.mjs", "timeout": 5 }
+          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
         ]
       }
     ]
@@ -231,7 +231,7 @@ regardless of how the agent searches.
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node /abs/path/to/cursor-mcp-bridge/hooks/prefer-polyagent.mjs", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }] }
     ]
   }
 }
@@ -251,7 +251,7 @@ so wire the same hook for `SubagentStart` as well:
     "SubagentStart": [
       {
         "hooks": [
-          { "type": "command", "command": "node /abs/path/to/cursor-mcp-bridge/hooks/prefer-polyagent.mjs" }
+          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs" }
         ]
       }
     ]

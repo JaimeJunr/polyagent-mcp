@@ -33,8 +33,8 @@ and authenticate — **stop and report**, do not proceed.
 ## 1. Get the code and build
 
 ```bash
-git clone https://github.com/JaimeJunr/cursor-mcp-bridge.git
-cd cursor-mcp-bridge
+git clone https://github.com/JaimeJunr/polyagent-mcp.git
+cd polyagent-mcp
 npm install
 npm run build           # tsc → dist/index.js  (this is the artifact you register)
 pwd                     # ← copy this; it is <ABS_PATH> for every command below
