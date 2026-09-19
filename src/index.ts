@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  runCursor, EXPLORE_MODEL, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote,
+  runCursor, EXPLORE_MODEL, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveAuxTool,
@@ -156,7 +156,7 @@ server.registerTool(
       "delegate",
       tier.engine,
       () => runCursor({
-        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS),
+        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
         cwd,
         engine: tier.engine,
         model: tier.model,
@@ -197,7 +197,7 @@ server.registerTool(
       "fast_delegate",
       tier.engine,
       () => runCursor({
-        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS),
+        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
         cwd,
         engine: tier.engine,
         model: model ?? tier.model,
