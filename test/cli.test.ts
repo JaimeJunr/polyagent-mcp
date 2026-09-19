@@ -725,7 +725,7 @@ describe("resolveFastTier", () => {
     expect(FAST_CANDIDATES).toEqual([
       { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
-      { engine: "claude", model: "haiku" },
+      { engine: "claude", model: "haiku", effort: "low" },
       { engine: "grok", model: "grok-4.5", effort: "low" },
     ]);
   });
@@ -737,7 +737,7 @@ describe("resolveFastTier", () => {
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
     expect(resolveFastTier((e) => e !== "opencode")).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
-    expect(resolveFastTier((e) => e !== "opencode" && e !== "codex")).toEqual({ engine: "claude", model: "haiku" });
+    expect(resolveFastTier((e) => e !== "opencode" && e !== "codex")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
     expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
 
@@ -751,6 +751,7 @@ describe("resolveFastTier", () => {
     expect(resolveFastTier(all, false, { opencode: 0.29, codex: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
       model: "haiku",
+      effort: "low",
     });
   });
 

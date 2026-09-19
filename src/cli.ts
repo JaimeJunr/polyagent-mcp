@@ -1408,11 +1408,24 @@ export const HEALTH_THRESHOLD = 0.3;
  * assinatura. O fast_delegate escolhe sozinho (sem `level` nem `engine`), então toda
  * chamada gasta dinheiro real por padrão. Decisão consciente do dono: latência em
  * troca de custo. cursor só entra como fallback final, igual ao resolveTier.
+ *
+ * Duas consequências da promoção do opencode a 1º candidato, ainda EM ABERTO:
+ * - `QUOTA_PATTERNS.opencode` está vazio (nenhuma captura de cota foi observada, e o
+ *   projeto não classifica por aproximação). Como este é o único candidato que gasta
+ *   crédito, 'acabou o saldo' é justamente o modo de falha que propaga erro cru em vez
+ *   da mensagem acionável. Autocura só parcial: as falhas derrubam o health e a seleção
+ *   acaba caindo pro codex, mas depois de N erros ilegíveis. Fechar isso exige capturar
+ *   um 402/insufficient-credits real do OpenRouter — não inventar regex.
+ * - `hasEngine("opencode")` só prova que o binário existe, não que há provider
+ *   configurado nem crédito. Num host com opencode instalado e OpenRouter ausente, todo
+ *   fast_delegate erra na 1ª escolha até o health decair.
  */
 export const FAST_CANDIDATES: Tier[] = [
   { engine: "opencode", model: "openrouter/inception/mercury-2" },
   { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
-  { engine: "claude", model: "haiku" },
+  // effort low no haiku é consistência com os vizinhos, não ganho: medido em 10100ms sem
+  // effort contra 10125ms com low (2 runs cada) — diferença dentro do ruído.
+  { engine: "claude", model: "haiku", effort: "low" },
   { engine: "grok", model: "grok-4.5", effort: "low" },
 ];
 
