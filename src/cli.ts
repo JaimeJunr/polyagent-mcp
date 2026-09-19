@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, join } from "node:path";
 
 /** CLIs suportados. Cada engine tem dialeto de args e parser de saída próprios. */
-export type Engine = "cursor" | "grok" | "codex" | "claude";
+export type Engine = "cursor" | "grok" | "codex" | "claude" | "opencode" | "kimi" | "muse";
 
 /** Ordem host-agnostic para recuperar uma execução quando o ambiente do codex está quebrado. */
 export const FALLBACK_ENGINE_ORDER: Engine[] = ["codex", "grok", "claude"];
@@ -51,7 +51,7 @@ export function parseSessionHandle(handle: string): { engine?: Engine; id: strin
   if (separator === -1) return { id: handle };
 
   const prefix = handle.slice(0, separator);
-  if (prefix !== "cursor" && prefix !== "grok" && prefix !== "codex" && prefix !== "claude") {
+  if (prefix !== "cursor" && prefix !== "grok" && prefix !== "codex" && prefix !== "claude" && prefix !== "opencode" && prefix !== "kimi" && prefix !== "muse") {
     return { id: handle };
   }
   return { engine: prefix, id: handle.slice(separator + 1) };
@@ -68,6 +68,12 @@ export const GROK_BIN = process.env.POLYAGENT_GROK_BIN ?? "grok";
 export const CODEX_BIN = process.env.POLYAGENT_CODEX_BIN ?? "codex";
 /** Binário do Claude Code CLI. Override via POLYAGENT_CLAUDE_BIN. */
 export const CLAUDE_BIN = process.env.POLYAGENT_CLAUDE_BIN ?? "claude";
+/** Binário do OpenCode CLI. Override via POLYAGENT_OPENCODE_BIN. */
+export const OPENCODE_BIN = process.env.POLYAGENT_OPENCODE_BIN ?? "opencode";
+/** Binário do Kimi CLI. Override via POLYAGENT_KIMI_BIN. */
+export const KIMI_BIN = process.env.POLYAGENT_KIMI_BIN ?? "kimi";
+/** Binário do Muse CLI. Override via POLYAGENT_MUSE_BIN. */
+export const MUSE_BIN = process.env.POLYAGENT_MUSE_BIN ?? "muse";
 
 /**
  * Modelo default do fallback cursor (só usado quando CURSOR_ENABLED e o engine é cursor). O
@@ -156,6 +162,9 @@ const SANDBOX_ENGINE_RO: Record<Engine, string[]> = {
   // contexto (o worker roda com --bare + --append-system-prompt, então não precisa descobrir
   // agents/rules no HOME). A credencial de oauth fica em SANDBOX_ENGINE_RW: precisa ser gravável.
   claude: [".claude.json"],
+  opencode: [".opencode"], // instalação (binário e dependências), sem estado de sessão
+  kimi: [], // os dois diretórios de estado ficam RW abaixo
+  muse: [], // os dois diretórios de estado ficam RW abaixo
 };
 /**
  * Subpaths do HOME RW por engine. Grok precisa de auth/skills/cache em ~/.grok; o codex tem
@@ -179,6 +188,25 @@ const SANDBOX_ENGINE_RW: Record<Engine, string[]> = {
     ".claude/todos",
     ".claude/shell-snapshots",
   ],
+  // ~/.opencode contém só a instalação. Sessões, logs, auth e SQLite (incluindo WAL/SHM)
+  // vivem em ~/.local/share/opencode; o diretório inteiro precisa persistir em RW.
+  // ~/.local/state/opencode guarda os locks: sem RW o CLI morre com EROFS ao criar o lock de
+  // models.dev, e o erro chega ao caller como "UnknownError" genérico — $HOME/.local entra RO
+  // pela base, então cada subpath gravável precisa ser declarado aqui.
+  opencode: [
+    ".local/share/opencode",
+    ".local/state/opencode",
+  ],
+  // O host tem DOIS diretórios de estado: ~/.kimi-code e ~/.kimi, ambos com credentials/.
+  // Ambos precisam de RW para persistir sessões e renovar OAuth: RO causa EROFS no refresh
+  // e pode queimar a credencial do HOST. Nunca montar o HOME inteiro.
+  kimi: [".kimi-code", ".kimi"],
+  // Muse persiste em DOIS diretórios: ~/.config/muse (auth.json, settings, trust) e
+  // ~/.local/share/muse (sessões, skills, plugins, runtime, SQLite). Auth é RW porque o
+  // CLI pode renovar a API key; montada RO, o refresh falha com EROFS e queima a
+  // credencial do HOST. ~/.local entra RO pela base (SANDBOX_HOME_RO), então o subpath
+  // gravável precisa ser declarado aqui para sobrepor — mesma lição do opencode.
+  muse: [".config/muse", ".local/share/muse"],
 };
 /** Subpaths do HOME liberados RW: caches de build (acelera runs seguidos). */
 const SANDBOX_HOME_RW = [".gradle", ".m2", ".cache/uv", ".cache/pip"];
@@ -328,6 +356,24 @@ export const ENGINE_CAPABILITIES: Record<Engine, EngineCapability> = {
     engineReadOnly: false,
     sandboxReadOnly: true,
     modeAtEngineLevel: "mode emite --dangerously-skip-permissions (buildClaudeArgs)",
+  },
+  opencode: {
+    webSearch: false,
+    engineReadOnly: false,
+    sandboxReadOnly: true,
+    modeAtEngineLevel: "mode ignorado — sem garantia de read-only no engine (buildOpencodeArgs); a garantia vem do bwrap",
+  },
+  kimi: {
+    webSearch: false,
+    engineReadOnly: false,
+    sandboxReadOnly: true,
+    modeAtEngineLevel: "mode não altera flags: -p já é não-interativo; sem read-only no engine, a garantia vem do bwrap",
+  },
+  muse: {
+    webSearch: false,
+    engineReadOnly: false,
+    sandboxReadOnly: true,
+    modeAtEngineLevel: "force/mode emitem --approval-mode never (buildMuseArgs); sem -s read-only no engine, a garantia vem do bwrap",
   },
   cursor: {
     webSearch: false,
@@ -505,6 +551,12 @@ const QUOTA_PATTERNS: Record<Engine, RegExp[]> = {
     /\bspend limit reached\b/,
     /\bcredit balance (?:is )?too low\b/,
   ],
+  // Nenhuma captura de cota do opencode foi observada; não classificar por aproximação.
+  opencode: [],
+  // Captura real em 2026-09-14 (ADENDO 4): provider.auth_error/403 sozinhos NÃO são cota.
+  kimi: [/\bmonthly usage limit\b/, /\busage limit for this billing cycle\b/],
+  // Nenhuma captura de cota do muse foi observada; não classificar por aproximação.
+  muse: [],
   // Nenhuma captura de cota do cursor-agent existe; o que foi observado nele é erro de auth.
   cursor: [],
 };
@@ -517,6 +569,9 @@ const RATE_LIMIT_PATTERNS: Record<Engine, RegExp[]> = {
     /\bserver is temporarily limiting requests\b/,
     /\brequest rejected \(429\)\b/,
   ],
+  opencode: [],
+  kimi: [],
+  muse: [],
   cursor: [],
 };
 
@@ -526,7 +581,7 @@ const RATE_LIMIT_PATTERNS: Record<Engine, RegExp[]> = {
  * extraídas — os CLIs emitem o JSON útil em stdout, e o exit code só distingue sucesso de falha.
  * Um padrão que não casa devolve null e a falha propaga crua: classificar errado é pior que não
  * classificar (ver ADENDO 3 do spike — auth expirado tratado como cota mascarou um bug do bridge).
- * Função pura. Padrões: .ralph/mcp-bridge-v2/spikes/quota-patterns.md (com os três adendos).
+ * Função pura. Padrões: .ralph/mcp-bridge-v2/spikes/quota-patterns.md (incluindo os adendos).
  */
 export function classifyQuotaError(output: CliFailureOutput, engine: Engine): QuotaErrorKind | null {
   // Guarda contra uma resposta bem-sucedida que apenas mencione essas mensagens.
@@ -631,9 +686,20 @@ export function quotaCandidates(
   const req = tool === undefined
     ? undefined
     : (AUX_TOOL_REQUIREMENTS as Partial<Record<BridgeTool, { readOnly: boolean; webSearch: boolean }>>)[tool];
+  const canToolSelect = (engine: Engine): boolean => {
+    if (tool === "follow_up") return false;
+    if (tool === "fast_delegate") {
+      return engine === "cursor" || FAST_CANDIDATES.some((candidate) => candidate.engine === engine);
+    }
+    if (tool === "fan_out") {
+      return engine === "cursor" || Object.values(TIERS).some(({ primary }) => primary.engine === engine);
+    }
+    return true;
+  };
   return ENGINES.filter((engine) => {
     if (engine === exhausted || !has(engine)) return false;
     if (engine === "cursor" && !cursorEnabled) return false;
+    if (!canToolSelect(engine)) return false;
     // generate_image roda só nas engines com tool de imagem keyless própria (image_gen/grok-build).
     if (tool === "generate_image") return IMAGE_ENGINES.includes(engine);
     if (!req) return true;
@@ -670,6 +736,10 @@ export function quotaErrorMessage(
     return `${engine} rate limited — this is a transient throttle, not an exhausted plan quota: ` +
       "wait and retry the same engine. Switching engines does not help here.";
   }
+  if (tool === "follow_up") {
+    return `${engine} quota exhausted — follow_up is pinned to the engine of the resumed session; ` +
+      "start a new call on another engine instead of retrying here.";
+  }
   if (candidates.length === 0) {
     return `${engine} quota exhausted — no other engine is available for ${tool ?? "this tool"} ` +
       "(installed, enabled and capable of what this tool requires). " +
@@ -679,11 +749,11 @@ export function quotaErrorMessage(
   const head = `${engine} quota exhausted — available engines: ${candidates.join(", ")}`;
   if (tool === "delegate") {
     const level = lowestLevelFor(candidates);
-    return level === undefined ? head : `${head} — retry with level:${level}`;
-  }
-  if (tool === "follow_up") {
-    return `${head} — follow_up is pinned to the engine of the resumed session; ` +
-      "start a new call on another engine instead of retrying here.";
+    const tierEngines = new Set(Object.values(TIERS).map(({ primary }) => primary.engine));
+    const explicit = candidates.find((candidate) => !tierEngines.has(candidate));
+    if (level !== undefined && explicit) return `${head} — retry with level:${level} or engine:"${explicit}"`;
+    if (level !== undefined) return `${head} — retry with level:${level}`;
+    return explicit ? `${head} — retry with engine:"${explicit}"` : head;
   }
   if (tool === "fast_delegate" || tool === "fan_out") {
     return `${head} — this tool picks the engine itself and exposes no engine parameter.`;
@@ -704,6 +774,19 @@ export function buildSandboxSpec(
   const isoHome = mkdtempSync(join(tmpdir(), "cbx-home-"));
   const tmpDir = mkdtempSync(join(tmpdir(), "cbx-tmp-"));
   const abs = (rel: string) => join(home, rel);
+  const engineHomeRw = SANDBOX_ENGINE_RW[engine].map(abs);
+  // O filtro por existsSync, somado ao ~/.local RO da base, omite estado novo e gera uma falha
+  // genérica no CLI; crie antes os subpaths RW da engine para que o bind gravável exista.
+  // Dois casos: o PAI sempre (um alvo-arquivo como .credentials.json precisa do diretório-pai,
+  // senão o CLI não consegue gravar o arquivo depois); o próprio path só quando não parece
+  // arquivo (extname vazio). mkdirSync no .credentials.json criaria um DIRETÓRIO e o CLI
+  // falharia ao gravar a credencial ali num host ainda sem login.
+  for (const path of engineHomeRw) {
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      if (extname(path) === "") mkdirSync(path, { recursive: true });
+    } catch { /* falha de criação será filtrada abaixo */ }
+  }
   const spec: SandboxSpec = {
     home,
     user: process.env.USER ?? userInfo().username,
@@ -718,7 +801,8 @@ export function buildSandboxSpec(
     // base (toolchains + cursor auth) + os subpaths RO específicos do engine (auth/libs do CLI)
     homeRo: [...SANDBOX_HOME_RO, ...SANDBOX_ENGINE_RO[engine]].map(abs).filter((p) => existsSync(p)),
     homeRw: [
-      ...[...SANDBOX_HOME_RW, ...SANDBOX_ENGINE_RW[engine]].map(abs),
+      ...SANDBOX_HOME_RW.map(abs),
+      ...engineHomeRw,
       // Apps externos (ex.: orca) roteiam múltiplas contas do codex setando CODEX_HOME pra fora do
       // ~/.codex bindado acima. Sem isso, o sandbox esconde a conta ativa (isoHome cobre $HOME) e o
       // codex falha ao inicializar (CODEX_HOME inexistente, ou "Read-only file system" — ver
@@ -740,7 +824,7 @@ export function buildSandboxSpec(
 
 export interface RunOpts {
   prompt: string;
-  /** Qual CLI usar. Default "cursor". grok/codex têm dialeto e parser próprios. */
+  /** Qual CLI usar. Default "cursor". Cada engine tem dialeto e parser próprios. */
   engine?: Engine;
   model?: string;
   effort?: string;
@@ -758,7 +842,8 @@ export interface RunOpts {
   images?: string[];
   /**
    * Persona/system-prompt de um agent especializado, injetada pelo canal aditivo de cada engine
-   * (claude --append-system-prompt, grok --rules, codex -c developer_instructions, cursor prefixo).
+   * (claude --append-system-prompt, grok --rules, codex -c developer_instructions,
+   * cursor/opencode/kimi/muse prefixo).
    * Resolvida no host por resolveAgent (src/agents.ts). Cross-engine — não é exclusiva do claude.
    */
   agentPrompt?: string;
@@ -866,6 +951,78 @@ export function buildCodexArgs(opts: RunOpts, sandboxed = false): string[] {
   return ["exec", ...flags, ...sep, opts.prompt];
 }
 
+/** Valida o formato exigido pelo OpenCode: o id sempre inclui o provider antes de `/`. */
+function assertOpencodeModel(model: string): void {
+  const separator = model.indexOf("/");
+  if (separator <= 0 || separator === model.length - 1) {
+    throw new Error(
+      `invalid model: received ${JSON.stringify(model)}, expected "provider/model" ` +
+      `(e.g. "google/gemini-3.8-flash")`,
+    );
+  }
+}
+
+/**
+ * Args do OpenCode CLI (`opencode run`). Dialeto próprio: prompt posicional, JSONL via
+ * `--format json`, modelo com provider, variant como effort, e sessão via `-s`. A persona
+ * resolvida no host é injetada apenas como prefixo do prompt,
+ * porque o CLI não oferece um canal aditivo de system prompt. Função pura.
+ */
+export function buildOpencodeArgs(opts: RunOpts): string[] {
+  if (opts.model !== undefined) assertOpencodeModel(opts.model);
+  const args = ["run", "--format", "json"];
+  if (opts.model !== undefined) args.push("-m", opts.model);
+  if (opts.effort) args.push("--variant", opts.effort);
+  if (opts.resume) args.push("-s", opts.resume);
+  // Em headless, mode também precisa de auto-aprovação; o read-only real continua no bwrap.
+  if (FORCE || opts.force || opts.mode) args.push("--auto");
+  if (opts.cwd) args.push("--dir", opts.cwd);
+  args.push("--", opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt);
+  return args;
+}
+
+/**
+ * Args do Kimi CLI. Dialeto confirmado no host para o prompt headless, stream-json, modelo e
+ * resume. O prompt já é não-interativo; o Kimi não oferece flag de system prompt aditivo, então a
+ * persona resolvida no host entra como prefixo do prompt. `--add-dir` disponibiliza o workspace
+ * explicitamente quando o caller fornece cwd. Função pura — testável.
+ */
+export function buildKimiArgs(opts: RunOpts): string[] {
+  const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
+  const args = ["-p", prompt, "--output-format", "stream-json"];
+  // No host, os aliases precisam do prefixo kimi-code/ e existir em config.toml; a CLI recusa
+  // nomes não configurados. Passar cru: o config do usuário define aliases, não uma regra fixa.
+  if (opts.model) args.push("-m", opts.model);
+  if (opts.resume) args.push("-S", opts.resume);
+  // -p já é não-interativo e RECUSA autonomia, mesmo com force/mode:
+  // "error: Cannot combine --prompt with --auto."
+  // "error: Cannot combine --prompt with --yolo."
+  // Não emitir --auto/-y/--yolo; o read-only de mode continua garantido pelo bwrap.
+  if (opts.cwd) args.push("--add-dir", opts.cwd);
+  return args;
+}
+
+/**
+ * Args do Muse CLI (`muse exec`). Dialeto confirmado no host: prompt posicional, JSONL via
+ * `--json`, modelo/effort/resume por flag, autonomia via `--approval-mode never`. NÃO usar
+ * `--yolo`: ele desliga o sandbox interno do muse além do approval, e o bwrap já cobre o
+ * isolamento. `--agents` existe na CLI, mas o JSON não foi confirmado — persona entra só
+ * como prefixo do prompt, igual a cursor/opencode. Função pura — testável.
+ */
+export function buildMuseArgs(opts: RunOpts): string[] {
+  const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
+  const args = ["exec", "--json"];
+  if (opts.model) args.push("--model", opts.model);
+  if (opts.effort) args.push("--reasoning-effort", opts.effort);
+  if (opts.resume) args.push("--session-id", opts.resume);
+  // Headless trava no default on-request. force OU mode precisam de auto-aprovação;
+  // o read-only de mode continua no bwrap (muse não tem -s read-only).
+  if (FORCE || opts.force || opts.mode) args.push("--approval-mode", "never");
+  // Prompt posicional por último, depois de `--`, para não ser lido como valor de flag.
+  args.push("--", prompt);
+  return args;
+}
+
 /**
  * Args do Claude Code CLI (`claude -p`). Dialeto próprio: `--print` headless, prompt posicional,
  * autonomia via `--dangerously-skip-permissions`, resume via `--resume <id>`. Saída `--output-format
@@ -901,6 +1058,9 @@ export function buildArgs(engine: Engine, opts: RunOpts, sandboxed = false): str
   if (engine === "grok") return buildGrokArgs(opts);
   if (engine === "codex") return buildCodexArgs(opts, sandboxed);
   if (engine === "claude") return buildClaudeArgs(opts);
+  if (engine === "opencode") return buildOpencodeArgs(opts);
+  if (engine === "kimi") return buildKimiArgs(opts);
+  if (engine === "muse") return buildMuseArgs(opts);
   return buildCursorArgs(opts);
 }
 
@@ -954,9 +1114,218 @@ export function parseCodexJsonl(raw: string): CliResult {
   return { text: text || raw.trim(), sessionId };
 }
 
+/**
+ * Parser do OpenCode `run --format json`: cada linha é um evento, e os eventos `text` carregam a
+ * resposta em `part.text`. Best-effort: ruído e linhas malformadas são ignorados; sem evento de
+ * texto, o stdout cru é devolvido para não perder diagnóstico.
+ */
+export function parseOpencodeJsonl(raw: string): CliResult {
+  let text = "";
+  let sessionId: string | undefined;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = record(JSON.parse(trimmed));
+      if (!event) continue;
+      const part = record(event.part);
+      const payload = record(event.payload);
+      const properties = record(event.properties);
+      const nested = [part, payload, properties];
+      const ids = [event, ...nested]
+        .map((obj) => stringField(obj, "sessionID") ?? stringField(obj, "sessionId") ?? stringField(obj, "session_id"))
+        .filter((id): id is string => id !== undefined);
+      if (!sessionId && ids.length) sessionId = ids[0];
+
+      const type = stringField(event, "type");
+      const partType = stringField(part, "type");
+      const isTextEvent = type === "text" || type === "message.delta" || type === "text.delta" || partType === "text";
+      if (!isTextEvent) continue;
+      const chunk = stringField(part, "text")
+        ?? stringField(event, "text")
+        ?? stringField(event, "delta")
+        ?? stringField(payload, "text")
+        ?? stringField(payload, "delta")
+        ?? stringField(properties, "text");
+      if (chunk !== undefined) text += chunk;
+    } catch { /* linha malformada — mantém o melhor resultado já extraído */ }
+  }
+  return { text: text || raw.trim(), sessionId };
+}
+
+interface KimiTextEvent {
+  text: string;
+  final: boolean;
+}
+
+function kimiEventType(obj: JsonObject): string | undefined {
+  for (const key of ["type", "event", "kind", "name"]) {
+    const value = stringField(obj, key);
+    if (value) return value.toLowerCase();
+  }
+  return undefined;
+}
+
+function kimiSessionId(value: unknown, depth = 0): string | undefined {
+  if (depth > 8) return undefined;
+  const obj = record(value);
+  if (!obj) return undefined;
+
+  for (const key of ["session_id", "sessionId", "sessionID"]) {
+    const id = stringField(obj, key);
+    if (id) return id;
+  }
+
+  const type = kimiEventType(obj);
+  if (type?.includes("session")) {
+    const id = stringField(obj, "id");
+    if (id) return id;
+  }
+
+  const session = obj.session;
+  if (typeof session === "string" && session) return session;
+
+  for (const key of ["session", "data", "payload", "event", "message"]) {
+    const id = kimiSessionId(obj[key], depth + 1);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+function kimiIsNonAssistant(role: string | undefined, type: string | undefined): boolean {
+  if (role && role !== "assistant") return true;
+  return type !== undefined && /^(?:user|system|tool|tool[_-]|thinking|reasoning|approval|error)/.test(type);
+}
+
+function kimiTextFromValue(
+  value: unknown,
+  key: string,
+  role?: string,
+  type?: string,
+  depth = 0,
+): string {
+  if (depth > 8 || kimiIsNonAssistant(role, type)) return "";
+
+  if (typeof value === "string") {
+    const normalizedKey = key.toLowerCase().replace(/-/g, "_");
+    const directTextKey = ["text", "output_text", "result", "delta", "content"].includes(normalizedKey);
+    const auxiliaryTextKey = ["data", "value", "output"].includes(normalizedKey)
+      && (type === undefined || /assistant|content|delta|message|text/.test(type));
+    const messageText = normalizedKey === "message"
+      && (role === "assistant" || type === undefined || /assistant|content|message|result|text/.test(type));
+    return directTextKey || auxiliaryTextKey || messageText ? value : "";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => kimiTextFromValue(item, key, role, type, depth + 1)).join("");
+  }
+
+  const obj = record(value);
+  if (!obj) return "";
+  const ownRole = stringField(obj, "role")?.toLowerCase();
+  const ownType = kimiEventType(obj);
+  const nextRole = ownRole ?? role;
+  const nextType = ownType ?? type;
+  if (kimiIsNonAssistant(nextRole, nextType)) return "";
+
+  for (const childKey of ["text", "output_text", "result", "delta", "content", "message", "data", "output", "payload", "event"]) {
+    if (obj[childKey] === undefined) continue;
+    const text = kimiTextFromValue(obj[childKey], childKey, nextRole, nextType, depth + 1);
+    if (text) return text;
+  }
+  return "";
+}
+
+function kimiFinalText(value: unknown, depth = 0): string | undefined {
+  if (depth > 8) return undefined;
+  const obj = record(value);
+  if (!obj) return undefined;
+  const type = kimiEventType(obj);
+  if (typeof obj.result === "string" && (!type || /result|complete|finish|final|done/.test(type))) {
+    return obj.result;
+  }
+  for (const key of ["data", "output", "payload", "event", "message"]) {
+    const nested = kimiFinalText(obj[key], depth + 1);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+}
+
+function parseKimiEvent(event: JsonObject): KimiTextEvent {
+  const final = kimiFinalText(event);
+  if (final !== undefined) return { text: final, final: true };
+  return { text: kimiTextFromValue(event, "event"), final: false };
+}
+
+/**
+ * Parser do Kimi `--output-format stream-json`. Só system.version (role meta) foi observado no
+ * host; texto/session id ainda não foram confirmados. Aceitamos variantes e mantemos o
+ * comportamento best-effort: linha malformada nunca interrompe o resultado.
+ */
+export function parseKimiJsonl(raw: string): CliResult {
+  let text = "";
+  let finalText: string | undefined;
+  let sessionId: string | undefined;
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = record(JSON.parse(trimmed));
+      if (!event) continue;
+      sessionId ??= kimiSessionId(event);
+      const parsed = parseKimiEvent(event);
+      if (parsed.final) finalText = parsed.text;
+      else text += parsed.text;
+    } catch { /* linha malformada — preserva o melhor resultado já extraído */ }
+  }
+
+  return { text: finalText !== undefined ? finalText : text || raw.trim(), sessionId };
+}
+
+/** Nome alternativo explícito para callers que preferem o nome do formato de saída. */
+export const parseKimiStreamJson = parseKimiJsonl;
+
+/**
+ * Parser do Muse `exec --json`: cada linha é um evento com `payload_type` e `stream`.
+ * Texto vive em deltas `run.output.delta` (`payload.text`) — concatenar na ordem.
+ * Session id vive em `stream.id` quando `stream.kind === "session"`.
+ * `turn.input.user` é o prompt, não a resposta — ignorar. Best-effort: linha malformada
+ * nunca lança; sem delta, devolve o stdout cru.
+ */
+export function parseMuseJsonl(raw: string): CliResult {
+  let text = "";
+  let sessionId: string | undefined;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    try {
+      const event = record(JSON.parse(trimmed));
+      if (!event) continue;
+
+      const stream = record(event.stream);
+      if (stringField(stream, "kind") === "session") {
+        const id = stringField(stream, "id");
+        if (id) sessionId ??= id;
+      }
+
+      const payloadType = stringField(event, "payload_type");
+      if (payloadType === "turn.input.user") continue;
+      if (payloadType !== "run.output.delta") continue;
+      const chunk = stringField(record(event.payload), "text");
+      if (chunk !== undefined) text += chunk;
+    } catch { /* linha malformada — preserva o melhor resultado já extraído */ }
+  }
+  return { text: text || raw.trim(), sessionId };
+}
+
 /** Despacha o parse de saída pelo engine. */
 export function parseOutput(engine: Engine, raw: string): CliResult {
-  return engine === "codex" ? parseCodexJsonl(raw) : parseCliJson(raw);
+  if (engine === "codex") return parseCodexJsonl(raw);
+  if (engine === "opencode") return parseOpencodeJsonl(raw);
+  if (engine === "kimi") return parseKimiJsonl(raw);
+  if (engine === "muse") return parseMuseJsonl(raw);
+  return parseCliJson(raw);
 }
 
 /** true se `bin` é um path existente ou um nome encontrável no PATH. */
@@ -973,7 +1342,10 @@ export function hasEngine(engine: Engine): boolean {
   if (engine === "cursor") return true;
   if (engine === "grok") return binExists(GROK_BIN);
   if (engine === "codex") return binExists(CODEX_BIN);
-  return binExists(CLAUDE_BIN); // claude
+  if (engine === "claude") return binExists(CLAUDE_BIN);
+  if (engine === "opencode") return binExists(OPENCODE_BIN);
+  if (engine === "kimi") return binExists(KIMI_BIN);
+  return binExists(MUSE_BIN);
 }
 
 export interface Tier {
@@ -993,15 +1365,20 @@ interface TierEntry {
  * Matriz do `delegate`: cada nível usa um MODELO DISTINTO, sem repetir entre níveis, escalando a
  * dificuldade e distribuindo pelas 3 assinaturas (codex/grok/claude). O cursor saiu do caminho
  * padrão (assinatura cancelada) — vira fallback só sob CURSOR_ENABLED. Leitura barata (explore/
- * read_slice) reaproveita o modelo do nível 1 (gpt-5.6-luna). Níveis 1/3 usam Codex Luna/Sol,
- * 2/4 usam Grok 4.5/4.6, e 5 usa Claude Opus.
+ * read_slice) reaproveita o modelo do nível 1 (gpt-5.6-luna). Níveis 1/2/4 usam Codex Luna/Sol/Astra,
+ * 3 usa Grok 4.6, e 5 usa Claude Fable. A concentração em codex é consequência de a assinatura
+ * Google (engine agy) ter ficado de fora — ver .ralph/polyagent/model-refresh-2026/spikes/agy-google-cli.md.
  */
 const TIERS: Record<number, TierEntry> = {
   1: { primary: { engine: "codex", model: "gpt-5.6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
-  2: { primary: { engine: "grok", model: "grok-4.5", effort: "high" }, cursorModel: "cursor-grok-4.5-high-fast" },
-  3: { primary: { engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  4: { primary: { engine: "grok", model: "grok-4.6", effort: "high" }, cursorModel: "grok-4.6-high-fast" },
-  5: { primary: { engine: "claude", model: "opus", effort: "max" }, cursorModel: "claude-opus-max-fast" },
+  2: { primary: { engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
+  3: { primary: { engine: "grok", model: "grok-4.6", effort: "high" }, cursorModel: "grok-4.6-high-fast" },
+  // gpt-6-astra e fable: ids confirmados em execução real (2026-09-14, ambos responderam via bwrap).
+  // Já os cursorModel destes dois níveis seguem DEDUZIDOS do padrão dos vizinhos, não verificados —
+  // e o padrão tem exceção (o nível 2 antigo usava o prefixo "cursor-" e o 4 não), então trate só
+  // esses dois como palpite. Verificar exige a assinatura cursor, que está cancelada.
+  4: { primary: { engine: "codex", model: "gpt-6-astra", effort: "max" }, cursorModel: "gpt-6-astra-max-fast" },
+  5: { primary: { engine: "claude", model: "fable", effort: "max" }, cursorModel: "claude-fable-max-fast" },
 };
 
 /**
@@ -1078,6 +1455,57 @@ export function resolveTier(
   );
 }
 
+export interface DelegateResolution {
+  engine: Engine;
+  model: string | undefined;
+  effort: string | undefined;
+}
+
+/**
+ * Resolve o delegate respeitando um override explícito de engine. Sem override, mantém o
+ * roteamento/health de `resolveTier`; com override diferente da engine primária do nível, só
+ * model/effort fornecidos pelo caller atravessam — cada CLI usa seu próprio default. Função pura.
+ */
+export function resolveDelegate(
+  level: number,
+  params: { engine?: string; model?: string; effort?: string } = {},
+  has: (e: Engine) => boolean = hasEngine,
+  cursorEnabled: boolean = CURSOR_ENABLED,
+  health?: Record<string, number>,
+): DelegateResolution {
+  const entry = TIERS[level];
+  if (!entry) throw new Error(`invalid delegate level: received ${level}, expected integer 1-5`);
+
+  if (params.engine !== undefined) {
+    const engine = parseEngine(params.engine, "parâmetro engine de delegate");
+    if (engine === "cursor" && !cursorEnabled) {
+      throw new Error(
+        `delegate level ${level} needs the 'cursor' CLI, which is disabled. ` +
+        "Set POLYAGENT_ENABLE_CURSOR=1 to enable cursor-agent, or pick another engine.",
+      );
+    }
+    if (!has(engine)) {
+      throw new Error(
+        `delegate level ${level} needs the '${engine}' CLI, which is not installed. ` +
+        "Install it or pick another engine.",
+      );
+    }
+    const sameAsPrimary = engine === entry.primary.engine;
+    return {
+      engine,
+      model: params.model ?? (sameAsPrimary ? entry.primary.model : undefined),
+      effort: params.effort ?? (sameAsPrimary ? entry.primary.effort : undefined),
+    };
+  }
+
+  const tier = resolveTier(level, has, cursorEnabled, health);
+  return {
+    engine: tier.engine,
+    model: params.model ?? tier.model,
+    effort: params.effort ?? tier.effort,
+  };
+}
+
 /**
  * Tier-integrity receipt: true se `engine` é a engine PADRÃO (preferida) do nível — false quando
  * resolveTier caiu no fallback (ex.: cursor) ou o nível é inválido. Usado pelo usage log para emitir
@@ -1128,6 +1556,9 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     const bin = engine === "grok" ? GROK_BIN
       : engine === "codex" ? CODEX_BIN
       : engine === "claude" ? CLAUDE_BIN
+      : engine === "opencode" ? OPENCODE_BIN
+      : engine === "kimi" ? KIMI_BIN
+      : engine === "muse" ? MUSE_BIN
       : POLYAGENT_CURSOR_BIN;
     const workspace = runOpts.cwd ?? process.cwd();
 

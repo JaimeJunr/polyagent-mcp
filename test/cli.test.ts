@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
+  buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildOpencodeArgs, buildKimiArgs, buildMuseArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
   budgetNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
-  resolveFastTier,
+  parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
   isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
   fallbackOpts, DEFAULT_MODEL,
   type SandboxSpec, type Engine,
@@ -109,6 +109,24 @@ describe("session handles", () => {
 
   it("extrai engine e id de um handle qualificado", () => {
     expect(parseSessionHandle("codex:abc")).toEqual({ engine: "codex", id: "abc" });
+  });
+
+  it("faz round-trip do handle do opencode", () => {
+    const handle = formatSessionHandle("opencode", "ses_abc");
+    expect(handle).toBe("opencode:ses_abc");
+    expect(parseSessionHandle(handle)).toEqual({ engine: "opencode", id: "ses_abc" });
+  });
+
+  it("faz round-trip do handle do kimi", () => {
+    const handle = formatSessionHandle("kimi", "kimi_abc");
+    expect(handle).toBe("kimi:kimi_abc");
+    expect(parseSessionHandle(handle)).toEqual({ engine: "kimi", id: "kimi_abc" });
+  });
+
+  it("faz round-trip do handle do muse", () => {
+    const handle = formatSessionHandle("muse", "11111111-2222-3333-4444-555555555555");
+    expect(handle).toBe("muse:11111111-2222-3333-4444-555555555555");
+    expect(parseSessionHandle(handle)).toEqual({ engine: "muse", id: "11111111-2222-3333-4444-555555555555" });
   });
 
   it("mantém ids legados sem prefixo", () => {
@@ -336,6 +354,132 @@ describe("buildSandboxArgs", () => {
     }
   });
 
+  it("cria o pai de todo subpath RW, mas não transforma arquivo (.credentials.json) em diretório", () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
+    process.env.HOME = fakeHome;
+    const claude = buildSandboxSpec("/repo", "claude");
+    const opencode = buildSandboxSpec("/repo", "opencode");
+    try {
+      const creds = join(fakeHome, ".claude", ".credentials.json");
+      // host sem login: o path não existe, e se existir NÃO pode ser diretório
+      expect(existsSync(creds) && statSync(creds).isDirectory()).toBe(false);
+      const lockState = join(fakeHome, ".local", "state", "opencode");
+      expect(statSync(lockState).isDirectory()).toBe(true);
+    } finally {
+      claude.cleanup();
+      opencode.cleanup();
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("expõe de propósito a credencial do opencode via diretório RW, sem montar o HOME inteiro", () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
+    mkdirSync(join(fakeHome, ".opencode"), { recursive: true });
+    mkdirSync(join(fakeHome, ".local", "share", "opencode"), { recursive: true });
+    const auth = join(fakeHome, ".local", "share", "opencode", "auth.json");
+    writeFileSync(auth, "{}");
+    process.env.HOME = fakeHome;
+    const opencode = buildSandboxSpec("/repo", "opencode");
+    try {
+      const state = join(fakeHome, ".local", "share", "opencode");
+      const lockState = join(fakeHome, ".local", "state", "opencode");
+      const installation = join(fakeHome, ".opencode");
+      expect(opencode.spec.homeRw).toContain(state);
+      expect(existsSync(lockState)).toBe(true);
+      expect(opencode.spec.homeRw).toContain(lockState);
+      expect(opencode.spec.homeRo).toContain(installation);
+      expect(opencode.spec.homeRw).not.toContain(installation);
+      expect(opencode.spec.homeRw).not.toContain(fakeHome);
+      const args = buildSandboxArgs(opencode.spec);
+      for (const path of [state, lockState]) {
+        const bind = args.indexOf(path);
+        expect(args[bind - 1]).toBe("--bind");
+        expect(args[bind + 1]).toBe(path);
+      }
+    } finally {
+      opencode.cleanup();
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("monta ~/.kimi-code e ~/.kimi como RW, sem montar o HOME nem vazar para outras engines", () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
+    const kimiHome = join(fakeHome, ".kimi-code");
+    mkdirSync(join(kimiHome, "credentials"), { recursive: true });
+    mkdirSync(join(kimiHome, "oauth"), { recursive: true });
+    const legacyHome = join(fakeHome, ".kimi");
+    mkdirSync(join(legacyHome, "credentials"), { recursive: true });
+    process.env.HOME = fakeHome;
+    const kimi = buildSandboxSpec("/repo", "kimi");
+    const others = (["cursor", "grok", "codex", "claude", "opencode", "muse"] as Engine[])
+      .map((engine) => buildSandboxSpec("/repo", engine));
+    try {
+      expect(kimi.spec.homeRw).not.toContain(fakeHome);
+      expect(kimi.spec.homeRo).not.toContain(fakeHome);
+      const args = buildSandboxArgs(kimi.spec);
+      for (const stateHome of [kimiHome, legacyHome]) {
+        expect(kimi.spec.homeRw).toContain(stateHome);
+        expect(kimi.spec.homeRo).not.toContain(stateHome);
+        const bind = args.indexOf(stateHome);
+        expect(bind).toBeGreaterThan(0);
+        expect(args.slice(bind - 1, bind + 2)).toEqual(["--bind", stateHome, stateHome]);
+        for (const other of others) {
+          expect(other.spec.homeRw).not.toContain(stateHome);
+          expect(other.spec.homeRo).not.toContain(stateHome);
+        }
+      }
+    } finally {
+      kimi.cleanup();
+      for (const other of others) other.cleanup();
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("monta ~/.config/muse e ~/.local/share/muse como RW, sem montar o HOME nem vazar para outras engines", () => {
+    const oldHome = process.env.HOME;
+    const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
+    const configMuse = join(fakeHome, ".config", "muse");
+    const shareMuse = join(fakeHome, ".local", "share", "muse");
+    mkdirSync(join(configMuse), { recursive: true });
+    writeFileSync(join(configMuse, "auth.json"), "{}");
+    mkdirSync(join(shareMuse, "sessions"), { recursive: true });
+    process.env.HOME = fakeHome;
+    const muse = buildSandboxSpec("/repo", "muse");
+    const others = (["cursor", "grok", "codex", "claude", "opencode", "kimi"] as Engine[])
+      .map((engine) => buildSandboxSpec("/repo", engine));
+    try {
+      expect(muse.spec.homeRw).not.toContain(fakeHome);
+      expect(muse.spec.homeRo).not.toContain(fakeHome);
+      const args = buildSandboxArgs(muse.spec);
+      for (const stateHome of [configMuse, shareMuse]) {
+        expect(muse.spec.homeRw).toContain(stateHome);
+        expect(muse.spec.homeRo).not.toContain(stateHome);
+        const bind = args.indexOf(stateHome);
+        expect(bind).toBeGreaterThan(0);
+        expect(args.slice(bind - 1, bind + 2)).toEqual(["--bind", stateHome, stateHome]);
+        for (const other of others) {
+          expect(other.spec.homeRw).not.toContain(stateHome);
+          expect(other.spec.homeRo).not.toContain(stateHome);
+        }
+      }
+    } finally {
+      muse.cleanup();
+      for (const other of others) other.cleanup();
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
   it("monta CODEX_HOME (roteado por apps externos como o orca) como bind RW quando existe", () => {
     const oldHome = process.env.HOME;
     const oldCodexHome = process.env.CODEX_HOME;
@@ -507,10 +651,10 @@ describe("resolveTier", () => {
 
   it("mapeia cada nível para a engine+modelo preferido (matriz mista 3 assinaturas)", () => {
     expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "max" });
-    expect(resolveTier(2, all)).toEqual({ engine: "grok", model: "grok-4.5", effort: "high" });
-    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" });
-    expect(resolveTier(4, all)).toEqual({ engine: "grok", model: "grok-4.6", effort: "high" });
-    expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "opus", effort: "max" });
+    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" });
+    expect(resolveTier(3, all)).toEqual({ engine: "grok", model: "grok-4.6", effort: "high" });
+    expect(resolveTier(4, all)).toEqual({ engine: "codex", model: "gpt-6-astra", effort: "max" });
+    expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "fable", effort: "max" });
   });
 
   it("usa um modelo DISTINTO em cada nível (sem repetição)", () => {
@@ -520,10 +664,11 @@ describe("resolveTier", () => {
 
   it("cai para o cursor-agent equivalente só quando CURSOR habilitado e a engine preferida falta", () => {
     expect(resolveTier(1, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-luna-max-fast" });
-    expect(resolveTier(3, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
+    expect(resolveTier(2, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
+    expect(resolveTier(4, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
     expect(resolveTier(5, (e) => e !== "claude", true)).toEqual({
       engine: "cursor",
-      model: "claude-opus-max-fast",
+      model: "claude-fable-max-fast",
     });
   });
 
@@ -614,15 +759,15 @@ describe("resolveFastTier", () => {
 describe("isDefaultTierEngine (tier-integrity receipt)", () => {
   it("is true when the resolved engine matches the tier's preferred engine", () => {
     expect(isDefaultTierEngine(1, "codex")).toBe(true);
-    expect(isDefaultTierEngine(2, "grok")).toBe(true);
-    expect(isDefaultTierEngine(3, "codex")).toBe(true);
-    expect(isDefaultTierEngine(4, "grok")).toBe(true);
+    expect(isDefaultTierEngine(2, "codex")).toBe(true);
+    expect(isDefaultTierEngine(3, "grok")).toBe(true);
+    expect(isDefaultTierEngine(4, "codex")).toBe(true);
     expect(isDefaultTierEngine(5, "claude")).toBe(true);
   });
 
   it("is false when the resolved engine is a fallback (e.g. cursor)", () => {
     expect(isDefaultTierEngine(1, "cursor")).toBe(false);
-    expect(isDefaultTierEngine(3, "grok")).toBe(false);
+    expect(isDefaultTierEngine(3, "codex")).toBe(false);
     expect(isDefaultTierEngine(5, "cursor")).toBe(false);
   });
 
@@ -677,6 +822,142 @@ describe("buildClaudeArgs", () => {
   it("é selecionado pelo dispatcher buildArgs", () => {
     const opts = { prompt: "hi", model: "opus" };
     expect(buildArgs("claude", opts)).toEqual(buildClaudeArgs(opts));
+  });
+});
+
+describe("buildOpencodeArgs", () => {
+  it("roda `opencode run` com JSON e prompt posicional", () => {
+    expect(buildOpencodeArgs({ prompt: "do it" })).toEqual(["run", "--format", "json", "--", "do it"]);
+  });
+
+  it("preserva prompt começando com hífen como argumento posicional", () => {
+    expect(buildOpencodeArgs({ prompt: "--help is the subject" }).slice(-2))
+      .toEqual(["--", "--help is the subject"]);
+  });
+
+  it("passa model provider/model", () => {
+    const args = buildOpencodeArgs({ prompt: "do it", model: "google/gemini-3.8-flash" });
+    expect(args[args.indexOf("-m") + 1]).toBe("google/gemini-3.8-flash");
+  });
+
+  it("mapeia effort para --variant", () => {
+    const args = buildOpencodeArgs({ prompt: "do it", effort: "high" });
+    expect(args[args.indexOf("--variant") + 1]).toBe("high");
+  });
+
+  it("retoma a sessão com -s", () => {
+    const args = buildOpencodeArgs({ prompt: "more", resume: "ses_1" });
+    expect(args[args.indexOf("-s") + 1]).toBe("ses_1");
+  });
+
+  it("auto-aprova quando force", () => {
+    expect(buildOpencodeArgs({ prompt: "run", force: true })).toContain("--auto");
+  });
+
+  it("injeta apenas o corpo da persona e passa o diretório", () => {
+    const args = buildOpencodeArgs({ prompt: "review", agentPrompt: "You are a reviewer.", cwd: "/repo" });
+    expect(args).not.toContain("--agent");
+    expect(args.slice(-2)).toEqual(["--", "You are a reviewer.\n\n---\n\nreview"]);
+    expect(args[args.indexOf("--dir") + 1]).toBe("/repo");
+  });
+
+  it("recusa modelo sem provider e mostra o valor recebido e o formato esperado", () => {
+    expect(() => buildOpencodeArgs({ prompt: "x", model: "gpt-5.6-luna" })).toThrow(
+      'invalid model: received "gpt-5.6-luna", expected "provider/model"',
+    );
+  });
+});
+
+describe("buildKimiArgs", () => {
+  it("passa prompt e saída stream-json no modo headless", () => {
+    expect(buildKimiArgs({ prompt: "do it" })).toEqual([
+      "-p", "do it", "--output-format", "stream-json",
+    ]);
+  });
+
+  it("adiciona -m somente quando model está presente", () => {
+    const args = buildKimiArgs({ prompt: "do it", model: "kimi-k3" });
+    expect(args[args.indexOf("-m") + 1]).toBe("kimi-k3");
+    expect(args).not.toContain("--model");
+    expect(buildKimiArgs({ prompt: "do it" })).not.toContain("-m");
+  });
+
+  it("retoma a sessão com -S", () => {
+    const args = buildKimiArgs({ prompt: "more", resume: "k-1" });
+    expect(args[args.indexOf("-S") + 1]).toBe("k-1");
+  });
+
+  it("nunca emite autonomia incompatível com -p, inclusive com force e mode", () => {
+    for (const force of [undefined, false, true]) {
+      for (const mode of [undefined, "ask", "plan"] as const) {
+        const args = buildKimiArgs({ prompt: "run", force, mode });
+        expect(args).toEqual(["-p", "run", "--output-format", "stream-json"]);
+        for (const flag of ["--auto", "-y", "--yolo"]) expect(args).not.toContain(flag);
+      }
+    }
+  });
+
+  it("prefixa agentPrompt e não inventa flag de system prompt", () => {
+    const args = buildKimiArgs({ prompt: "review", agentPrompt: "You are a reviewer.", cwd: "/repo" });
+    expect(args[args.indexOf("-p") + 1]).toBe("You are a reviewer.\n\n---\n\nreview");
+    expect(args).toContain("--add-dir");
+    expect(args[args.indexOf("--add-dir") + 1]).toBe("/repo");
+    for (const flag of ["--system-prompt", "--append-system-prompt", "--rules", "--agent"]) {
+      expect(args).not.toContain(flag);
+    }
+  });
+
+  it("é selecionado pelo dispatcher buildArgs", () => {
+    const opts = { prompt: "hi", model: "kimi-k3", force: true };
+    expect(buildArgs("kimi", opts)).toEqual(buildKimiArgs(opts));
+  });
+});
+
+describe("buildMuseArgs", () => {
+  it("roda `muse exec` com --json e prompt posicional", () => {
+    expect(buildMuseArgs({ prompt: "do it" })).toEqual(["exec", "--json", "--", "do it"]);
+  });
+
+  it("adiciona --model somente quando model está presente", () => {
+    const args = buildMuseArgs({ prompt: "do it", model: "muse-spark-1.3" });
+    expect(args[args.indexOf("--model") + 1]).toBe("muse-spark-1.3");
+    expect(buildMuseArgs({ prompt: "do it" })).not.toContain("--model");
+  });
+
+  it("mapeia effort para --reasoning-effort", () => {
+    const args = buildMuseArgs({ prompt: "do it", effort: "high" });
+    expect(args[args.indexOf("--reasoning-effort") + 1]).toBe("high");
+  });
+
+  it("retoma a sessão com --session-id no próprio exec", () => {
+    const args = buildMuseArgs({ prompt: "more", resume: "11111111-2222-3333-4444-555555555555" });
+    expect(args[0]).toBe("exec");
+    expect(args).not.toContain("resume");
+    expect(args[args.indexOf("--session-id") + 1]).toBe("11111111-2222-3333-4444-555555555555");
+  });
+
+  it("auto-aprova com --approval-mode never quando force", () => {
+    const args = buildMuseArgs({ prompt: "run", force: true });
+    expect(args[args.indexOf("--approval-mode") + 1]).toBe("never");
+    expect(args).not.toContain("--yolo");
+  });
+
+  it("auto-aprova com --approval-mode never quando mode", () => {
+    const args = buildMuseArgs({ prompt: "run", mode: "ask" });
+    expect(args[args.indexOf("--approval-mode") + 1]).toBe("never");
+    expect(args).not.toContain("--yolo");
+  });
+
+  it("prefixa agentPrompt e não emite --agents nem --yolo", () => {
+    const args = buildMuseArgs({ prompt: "review", agentPrompt: "You are a reviewer." });
+    expect(args).not.toContain("--agents");
+    expect(args).not.toContain("--yolo");
+    expect(args.slice(-2)).toEqual(["--", "You are a reviewer.\n\n---\n\nreview"]);
+  });
+
+  it("é selecionado pelo dispatcher buildArgs", () => {
+    const opts = { prompt: "hi", model: "muse-spark-1.3", force: true };
+    expect(buildArgs("muse", opts)).toEqual(buildMuseArgs(opts));
   });
 });
 
@@ -751,5 +1032,152 @@ describe("parseCodexJsonl", () => {
       JSON.stringify({ type: "turn.completed", usage: { output_tokens: 6 } }),
     ].join("\n");
     expect(parseCodexJsonl(raw)).toEqual({ text: "PONG", sessionId: "019f7049-22af-79a2" });
+  });
+});
+
+describe("parseOpencodeJsonl", () => {
+  it("extrai texto dos eventos text e o session id", () => {
+    const raw = [
+      JSON.stringify({ type: "step_start", timestamp: 1000, sessionID: "ses_1", part: { id: "prt_start", messageID: "msg_1", sessionID: "ses_1", type: "step-start" } }),
+      JSON.stringify({ type: "text", timestamp: 1001, sessionID: "ses_1", part: { id: "prt_text", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "PONG", time: { start: 1000, end: 1001 } } }),
+      JSON.stringify({ type: "step_finish", timestamp: 1002, sessionID: "ses_1", part: { id: "prt_finish", messageID: "msg_1", sessionID: "ses_1", type: "step-finish", tokens: { input: 10, output: 1 }, cost: 0 } }),
+    ].join("\n");
+    expect(parseOpencodeJsonl(raw)).toEqual({ text: "PONG", sessionId: "ses_1" });
+    expect(parseOutput("opencode", raw)).toEqual({ text: "PONG", sessionId: "ses_1" });
+  });
+
+  it("ignora linha malformada no meio sem lançar e mantém o texto extraído", () => {
+    const raw = [
+      JSON.stringify({ type: "step_start", sessionID: "ses_2" }),
+      "{not-json",
+      JSON.stringify({ type: "text", sessionID: "ses_2", part: { type: "text", text: "OK" } }),
+    ].join("\n");
+    expect(() => parseOpencodeJsonl(raw)).not.toThrow();
+    expect(parseOpencodeJsonl(raw)).toEqual({ text: "OK", sessionId: "ses_2" });
+  });
+
+  it("degrada para stdout cru quando não há evento de texto", () => {
+    const raw = "{not-json\nnoise";
+    expect(parseOpencodeJsonl(raw)).toEqual({ text: raw, sessionId: undefined });
+  });
+});
+
+describe("parseKimiJsonl", () => {
+  // Casos sintéticos preexistentes: verificam tolerância, não comprovam o envelope real da CLI.
+  // Texto/session id pendentes de cota disponível após login; ver spikes/kimi-engine.md.
+  it("extrai texto de evento válido e session id", () => {
+    const raw = [
+      JSON.stringify({ type: "session.start", session_id: "k-1" }),
+      JSON.stringify({ type: "assistant", session_id: "k-1", content: [{ type: "text", text: "PONG" }] }),
+    ].join("\n");
+    expect(parseKimiJsonl(raw)).toEqual({ text: "PONG", sessionId: "k-1" });
+    expect(parseKimiStreamJson(raw)).toEqual({ text: "PONG", sessionId: "k-1" });
+    expect(parseOutput("kimi", raw)).toEqual({ text: "PONG", sessionId: "k-1" });
+  });
+
+  it("ignora linha malformada no meio sem lançar", () => {
+    const raw = [
+      JSON.stringify({ type: "text", sessionId: "k-2", text: "OK" }),
+      "{not-json",
+      JSON.stringify({ type: "text", sessionId: "k-2", text: "!" }),
+    ].join("\n");
+    expect(() => parseKimiJsonl(raw)).not.toThrow();
+    expect(parseKimiJsonl(raw)).toEqual({ text: "OK!", sessionId: "k-2" });
+  });
+
+  it("usa o resultado final quando o stream também contém deltas", () => {
+    const raw = [
+      JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "partial" } }),
+      JSON.stringify({ type: "result", sessionID: "k-3", result: "final" }),
+    ].join("\n");
+    expect(parseKimiJsonl(raw)).toEqual({ text: "final", sessionId: "k-3" });
+  });
+
+  it("degrada para stdout cru quando não há evento de texto", () => {
+    const raw = "{not-json\nnoise";
+    expect(parseKimiJsonl(raw)).toEqual({ text: raw, sessionId: undefined });
+  });
+});
+
+describe("parseMuseJsonl", () => {
+  const session = { kind: "session", id: "muse-ses-1" };
+
+  it("concatena múltiplos run.output.delta e extrai session id de stream.id", () => {
+    const raw = [
+      JSON.stringify({ payload_type: "runtime.command.accepted", stream: session, payload: {} }),
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "PO" } }),
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "NG" } }),
+      JSON.stringify({ payload_type: "run.terminal.completed", stream: session, payload: {} }),
+    ].join("\n");
+    expect(parseMuseJsonl(raw)).toEqual({ text: "PONG", sessionId: "muse-ses-1" });
+    expect(parseOutput("muse", raw)).toEqual({ text: "PONG", sessionId: "muse-ses-1" });
+  });
+
+  it("ignora turn.input.user e não inclui o prompt na resposta", () => {
+    const raw = [
+      // payload.text (não só prompt): se o guard dedicado sumir, este texto vaza para a resposta
+      JSON.stringify({
+        payload_type: "turn.input.user",
+        stream: session,
+        payload: { prompt: "Reply with PONG", text: "Reply with PONG" },
+      }),
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "PONG" } }),
+    ].join("\n");
+    expect(parseMuseJsonl(raw)).toEqual({ text: "PONG", sessionId: "muse-ses-1" });
+  });
+
+  it("só lê sessionId de stream.kind === session, ignora outro stream com id", () => {
+    const raw = [
+      // kind "run" vem primeiro: sem o guard, sessionId ??= pegaria este id e o teste vermelharia
+      JSON.stringify({ payload_type: "runtime.command.accepted", stream: { kind: "run", id: "muse-run-9" }, payload: {} }),
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "PONG" } }),
+    ].join("\n");
+    expect(parseMuseJsonl(raw)).toEqual({ text: "PONG", sessionId: "muse-ses-1" });
+  });
+
+  it("ignora linha malformada no meio sem lançar e mantém o texto extraído", () => {
+    const raw = [
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "OK" } }),
+      "{not-json",
+      JSON.stringify({ payload_type: "run.output.delta", stream: session, payload: { text: "!" } }),
+    ].join("\n");
+    expect(() => parseMuseJsonl(raw)).not.toThrow();
+    expect(parseMuseJsonl(raw)).toEqual({ text: "OK!", sessionId: "muse-ses-1" });
+  });
+
+  it("degrada para stdout cru quando não há delta de resposta", () => {
+    const raw = "{not-json\nnoise";
+    expect(parseMuseJsonl(raw)).toEqual({ text: raw, sessionId: undefined });
+  });
+});
+
+describe("resolveDelegate com engine explícito", () => {
+  const all: (e: Engine) => boolean = () => true;
+
+  it("recusa cursor explícito sem opt-in mesmo instalado", () => {
+    expect(() => resolveDelegate(1, { engine: "cursor" }, all, false))
+      .toThrow("delegate level 1 needs the 'cursor' CLI, which is disabled. Set POLYAGENT_ENABLE_CURSOR=1");
+    expect(resolveDelegate(1, { engine: "cursor" }, all, true).engine).toBe("cursor");
+  });
+
+  it("recusa engine explícita ausente com erro acionável", () => {
+    for (const engine of ["opencode", "codex", "cursor"] as Engine[]) {
+      expect(() => resolveDelegate(1, { engine }, (candidate) => candidate !== engine, true))
+        .toThrow(`delegate level 1 needs the '${engine}' CLI, which is not installed. Install it or pick another engine.`);
+    }
+  });
+
+  it("não herda model/effort do tier quando a engine difere", () => {
+    expect(resolveDelegate(1, { engine: "opencode" }, all)).toEqual({
+      engine: "opencode", model: undefined, effort: undefined,
+    });
+    expect(resolveDelegate(1, { engine: "opencode", model: "google/gemini-3.8-flash", effort: "high" }, all))
+      .toEqual({ engine: "opencode", model: "google/gemini-3.8-flash", effort: "high" });
+  });
+
+  it("herda model/effort quando a engine explícita é a primária do nível", () => {
+    expect(resolveDelegate(1, { engine: "codex" }, all)).toEqual({
+      engine: "codex", model: "gpt-5.6-luna", effort: "max",
+    });
   });
 });

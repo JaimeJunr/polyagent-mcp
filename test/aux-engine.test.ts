@@ -11,18 +11,22 @@ const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const indexSrc = readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
 
 const AUX = ["explore", "read_slice", "run_filtered", "web_lookup"] as const;
+const NON_CODEX_ENGINES = (Object.keys(ENGINE_CAPABILITIES) as Engine[])
+  .filter((engine) => engine !== "codex");
 
 describe("matriz de capacidade por engine (US-004)", () => {
   it("declara web search só no codex", () => {
     expect(ENGINE_CAPABILITIES.codex.webSearch).toBe(true);
-    for (const engine of ["grok", "claude", "cursor"] as Engine[]) {
+    for (const engine of NON_CODEX_ENGINES) {
       expect(ENGINE_CAPABILITIES[engine].webSearch).toBe(false);
     }
   });
 
   it("declara read-only de engine só no codex, e read-only de sandbox em todos", () => {
     expect(ENGINE_CAPABILITIES.codex.engineReadOnly).toBe(true);
-    for (const engine of ["grok", "claude", "cursor"] as Engine[]) {
+    expect(NON_CODEX_ENGINES).toContain("muse");
+    expect(ENGINE_CAPABILITIES.muse.engineReadOnly).toBe(false);
+    for (const engine of NON_CODEX_ENGINES) {
       expect(ENGINE_CAPABILITIES[engine].engineReadOnly).toBe(false);
     }
     for (const engine of Object.keys(ENGINE_CAPABILITIES) as Engine[]) {
@@ -118,7 +122,7 @@ describe("resolveAuxTool — recusas (US-004)", () => {
   });
 
   it("run_filtered aceita qualquer engine, inclusive com sandbox desligado", () => {
-    for (const engine of ["grok", "claude", "cursor", "codex"] as Engine[]) {
+    for (const engine of Object.keys(ENGINE_CAPABILITIES) as Engine[]) {
       expect(resolveAuxTool("run_filtered", { engine }, {}, false).engine).toBe(engine);
     }
   });

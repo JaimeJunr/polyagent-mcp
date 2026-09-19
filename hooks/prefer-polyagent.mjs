@@ -67,7 +67,7 @@ const EDIT_DELEGATE_TEXT =
   "polyagent available: if this edit is part of a self-contained task (a feature, a bugfix, a " +
   "mechanical change across files, or running/fixing a build), hand the WHOLE task to " +
   "delegate(prompt, level) — the Cursor worker has full read/edit/shell access in cwd and runs cheap " +
-  "(level 1 = GPT-5.6 Luna max on codex; levels 2-5 escalate across grok/codex/claude) — instead of implementing " +
+  "(level 1 = GPT-5.6 Luna max on codex; levels 2-5 escalate across codex/grok/claude) — instead of implementing " +
   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
   "Keep editing inline only for a quick one-off you're already positioned for.";
 
@@ -90,12 +90,12 @@ export function sessionStartContext() {
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
     "execution AND judgment. Level 1 (GPT-5.6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
-    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 3 and 5 (GPT-5.6 Sol xhigh, " +
-    "Claude Opus max) for real " +
+    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (GPT-6 Astra max, " +
+    "Claude Fable 5.1 max) are EXPENSIVE — 5 by far the most — and are a last resort for real " +
     "reasoning — code review with a verdict, cross-file impact analysis, hard debugging. The Cursor worker " +
     "runs with full read/edit/shell access in cwd. The win of delegating execution AND judgment is context " +
     "economy: the worker's file reading and raw output never enter your context, whatever the tier. Hand " +
-    "execution (level 1, Luna max) and judgment (levels 3 and 5, Sol xhigh/Opus max) to delegate, then review the result; edit " +
+    "execution (level 1, Luna max) and judgment (levels 4 and 5, Astra max/Fable 5.1 max) to delegate, then review the result; edit " +
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +
