@@ -37,9 +37,10 @@ the **pure logic is testable without spawning a worker process**:
   (read/locate/web/grunt-work → bridge tools; native Read only when about to edit). These load at
   **startup** and are visible to the host even while tool schemas are deferred — that is why they
   matter for adoption. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
-  `web_lookup`) register with `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121)
-  eagerly loads their schemas; secondary tools (`fast_delegate`, `fan_out`, `generate_image`,
-  `follow_up`, `bridge_stats`) stay deferred. `format()` appends the `session_id`
+  `web_lookup`) plus `fast_delegate` register with `_meta: { "anthropic/alwaysLoad": true }` so
+  Claude Code (≥2.1.121) eagerly loads their schemas; secondary tools (`fan_out`, `generate_image`,
+  `follow_up`, `bridge_stats`) stay deferred. `fast_delegate` was deferred and never got called —
+  the same adoption bug that motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
   `follow_up` feeds that id back as `RunOpts.resume` so a prior worker session continues without
   resending its context — the footer and `follow_up` are two ends of the same loop.
@@ -87,9 +88,11 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 - **opencode** (`opencode run`) — prompt positional, `--format json` emits JSONL events, `-m` requires
   `provider/model`, effort maps to `--variant`, resume uses `-s`; the CLI also offers last-session
   continuation via `-c`, but the bridge does not use `-c`. Autonomy uses `--auto`, persona uses a
-  prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it is
-  excluded from `TIERS` and `FAST_CANDIDATES`; choose it explicitly via `delegate.engine` or an
-  auxiliary tool's engine override. It has no engine-level read-only mode; bwrap supplies that guard.
+  prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it
+  stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
+  It is the first `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — a conscious owner
+  trade of subscription-free latency for real OpenRouter spend on every `fast_delegate` call. It has
+  no engine-level read-only mode; bwrap supplies that guard.
 - **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
   resume via `-S`. `-p` already is non-interactive and **rejects** `--auto`/`-y`/`--yolo`; persona
   is a prompt prefix. No engine-level read-only; bwrap supplies that guard. Subscription OAuth, so
@@ -124,9 +127,16 @@ is missing, it falls back to the equivalent Cursor model only when `cursorEnable
 otherwise it throws a clear error naming the missing CLI.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
-healthy candidate in the measured speed order Codex Luna low → Claude Haiku → Grok 4.5 low, then the
-opt-in Cursor `DEFAULT_MODEL` as the final fallback. It keeps the same full read/edit/shell access,
-persona resolution, timeout budget note, and explicit `model`/`effort` overrides as `delegate`.
+healthy candidate in `FAST_CANDIDATES` (OpenCode mercury-2 → Codex Luna low → Claude Haiku →
+Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first candidate is
+**pay-per-token** (OpenRouter API key); the other three are subscription. Conscious owner decision:
+every `fast_delegate` call spends real money by default in exchange for latency. Measured wall-clock
+(host, `runCursor`, sandbox on, same long-output prompt, 2 runs): mercury-2 7006ms (7885, 6126);
+haiku 10736ms (11330, 10141); grok-4.5 low 16301ms. Luna low was **not measured** (codex quota
+exhausted) — its 2nd place is owner choice, not measurement, and is still pending. Discarded: gemini-flash-lite-latest
+(unstable, 18519ms with a 30s outlier), gpt-oss-120b OpenRouter (19251ms), groq gpt-oss-120b
+(120s timeout + wrong answer). It keeps the same full read/edit/shell access, persona resolution,
+timeout budget note, and explicit `model`/`effort` overrides as `delegate`.
 - `prompts.ts` — pure prompt builders (`readSlicePrompt`, `runFilteredPrompt`, `explorePrompt`,
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
@@ -248,10 +258,14 @@ points, all in `cli.ts`:
   but `currentEngineHealth()` passes `DEFAULT_TIMEOUT_MS` (30min by default). The old fixed 5min
   ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
   timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
-- **`fast_delegate` is speed-first and deferred.** `FAST_CANDIDATES` is ordered Codex Luna low,
-  Claude Haiku, Grok 4.5 low; `resolveFastTier` skips missing or unhealthy native engines before the
-  opt-in Cursor fallback. Keep it level-free, with the neutral usage receipt
-  `{ requestedLevel: 0, matchedRequest: true }`, and do not mark it `alwaysLoad`.
+- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered OpenCode
+  `openrouter/inception/mercury-2` (pay-per-token, measured fastest at ~7s) → Codex Luna low
+  (2nd by owner choice, not measurement — quota blocked the run; still pending) → Claude
+  Haiku (~11s) → Grok 4.5 low (~16s). `resolveFastTier` skips missing or unhealthy native
+  engines before the opt-in Cursor fallback. Keep it level-free, with the neutral usage receipt
+  `{ requestedLevel: 0, matchedRequest: true }`. It IS marked `alwaysLoad`: while deferred it
+  was never called, the same adoption bug that motivated alwaysLoad on the five core tools
+  (deferred schemas lose to always-loaded native Read/Grep).
 - **`explore`/`read_slice`/`run_filtered`/`web_lookup` resolvem engine e modelo por tool, com
   default codex + `EXPLORE_MODEL=gpt-5.6-luna`.** Não há mais `engine: "codex"` hardcoded no
   handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita um parâmetro `engine` opcional no
@@ -281,7 +295,9 @@ points, all in `cli.ts`:
 - **`delegate.engine` is an explicit override, not a tier input.** `level` remains required for difficulty;
   without `engine`, `resolveDelegate` uses `resolveTier`. When the explicit engine differs from the level's
   primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
-  caller values). `opencode` and `muse` (pay-per-token) therefore stay outside `TIERS` and `FAST_CANDIDATES`.
+  caller values). `opencode` and `muse` (pay-per-token) stay outside `TIERS`. `muse` also stays
+  outside `FAST_CANDIDATES`; `opencode` is the first `FAST_CANDIDATES` entry by owner decision
+  (latency over subscription-only spend — see the `fast_delegate` invariant).
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in
@@ -307,12 +323,13 @@ points, all in `cli.ts`:
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
-  `run_filtered`, `web_lookup`) register with `_meta: { "anthropic/alwaysLoad": true }` so Claude
-  Code (≥2.1.121) eagerly loads their schemas instead of deferring them. Deferred tools lose to
-  always-loaded native Read/Grep — that was the root adoption bug. Secondary tools
-  (`fast_delegate`, `generate_image`, `fan_out`, `follow_up`, `bridge_stats`) stay deferred. Do not
-  strip
-  `alwaysLoad` from the core five or add it to the secondary set without intent.
+  `run_filtered`, `web_lookup`) plus `fast_delegate` register with
+  `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas
+  instead of deferring them. Deferred tools lose to always-loaded native Read/Grep — that was the
+  root adoption bug, and `fast_delegate` hit it while deferred (the agent never called it).
+  Secondary tools (`generate_image`, `fan_out`, `follow_up`, `bridge_stats`) stay deferred. Do not
+  strip `alwaysLoad` from the core five or `fast_delegate`, or add it to the remaining secondary
+  set, without intent.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
   overridable via `POLYAGENT_TIMEOUT_MS`. Pure helper `budgetNote(timeoutMs)` appends a
   `[Time budget: ~N min ... return partial results ...]` note to the prompt of the two
@@ -353,6 +370,8 @@ trims it). Design constraints, all tested in `test/hook.test.ts`:
   tool, but agents often use `Bash grep` (matches no matcher), so the preload never arrived.
   `sessionStartContext()` injects it as `additionalContext` before the first tool decision and
   pre-marks `preload` in the dedup file so the PreToolUse piggyback never repeats it.
+  `sessionStartContext()` and `AGENT_PREF_BODY` also name `fast_delegate`: prefer it over
+  `delegate` for simple/urgent work where speed matters more than picking a level.
 - Fail-open on errors: any error → print nothing, exit 0. SubagentStart and SessionStart paths are
   unchanged by redirect mode.
 - Threshold for the large-Read redirect/nudge is `POLYAGENT_HOOK_MIN_LINES` (default 300).

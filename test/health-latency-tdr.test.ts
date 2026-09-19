@@ -55,7 +55,7 @@ describe("teto de latência degenerado cai pro default em vez de envenenar o sco
 
 describe("receipt de fast_delegate distingue fallback pro cursor de roteamento nativo", () => {
   it("resolveFastTier cai no cursor quando todas as nativas estão unhealthy", () => {
-    const health = { codex: 0.0, claude: 0.0, grok: 0.0 };
+    const health = { opencode: 0.0, codex: 0.0, claude: 0.0, grok: 0.0 };
     expect(resolveFastTier(all, true, health).engine).toBe("cursor");
     // src/index.ts computa matchedRequest via FAST_CANDIDATES.some(...) sobre esse resultado — o
     // fallback pro cursor (engine "cursor" não está em FAST_CANDIDATES) fica marcado como
@@ -63,7 +63,7 @@ describe("receipt de fast_delegate distingue fallback pro cursor de roteamento n
   });
 
   it("lança erro distinguindo instalado-mas-unhealthy de não instalado", () => {
-    const unhealthy = { codex: 0, claude: 0, grok: 0 };
+    const unhealthy = { opencode: 0, codex: 0, claude: 0, grok: 0 };
     expect(() => resolveFastTier(all, false, unhealthy)).toThrow(/installed but unhealthy/);
     const notInstalled: (e: Engine) => boolean = () => false;
     expect(() => resolveFastTier(notInstalled, false, undefined)).toThrow(/none of them is installed/);

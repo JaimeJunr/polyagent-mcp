@@ -89,7 +89,7 @@ export function sessionStartContext() {
     "default and you burn expensive tokens on cheap work. For PURE reading/locating/web with no edit ahead, " +
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
-    "execution AND judgment. Level 1 (GPT-5.6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
+    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-5.6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
     "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (GPT-6 Astra max, " +
     "Claude Fable 5.1 max) are EXPENSIVE — 5 by far the most — and are a last resort for real " +
     "reasoning — code review with a verdict, cross-file impact analysis, hard debugging. The Cursor worker " +
@@ -118,7 +118,8 @@ const AGENT_PREF_BODY =
   'ToolSearch("select:mcp__polyagent__read_slice,mcp__polyagent__explore,' +
   'mcp__polyagent__run_filtered,mcp__polyagent__web_lookup") ONCE before exploring so their ' +
   "schemas load. If you WILL edit a file, native Read is correct. This complements the context-mode " +
-  "routing above — both keep raw output out of your context; when both fit, either is fine.";
+  "routing above — both keep raw output out of your context; when both fit, either is fine. " +
+  "Prefer fast_delegate to delegate for simple/urgent work where speed matters more than picking a level.";
 
 // Reforço só para o subagente Explore: ele foi spawnado no modelo caro do orquestrador
 // (o Explore herda o modelo da sessão, capado em Opus), então empurra TODO o trabalho de

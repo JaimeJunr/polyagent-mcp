@@ -15,7 +15,7 @@ The server exposes ten tools:
 | Tool | Purpose |
 |------|---------|
 | `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-5.6 Luna max (codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex), 5=Claude Fable 5.1 max (claude). **Levels 4 and 5 are expensive — 5 by far the most; last resort only.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
-| `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Optionally accepts an `agent` persona. |
+| `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. ⚠️ Its first candidate is pay-per-token (OpenRouter), traded for latency. Optionally accepts an `agent` persona. |
 | `explore` | Read-only exploration on Codex with `gpt-5.6-luna`. `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Use instead of reading large files whole. |
 | `run_filtered` | Run a shell `command` through Codex/Luna with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. |
@@ -157,7 +157,8 @@ tools used to be **deferred** — the agent had to run a tool-search to load the
 so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
 **startup `instructions`** (routing boundary) and marks the five core tools with
 `_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
-eagerly; secondary tools stay deferred. Four fixes, strongest first:
+eagerly. `fast_delegate` joined them for the same reason: deferred, it was never picked.
+The remaining secondary tools stay deferred. Four fixes, strongest first:
 
 **1. Call-time hook (recommended).** A `PreToolUse` hook that steers the agent toward
 the bridge at the moment it reaches for a native tool — text in a config file loses under
@@ -270,7 +271,7 @@ keep the expensive shell to orchestration only.
 > so they coexist cleanly — no `updatedInput` race, no delay, no import of
 > context-mode's routing.
 
-**2. Preload any still-deferred tools.** The five core tools are already `alwaysLoad` on
+**2. Preload any still-deferred tools.** The five core tools and `fast_delegate` are already `alwaysLoad` on
 Claude Code ≥2.1.121. For secondary tools (or older hosts), tell the agent to load schemas
 once per session. Add to your `CLAUDE.md`/`AGENTS.md`:
 
