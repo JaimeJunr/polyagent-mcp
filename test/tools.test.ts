@@ -35,6 +35,28 @@ describe("tool surface (US-003)", () => {
     expect(promptsSrc).toMatch(/export type ExploreMode = "plan" \| "ask";/);
   });
 
+  function registeredToolBlock(name: string): string {
+    const needle = `registerTool(\n  "${name}"`;
+    const start = indexSrc.indexOf(needle);
+    expect(start, name).toBeGreaterThan(-1);
+    const from = start + "registerTool(".length;
+    const next = indexSrc.indexOf("registerTool(", from);
+    return next === -1 ? indexSrc.slice(start) : indexSrc.slice(start, next);
+  }
+
+  it("alwaysLoad inclui as cinco core E o fast_delegate (não é mais deferred)", () => {
+    // A lista EXIGE fast_delegate — se alguém o tirar daqui o teste falha, não apenas "tolera".
+    const alwaysLoad = [
+      "delegate", "fast_delegate", "explore", "read_slice", "run_filtered", "web_lookup",
+    ];
+    for (const tool of alwaysLoad) {
+      expect(registeredToolBlock(tool)).toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
+    }
+    for (const tool of ["fan_out", "generate_image", "follow_up", "bridge_stats"]) {
+      expect(registeredToolBlock(tool)).not.toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
+    }
+  });
+
   it("README lista as dez tools reais, sem linhas de plan/build", () => {
     for (const tool of [
       "delegate", "fast_delegate", "explore", "read_slice", "run_filtered",

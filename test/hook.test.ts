@@ -103,6 +103,10 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/mcp__polyagent__explore/);
   });
 
+  it("menciona fast_delegate (não regressar a adoção silenciosa)", () => {
+    expect(sessionStartContext()).toMatch(/fast_delegate/);
+  });
+
   it("cobre o buraco do Bash grep: menciona preferir explore/read_slice sobre Read/Grep", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/read_slice|explore/);
@@ -192,6 +196,10 @@ describe("subagentStartContext — contexto injetado no subagente", () => {
     const text = subagentStartContext("general-purpose");
     expect(text).toMatch(/read_slice|explore|web_lookup/);
     expect(text).toMatch(/ToolSearch/);
+  });
+
+  it("menciona fast_delegate para não regredir a adoção", () => {
+    expect(subagentStartContext("general-purpose")).toMatch(/fast_delegate/);
   });
 
   it("agent_type Explore inclui o reforço específico", () => {

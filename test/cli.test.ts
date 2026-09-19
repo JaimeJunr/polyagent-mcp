@@ -6,7 +6,7 @@ import {
   buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildOpencodeArgs, buildKimiArgs, buildMuseArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
   budgetNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
-  isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
+  FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
   fallbackOpts, DEFAULT_MODEL,
   type SandboxSpec, type Engine,
 } from "../src/cli.js";
@@ -721,19 +721,34 @@ describe("resolveTier", () => {
 });
 
 describe("resolveFastTier", () => {
-  it("escolhe a engine saudável mais rápida na ordem codex, claude, grok", () => {
-    const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
+  it("FAST_CANDIDATES está na ordem mercury-2 → luna low → haiku → grok-4.5 low", () => {
+    expect(FAST_CANDIDATES).toEqual([
+      { engine: "opencode", model: "openrouter/inception/mercury-2" },
+      { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
+      { engine: "claude", model: "haiku" },
+      { engine: "grok", model: "grok-4.5", effort: "low" },
+    ]);
   });
 
-  it("cai para claude e depois grok conforme as engines mais rápidas faltam", () => {
-    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "claude", model: "haiku" });
+  it("escolhe a engine saudável mais rápida na ordem opencode, codex, claude, grok", () => {
+    const all: (e: Engine) => boolean = () => true;
+    expect(resolveFastTier(all)).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
+  });
+
+  it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
+    expect(resolveFastTier((e) => e !== "opencode")).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
+    expect(resolveFastTier((e) => e !== "opencode" && e !== "codex")).toEqual({ engine: "claude", model: "haiku" });
     expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
 
   it("pula engine instalada mas unhealthy", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.8 })).toEqual({
+    expect(resolveFastTier(all, false, { opencode: 0.29, codex: 0.8 })).toEqual({
+      engine: "codex",
+      model: "gpt-5.6-luna",
+      effort: "low",
+    });
+    expect(resolveFastTier(all, false, { opencode: 0.29, codex: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
       model: "haiku",
     });
@@ -741,13 +756,14 @@ describe("resolveFastTier", () => {
 
   it("lança erro quando nenhuma engine nativa está disponível ou saudável e cursor está desabilitado", () => {
     expect(() => resolveFastTier(() => false, false)).toThrow(/needs at least one healthy CLI/);
-    expect(() => resolveFastTier(() => true, false, { codex: 0.1, claude: 0.1, grok: 0.1 }))
+    expect(() => resolveFastTier(() => true, false, { opencode: 0.1, codex: 0.1, claude: 0.1, grok: 0.1 }))
       .toThrow(/needs at least one healthy CLI/);
   });
 
   it("cai para cursor com DEFAULT_MODEL quando nenhuma engine nativa está disponível ou saudável", () => {
     expect(resolveFastTier(() => false, true)).toEqual({ engine: "cursor", model: DEFAULT_MODEL });
     expect(resolveFastTier(() => true, true, {
+      opencode: 0.1,
       codex: 0.1,
       claude: 0.1,
       grok: 0.1,

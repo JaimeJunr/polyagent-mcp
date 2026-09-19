@@ -184,6 +184,7 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
   it("inclui muse em quotaCandidates (pay-per-token, só por engine explícito) e não no fallback de ambiente do codex", () => {
     expect(quotaCandidates("delegate", "codex", all, false, true)).toContain("muse");
     expect(quotaCandidates("fast_delegate", "codex", all, false, true)).not.toContain("muse");
+    expect(quotaCandidates("fast_delegate", "codex", all, false, true)).toContain("opencode");
   });
 
   it("generate_image só considera as engines com tool de imagem própria (codex/grok)", () => {

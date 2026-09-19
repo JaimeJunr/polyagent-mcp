@@ -174,8 +174,9 @@ server.registerTool(
 server.registerTool(
   "fast_delegate",
   {
+    _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. Same full read/edit/shell access as delegate, same worker (does not see your context). Use for quick, self-contained work where you don't want to think about tiers; use delegate with an explicit level when you need a specific difficulty/quality tier instead.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
