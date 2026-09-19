@@ -44,6 +44,18 @@ describe("tool surface (US-003)", () => {
     return next === -1 ? indexSrc.slice(start) : indexSrc.slice(start, next);
   }
 
+  it("execution tools append evidenceNote; read tools do not", () => {
+    for (const tool of ["delegate", "fast_delegate"]) {
+      const block = registeredToolBlock(tool);
+      expect(block).toMatch(/budgetNote\(/);
+      expect(block).toMatch(/evidenceNote\(\)/);
+    }
+    for (const tool of ["explore", "read_slice", "run_filtered", "web_lookup"]) {
+      expect(registeredToolBlock(tool)).not.toMatch(/evidenceNote\(\)/);
+      expect(registeredToolBlock(tool)).not.toMatch(/budgetNote\(/);
+    }
+  });
+
   it("alwaysLoad inclui as cinco core E o fast_delegate (não é mais deferred)", () => {
     // A lista EXIGE fast_delegate — se alguém o tirar daqui o teste falha, não apenas "tolera".
     const alwaysLoad = [

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildOpencodeArgs, buildKimiArgs, buildMuseArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
-  budgetNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
+  budgetNote, evidenceNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
   FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
   fallbackOpts, DEFAULT_MODEL,
@@ -142,6 +142,31 @@ describe("budgetNote", () => {
   it("reports the effective timeout in rounded minutes", () => {
     expect(budgetNote(600_000)).toContain("~10 min");
     expect(budgetNote(1_800_000)).toContain("~30 min");
+  });
+});
+
+describe("evidenceNote", () => {
+  it("is pure and deterministic", () => {
+    expect(evidenceNote()).toBe(evidenceNote());
+  });
+
+  // O denominador é o ponto: no caso real que motivou a nota, o worker escaneou zero
+  // invocações e reportou "check passed". Pedir só a contagem de violações não expõe isso —
+  // zero violações sobre zero itens lidos é indistinguível de sucesso.
+  it("exige o denominador (quantos itens escaneados), não só o resultado", () => {
+    const note = evidenceNote();
+    expect(note).toMatch(/DENOMINATOR/i);
+    expect(note).toMatch(/HOW MANY candidates it actually scanned/i);
+    expect(note).toMatch(/if the count is 0, say so/i);
+    expect(note).toMatch(/WHAT was verified and HOW/i);
+  });
+
+  it("stays one short bracketed line (weak models ignore a paragraph)", () => {
+    const note = evidenceNote();
+    expect(note.startsWith("\n\n[")).toBe(true);
+    expect(note.endsWith("]")).toBe(true);
+    expect(note.includes("\n", 2)).toBe(false);
+    expect(note.length).toBeLessThan(400);
   });
 });
 

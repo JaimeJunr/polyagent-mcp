@@ -126,6 +126,12 @@ export function budgetNote(timeoutMs: number): string {
   return `\n\n[Time budget: ~${min} min. If you are running low on time, stop and return partial results with a clear note on what remains — do not risk being cut off mid-work.]`;
 }
 
+/** Nota de evidência anexada ao prompt das tools de execução: o worker relata quantos itens a
+ *  asserção encontrou. Passar sobre conjunto vazio não prova nada. */
+export function evidenceNote(): string {
+  return `\n\n[Evidence: report the DENOMINATOR, not just the result. If you wrote or ran a check, say HOW MANY candidates it actually scanned (e.g. "scanned 14 invocations across 6 files, 0 violations"). Scanning zero and finding zero problems looks identical to passing — if the count is 0, say so plainly. When declaring done, say WHAT was verified and HOW, never just "the tests pass".]`;
+}
+
 /** Se truthy, loga o comando spawnado e espelha o stderr do child em tempo real. Debug. */
 export const DEBUG = ["1", "true", "yes"].includes((process.env.POLYAGENT_DEBUG ?? "").toLowerCase());
 

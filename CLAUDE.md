@@ -50,7 +50,7 @@ the **pure logic is testable without spawning a worker process**:
 - `cli.ts` — the only module that touches the child process. `runCursor()` spawns the engine's CLI;
   `buildCursorArgs()`/`buildGrokArgs()`/`buildCodexArgs()`/`buildClaudeArgs()`/`buildOpencodeArgs()`/`buildKimiArgs()`/`buildMuseArgs()` (+ `buildArgs`
   dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()`/`parseOpencodeJsonl()`/`parseKimiJsonl()`/`parseMuseJsonl()` (+ `parseOutput` dispatcher),
-  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `hasEngine()`, `binExists()`, `budgetNote()`
+  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
@@ -331,11 +331,27 @@ points, all in `cli.ts`:
   strip `alwaysLoad` from the core five or `fast_delegate`, or add it to the remaining secondary
   set, without intent.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
-  overridable via `POLYAGENT_TIMEOUT_MS`. Pure helper `budgetNote(timeoutMs)` appends a
-  `[Time budget: ~N min ... return partial results ...]` note to the prompt of the two
-  **execution** tools (`delegate`, `fast_delegate`) so the worker self-manages instead of being
-  killed blind. Read tools (`explore`, `read_slice`, `run_filtered`, `web_lookup`) do not get it.
-  Keep that split.
+  overridable via `POLYAGENT_TIMEOUT_MS`. Two pure helpers append notes to the prompt of the two
+  **execution** tools (`delegate`, `fast_delegate`): `budgetNote(timeoutMs)` appends a
+  `[Time budget: ~N min ... return partial results ...]` note so the worker self-manages instead of
+  being killed blind; `evidenceNote()` appends an `[Evidence: ...]` note demanding
+  the **denominator** — how many candidates the check actually scanned — not just the result. A real
+  `fast_delegate` case returned "37 tests passing" on a "renamed with no orphan" check whose
+  assertion matched nothing — an empty-set pass is vacuously green. The caller only discovered it by
+  injecting a fake `codex-inexistente:fantasma` into a SKILL.md and watching the test still pass.
+
+  The denominator is the whole point, and an earlier draft of this note got it wrong: asking only
+  "how many items did the assertion find" made the model report *violations* (the numerator), which
+  reads identical whether it scanned 14 items or zero. Measured on the reproduced case, same model
+  (mercury-2), invocations hidden behind a pattern the naive check misses:
+
+  - without the note: `"Check passed: all invoked agents are defined"` — false, the orphan was there
+  - with the note: `"scanned 0 Skill invocations across 2 SKILL.md files, 0 violations"`
+
+  The model still reached the wrong conclusion in both runs. The note does not fix a fast/weak model
+  that optimizes "green" over "proves" — it makes the emptiness visible in one glance. Do not drop
+  `evidenceNote` as prompt noise, and do not reword it away from the denominator. Read tools (`explore`,
+  `read_slice`, `run_filtered`, `web_lookup`) get neither note. Keep that split.
 
 ## The hook (`hooks/prefer-polyagent.mjs`)
 
