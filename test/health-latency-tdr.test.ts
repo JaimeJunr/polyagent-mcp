@@ -16,7 +16,7 @@ describe("regressão: latência sozinha nunca derruba uma engine abaixo do thres
     const health = computeEngineHealth(rec(22 * 60_000), NOW, WINDOW, TIMEOUT);
     expect(health.grok).toBeGreaterThanOrEqual(0.3);
     // consequência de roteamento: grok segue disponível — zero falhas, só foi lento.
-    expect(resolveTier(2, (e) => e === "grok", false, health)).toEqual({ engine: "grok", model: "grok-4.5", effort: "high" });
+    expect(resolveTier(3, (e) => e === "grok", false, health)).toEqual({ engine: "grok", model: "grok-4.6", effort: "high" });
   });
 
   it("mesmo um sucesso arbitrariamente lento (10x o teto) não cruza o threshold — só failure/timeout derruba", () => {

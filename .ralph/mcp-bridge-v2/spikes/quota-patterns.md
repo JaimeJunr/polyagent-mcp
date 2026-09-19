@@ -599,3 +599,41 @@ porque o documento já está selado.
 | codex | `You've hit your usage limit` — **confirmado** | não observado |
 | claude | não observado | `OAuth session expired` — **confirmado** |
 | cursor-agent | não observado | `Authentication required` — **confirmado** |
+
+---
+
+## ADENDO 4 — captura real de cota da kimi (2026-09-14)
+
+### O que foi observado
+
+Origem: execução real no host pelo orquestrador, após login da CLI. Confiança **ALTA**,
+observado em runtime em **2026-09-14**. Mensagem literal de stderr:
+
+```text
+error: failed to run prompt: provider.auth_error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota
+```
+
+### Padrões observados
+
+```text
+/\bmonthly usage limit\b/i                    -> quota_exhausted (kimi, ALTA, observado)
+/\busage limit for this billing cycle\b/i     -> quota_exhausted (kimi, ALTA, observado)
+```
+
+A mensagem contém ambas as expressões. São alternativas conservadoras em `QUOTA_PATTERNS`,
+aplicadas após normalização para minúsculas. `provider.auth_error` e `403` isolados NÃO bastam:
+auth genérico/sessão expirada não é cota. Trata-se de cota mensal, não throttle transitório.
+O aviso `Warning: [loop_control] 'max_retries_per_step' is deprecated ...` é ruído, não erro.
+
+### Estado de confiança, atualizado
+
+| engine | cota | auth |
+|---|---|---|
+| kimi | `monthly usage limit` / `usage limit for this billing cycle` — **ALTA, confirmado em runtime (2026-09-14)** | erro genérico não observado; `provider.auth_error` nesta captura acompanha cota, não comprova auth expirado |
+
+### Lacunas restantes
+
+Login concluído. A cota mensal esgotada impede capturar texto/session id no stream-json e
+validar retomada real dentro do bwrap. Só o evento meta `system.version` foi observado;
+não há captura de rate limit da kimi. Detalhes no
+[spike da engine](../../polyagent/model-refresh-2026/spikes/kimi-engine.md).

@@ -1,12 +1,12 @@
 # polyagent-mcp
 
-MCP server that lets **any** agent or MCP host delegate to headless **Codex, Grok, and Claude Code
-CLIs**, with Cursor available as an opt-in fallback. Use the fleet for implementation, planning,
+MCP server that lets **any** agent or MCP host delegate to headless **Codex, Grok, Claude Code, and
+OpenCode CLIs**, with Cursor available as an opt-in fallback. Use the fleet for implementation, planning,
 and project exploration without burning the caller's context on raw worker output.
 
 Worker tools take optional **model** and **effort** overrides, return a `session_id`, and support
 `follow_up`. Difficulty levels select a distinct default model across the three active
-subscriptions.
+subscriptions; `delegate` also accepts an explicit engine, including pay-per-token OpenCode.
 
 ## Tools
 
@@ -14,7 +14,7 @@ The server exposes ten tools:
 
 | Tool | Purpose |
 |------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-5.6 Luna max (codex), 2=Grok 4.5 high (grok), 3=GPT-5.6 Sol xhigh (codex), 4=Grok 4.6 high (grok), 5=Opus max (claude). Optionally accepts an `agent` persona by name or inline `{prompt}`. |
+| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-5.6 Luna max (codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex), 5=Claude Fable 5.1 max (claude). **Levels 4 and 5 are expensive — 5 by far the most; last resort only.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
 | `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Optionally accepts an `agent` persona. |
 | `explore` | Read-only exploration on Codex with `gpt-5.6-luna`. `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Use instead of reading large files whole. |
@@ -34,8 +34,8 @@ values override the selected tier.
 A call that fails because the engine's plan quota is exhausted does **not** silently retry on
 another engine — spending the next subscription is your decision. The call fails with an actionable
 error naming the engines still available (installed, enabled, and capable of what that tool needs)
-and how to switch: `engine:"<x>"` on the four auxiliary tools, the lowest still-usable `level:<n>`
-on `delegate`. Tools that pick the engine themselves (`fast_delegate`, `fan_out`) and `follow_up`
+and how to switch: `engine:"<x>"` on the four auxiliary tools and `delegate`, or the lowest
+still-usable `level:<n>` when a tier engine remains. Tools that pick the engine themselves (`fast_delegate`, `fan_out`) and `follow_up`
 (pinned to the resumed session's engine) report the quota without suggesting a parameter, and
 `generate_image` reports it against the two engines that have an image tool at all (codex, grok). A transient rate limit is reported separately and asks you to wait, since switching
 engines would not help. Anything the classifier does not recognize — an expired login, for one —
@@ -100,6 +100,7 @@ have their own approval settings — consult the host.
 | `POLYAGENT_GROK_BIN` | `grok` | Path to the Grok CLI. |
 | `POLYAGENT_CODEX_BIN` | `codex` | Path to the Codex CLI. |
 | `POLYAGENT_CLAUDE_BIN` | `claude` | Path to the Claude Code CLI. |
+| `POLYAGENT_OPENCODE_BIN` | `opencode` | Path to the OpenCode CLI used by explicit engine selection. |
 | `POLYAGENT_ENABLE_CURSOR` | _(off)_ | Set to `1`/`true` to allow Cursor fallback when a tier's preferred CLI is missing. Otherwise the call fails with the missing CLI named. |
 | `POLYAGENT_MODEL` | `composer-2.5-fast` | Default model for the optional Cursor path. |
 | `POLYAGENT_EXPLORE_MODEL` | `gpt-5.6-luna` | Codex model for `explore`, `read_slice`, `run_filtered`, and `web_lookup` when neither the call nor the tool-specific `_MODEL` sets one. |
@@ -107,7 +108,7 @@ have their own approval settings — consult the host.
 | `POLYAGENT_<TOOL>_MODEL` | _(see above)_ | Per-tool model, same four names. The call's `model` beats it. With a non-codex engine and no model set anywhere, the engine's own default model is used. |
 | `POLYAGENT_AGENT_PATHS` | _(off)_ | Additional `:`-separated roots for named agent personas, searched before project/home `.claude/agents` and `~/.claude/plugins`. |
 | `POLYAGENT_SANDBOX` | `bwrap` | Isolates every engine in a bubblewrap sandbox with an empty `$HOME`, preventing global config, MCP servers, hooks, and skills from loading. Only auth, required engine state, and toolchains are bound in. Set `off`/`0` to disable explicitly — with the sandbox off, the read-only tools (`explore`, `read_slice`, `web_lookup`) accept only the codex engine. A missing `bwrap` is a startup error, never a silent downgrade. |
-| `POLYAGENT_FORCE` | _(off)_ | If `1`/`true`, force-enable non-interactive approval for Cursor and Claude runs. |
+| `POLYAGENT_FORCE` | _(off)_ | If `1`/`true`, force-enable non-interactive approval for Cursor, Claude, and OpenCode runs. |
 | `POLYAGENT_TIMEOUT_MS` | `1800000` (30 min) | Per-call safety-net timeout (not a work budget). Execution tools (`delegate`/`fast_delegate`) also get a prompt note so the worker returns partial results before being killed. |
 | `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, every call logs `{tool, outChars}` for `bridge_stats`. |
 | `POLYAGENT_HOOK_MODE` | `redirect` | Hook behavior: `off` (no-op), `nudge` (non-blocking `additionalContext` only), or `redirect` (deny once + name bridge tool for WebSearch/WebFetch and whole-file large Read; fail-open on retry). Grep/Glob/Bash/Edit/Write stay nudge-only. |
@@ -295,8 +296,9 @@ own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent route
 
 ```
 You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
-`level` picks a distinct tier: 1=GPT-5.6 Luna max (codex), 2=Grok 4.5 high (grok), 3=GPT-5.6 Sol
-xhigh (codex), 4=Grok 4.6 high (grok), 5=Opus max (claude). The worker has full read/edit/shell access
+`level` picks a distinct tier: 1=GPT-5.6 Luna max (codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6
+high (grok), 4=GPT-6 Astra max (codex), 5=Claude Fable 5.1 max (claude). Levels 4 and 5 are expensive
+(5 the most by far) — reserve them for what cheaper levels cannot do. The worker has full read/edit/shell access
 in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
 your context. Delegate it, then review the result; edit inline only for a quick one-off you're
 already positioned for. Use fast_delegate(prompt) when the work is self-contained and you just want

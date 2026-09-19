@@ -17,6 +17,8 @@ import { classifyOutcome, computeEngineHealth, type UsageEntry } from "../src/us
  *   permanece aberta no spike). Tratar como hipótese, não como fato observado.
  */
 const FIXTURES = {
+  // Origem: stderr REAL no host em 2026-09-14 (adendo 4), após login.
+  kimiQuota: "error: failed to run prompt: provider.auth_error: 403 You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/membership/subscription?tab=quota",
   // Origem: captura real (adendo 1). http_status vem aninhado como TEXTO dentro de errors[0].
   grokQuota: JSON.stringify({
     type: "result",
@@ -70,6 +72,28 @@ const FIXTURES = {
 const fail = (stdout: string, stderr = "", exitCode: number | null = 1) => ({ stdout, stderr, exitCode });
 
 describe("classifyQuotaError (US-006)", () => {
+  it("classifica a cota mensal real da kimi mesmo com meta em stdout", () => {
+    const meta = '{"role":"meta","type":"system.version","version":"0.43.0"}';
+    expect(classifyQuotaError(fail(meta, FIXTURES.kimiQuota), "kimi")).toBe("quota_exhausted");
+    expect(classifyQuotaError(fail(FIXTURES.kimiQuota), "kimi")).toBe("quota_exhausted");
+  });
+
+  it("reconhece as expressões específicas de cota mensal da kimi", () => {
+    for (const message of ["monthly usage limit", "usage limit for this billing cycle"]) {
+      expect(classifyQuotaError(fail("", message), "kimi")).toBe("quota_exhausted");
+    }
+  });
+
+  it("não confunde auth genérico ou aviso de depreciação da kimi com cota", () => {
+    for (const message of [
+      "error: failed to run prompt: provider.auth_error: 403 OAuth session expired",
+      "provider.auth_error: 403",
+      "Warning: [loop_control] 'max_retries_per_step' is deprecated ...",
+    ]) {
+      expect(classifyQuotaError(fail("", message), "kimi")).toBeNull();
+    }
+  });
+
   it("classifica a cota real do grok pelo http_status 402 aninhado em errors[0]", () => {
     expect(classifyQuotaError(fail(FIXTURES.grokQuota), "grok")).toBe("quota_exhausted");
   });
@@ -110,6 +134,7 @@ describe("classifyQuotaError (US-006)", () => {
   });
 
   it("nunca classifica exit 0 como cota, mesmo com a mensagem presente no output", () => {
+    expect(classifyQuotaError(fail("", FIXTURES.kimiQuota, 0), "kimi")).toBeNull();
     expect(classifyQuotaError(fail(FIXTURES.grokQuota, "", 0), "grok")).toBeNull();
     expect(classifyQuotaError(fail(FIXTURES.codexQuota, "", 0), "codex")).toBeNull();
     expect(classifyQuotaError(fail(FIXTURES.claudeQuota, "", 0), "claude")).toBeNull();
@@ -124,7 +149,7 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
   const all = (e: Engine) => e !== "cursor";
 
   it("exclui a engine que estourou e mantém a ordem das demais instaladas", () => {
-    expect(quotaCandidates("delegate", "codex", all, false, true)).toEqual(["grok", "claude"]);
+    expect(quotaCandidates("delegate", "codex", all, false, true)).toEqual(["grok", "claude", "opencode", "kimi", "muse"]);
   });
 
   it("exclui engine não instalada", () => {
@@ -145,11 +170,20 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
   it("com o sandbox desligado, tool read-only só aceita codex", () => {
     expect(quotaCandidates("explore", "codex", () => true, true, false)).toEqual([]);
     expect(quotaCandidates("explore", "grok", () => true, true, false)).toEqual(["codex"]);
-    expect(quotaCandidates("explore", "codex", () => true, false, true)).toEqual(["grok", "claude"]);
+    expect(quotaCandidates("explore", "codex", () => true, false, true)).toEqual(["grok", "claude", "opencode", "kimi", "muse"]);
   });
 
   it("run_filtered aceita qualquer engine — roda com force por desenho", () => {
-    expect(quotaCandidates("run_filtered", "codex", () => true, false, true)).toEqual(["grok", "claude"]);
+    expect(quotaCandidates("run_filtered", "codex", () => true, false, true)).toEqual(["grok", "claude", "opencode", "kimi", "muse"]);
+  });
+
+  it("inclui kimi como alternativa de assinatura, mas não no fallback automático do codex", () => {
+    expect(quotaCandidates("delegate", "grok", all, false, true)).toContain("kimi");
+  });
+
+  it("inclui muse em quotaCandidates (pay-per-token, só por engine explícito) e não no fallback de ambiente do codex", () => {
+    expect(quotaCandidates("delegate", "codex", all, false, true)).toContain("muse");
+    expect(quotaCandidates("fast_delegate", "codex", all, false, true)).not.toContain("muse");
   });
 
   it("generate_image só considera as engines com tool de imagem própria (codex/grok)", () => {
@@ -169,12 +203,12 @@ describe("quotaErrorMessage — erro acionável por tool (US-006)", () => {
   });
 
   it("no delegate sugere o menor level cuja engine primária está disponível", () => {
-    // grok estourou: níveis 2 e 4 saem; o menor restante é 1 (codex).
+    // grok estourou: o nível 3 sai; o menor restante é 1 (codex).
     expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["codex", "claude"]))
       .toContain("retry with level:1");
-    // codex estourou: sobram 2/4 (grok) e 5 (claude) — o menor é 2.
+    // codex estourou: sobram 3 (grok) e 5 (claude) — o menor é 3.
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["grok", "claude"]))
-      .toContain("retry with level:2");
+      .toContain("retry with level:3");
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["claude"]))
       .toContain("retry with level:5");
   });

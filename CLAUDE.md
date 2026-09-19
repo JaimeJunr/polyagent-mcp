@@ -47,9 +47,9 @@ the **pure logic is testable without spawning a worker process**:
   continuing a read-only session (`explore`/`read_slice`/`web_lookup`) must pass `mode:'ask'` to stay
   read-only. The default (no mode) is for continuing a `delegate`.
 - `cli.ts` — the only module that touches the child process. `runCursor()` spawns the engine's CLI;
-  `buildCursorArgs()`/`buildGrokArgs()`/`buildCodexArgs()`/`buildClaudeArgs()` (+ `buildArgs`
-  dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()` (+ `parseOutput` dispatcher),
-  `resolveTier()`, `resolveFastTier()`, `resolveAuxTool()`, `hasEngine()`, `binExists()`, `budgetNote()`
+  `buildCursorArgs()`/`buildGrokArgs()`/`buildCodexArgs()`/`buildClaudeArgs()`/`buildOpencodeArgs()`/`buildKimiArgs()`/`buildMuseArgs()` (+ `buildArgs`
+  dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()`/`parseOpencodeJsonl()`/`parseKimiJsonl()`/`parseMuseJsonl()` (+ `parseOutput` dispatcher),
+  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `hasEngine()`, `binExists()`, `budgetNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
@@ -58,8 +58,8 @@ the **pure logic is testable without spawning a worker process**:
 
 ### Engines & tiers (multi-CLI)
 
-The bridge drives four coding-agent CLIs, each with its own dialect and output format —
-`RunOpts.engine` (`"cursor"|"grok"|"codex"|"claude"`) selects one. Cursor is outside the default
+The bridge drives seven coding-agent CLIs, each with its own dialect and output format —
+`RunOpts.engine` (`"cursor"|"grok"|"codex"|"claude"|"opencode"|"kimi"|"muse"`) selects one. Cursor is outside the default
 tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 (`CURSOR_ENABLED`).
 
@@ -84,11 +84,42 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   Output is `{result, session_id}` and deliberately reuses `parseCliJson` (no Claude-only parser).
   Resume uses `--resume`; force OR mode always adds `--dangerously-skip-permissions`, because
   headless Claude otherwise hangs waiting for approval.
+- **opencode** (`opencode run`) — prompt positional, `--format json` emits JSONL events, `-m` requires
+  `provider/model`, effort maps to `--variant`, resume uses `-s`; the CLI also offers last-session
+  continuation via `-c`, but the bridge does not use `-c`. Autonomy uses `--auto`, persona uses a
+  prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it is
+  excluded from `TIERS` and `FAST_CANDIDATES`; choose it explicitly via `delegate.engine` or an
+  auxiliary tool's engine override. It has no engine-level read-only mode; bwrap supplies that guard.
+- **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
+  resume via `-S`. `-p` already is non-interactive and **rejects** `--auto`/`-y`/`--yolo`; persona
+  is a prompt prefix. No engine-level read-only; bwrap supplies that guard. Subscription OAuth, so
+  it is in `quotaCandidates` but **not** in `TIERS`, `FAST_CANDIDATES`, or `FALLBACK_ENGINE_ORDER`.
+- **muse** (`muse exec`) — dialect: `exec <PROMPT>` positional, JSONL via `--json` (parsed by
+  `parseMuseJsonl`), model via `--model`, effort via `--reasoning-effort` (none|minimal|low|medium|high|xhigh|max|ultra,
+  default high), resume via `--session-id <uuid>` on the same `exec` (do **not** use the interactive
+  `muse resume` subcommand). Autonomy is `--approval-mode never` under force OR mode — **never**
+  `--yolo`, which would also disable muse's internal sandbox; bwrap already covers isolation.
+  Persona is a prompt prefix (the `--agents <JSON>` flag exists but its JSON shape is unconfirmed —
+  do not invent it). The positional prompt follows `--`. Session id lives in `stream.id` when
+  `stream.kind == "session"`; response text is concatenated `payload.text` from
+  `payload_type == "run.output.delta"` events — ignore `turn.input.user` (that is the prompt).
+  It is pay-per-token (API key in `~/.config/muse/auth.json`), so it is excluded from `TIERS` and
+  `FAST_CANDIDATES`; choose it explicitly via `delegate.engine` or an auxiliary tool's engine
+  override. It enters `quotaCandidates` but **not** `FALLBACK_ENGINE_ORDER` (that list is a codex
+  environment-failure retry, and `fallbackOpts` drops `mode`, which would collapse the read-only
+  guarantee). It has no engine-level read-only (`engineReadOnly: false`); bwrap supplies that guard.
+  `--provider echo` exercises the dialect without token cost.
 
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
 using a distinct model at every level across the three active subscriptions: 1=GPT-5.6 Luna max
-(codex), 2=Grok 4.5 high (grok), 3=GPT-5.6 Sol xhigh (codex), 4=Grok 4.6 high (grok),
-5=Opus max (claude). `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
+(codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex),
+5=Claude Fable 5.1 max (claude). Os ids `gpt-6-astra` e `fable` foram confirmados em execução
+real (2026-09-14). **Custo:** os níveis 4 e 5 são caros — o 4 muito caro e o 5 muitíssimo mais, com
+folga o mais caro da matriz. São último recurso, não default: níveis 1-3 dão conta da maior parte do
+trabalho, implementação inclusa. Escalar para 4/5 só quando um nível barato já falhou ou a tarefa
+exige raciocínio de fronteira de verdade. Como codex ocupa 3 dos 5 níveis, cota estourada nele derruba os níveis 1, 2 e 4 de uma vez.
+Consequência aceita ao deixar a assinatura Google de fora — ver
+.ralph/polyagent/model-refresh-2026/prd-update-1.html. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
 is missing, it falls back to the equivalent Cursor model only when `cursorEnabled` is true;
 otherwise it throws a clear error naming the missing CLI.
 
@@ -110,7 +141,12 @@ cost: it inflated every call to ~57k input tokens and made the CLI try to spin u
 servers on each run (the "hangs until timeout" symptom).
 Sandboxed, a trivial call drops to ~11k input tokens (−80%). Only auth + toolchains are bound in; the
 workspace (`cwd`) is bound RW as the last mount. Per-engine HOME binds are declared in
-`SANDBOX_ENGINE_RO` and `SANDBOX_ENGINE_RW`: grok and codex need their engine homes RW; Claude gets
+`SANDBOX_ENGINE_RO` and `SANDBOX_ENGINE_RW`: grok and codex need their engine homes RW; OpenCode gets
+`~/.opencode` RO for installation and `~/.local/share/opencode` RW for sessions, logs, auth and
+SQLite (including WAL/SHM), plus `~/.local/state/opencode` RW for locks; Muse gets RW
+`~/.config/muse` (auth.json, settings, trust) and `~/.local/share/muse` (sessions, skills, plugins,
+runtime, SQLite) — two directories, and `.local` requires an explicit RW declaration because
+`SANDBOX_HOME_RO` mounts `~/.local` whole as RO. Claude gets
 RO `~/.claude.json`, and RW
 `~/.claude/{.credentials.json,statsig,projects,todos,shell-snapshots}`. The credential is RW on
 purpose: the CLI renews the subscription oauth and must persist the new pair. Mounted RO, the
@@ -122,8 +158,8 @@ points, all in `cli.ts`:
 - **stdin MUST be closed (`stdio: ["ignore",…]`).** `codex exec` hangs forever ("Reading additional
   input from stdin…") if stdin is an open pipe — this, NOT the namespace, was why codex appeared to
   "not survive the sandbox". With stdin closed, codex runs in the bwrap like the others (~9s).
-  cursor, grok, and claude take the prompt by arg and never read stdin, so closing it is safe for
-  all four.
+  cursor, grok, claude, opencode, kimi, and muse take the prompt by arg and never read stdin, so closing it is
+  safe for all of them.
 - **codex config is neutralized by flags, not just the sandbox:** `buildCodexArgs` always passes
   `--ignore-user-config`/`--ignore-rules` so `~/.codex/config.toml` (with its external MCP servers,
   which spawned runaway `mcp-server` procs) is never loaded; auth still resolves via `CODEX_HOME`.
@@ -240,7 +276,12 @@ points, all in `cli.ts`:
 - **Agent personas are additive and cross-engine.** `delegate` and `fast_delegate` accept a named or
   inline agent. Resolve it on the host in `agents.ts`, then pass its body via `RunOpts.agentPrompt`: Claude
   `--append-system-prompt`, Grok `--rules`, Codex `-c developer_instructions=` encoded by
-  `tomlString`, Cursor prompt prefix. Do not mount agent directories into the sandbox.
+  `tomlString`, Cursor/OpenCode/Kimi/Muse prompt prefix. Do not mount agent directories
+  into the sandbox.
+- **`delegate.engine` is an explicit override, not a tier input.** `level` remains required for difficulty;
+  without `engine`, `resolveDelegate` uses `resolveTier`. When the explicit engine differs from the level's
+  primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
+  caller values). `opencode` and `muse` (pay-per-token) therefore stay outside `TIERS` and `FAST_CANDIDATES`.
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in

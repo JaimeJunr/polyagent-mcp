@@ -1,0 +1,450 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index f96215d..97fa29c 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -4,7 +4,7 @@ import { homedir, tmpdir, userInfo } from "node:os";
+ import { join } from "node:path";
+ 
+ /** CLIs suportados. Cada engine tem dialeto de args e parser de saída próprios. */
+-export type Engine = "cursor" | "grok" | "codex" | "claude";
++export type Engine = "cursor" | "grok" | "codex" | "claude" | "agy";
+ 
+ /** Ordem host-agnostic para recuperar uma execução quando o ambiente do codex está quebrado. */
+ export const FALLBACK_ENGINE_ORDER: Engine[] = ["codex", "grok", "claude"];
+@@ -51,7 +51,7 @@ export function parseSessionHandle(handle: string): { engine?: Engine; id: strin
+   if (separator === -1) return { id: handle };
+ 
+   const prefix = handle.slice(0, separator);
+-  if (prefix !== "cursor" && prefix !== "grok" && prefix !== "codex" && prefix !== "claude") {
++  if (prefix !== "cursor" && prefix !== "grok" && prefix !== "codex" && prefix !== "claude" && prefix !== "agy") {
+     return { id: handle };
+   }
+   return { engine: prefix, id: handle.slice(separator + 1) };
+@@ -68,6 +68,8 @@ export const GROK_BIN = process.env.POLYAGENT_GROK_BIN ?? "grok";
+ export const CODEX_BIN = process.env.POLYAGENT_CODEX_BIN ?? "codex";
+ /** Binário do Claude Code CLI. Override via POLYAGENT_CLAUDE_BIN. */
+ export const CLAUDE_BIN = process.env.POLYAGENT_CLAUDE_BIN ?? "claude";
++/** Binário do Google Antigravity CLI. Override via POLYAGENT_AGY_BIN. */
++export const AGY_BIN = process.env.POLYAGENT_AGY_BIN ?? "agy";
+ 
+ /**
+  * Modelo default do fallback cursor (só usado quando CURSOR_ENABLED e o engine é cursor). O
+@@ -156,6 +158,7 @@ const SANDBOX_ENGINE_RO: Record<Engine, string[]> = {
+   // contexto (o worker roda com --bare + --append-system-prompt, então não precisa descobrir
+   // agents/rules no HOME). A credencial de oauth fica em SANDBOX_ENGINE_RW: precisa ser gravável.
+   claude: [".claude.json"],
++  agy: [], // credencial/estado e logs precisam de RW — ver SANDBOX_ENGINE_RW
+ };
+ /**
+  * Subpaths do HOME RW por engine. Grok precisa de auth/skills/cache em ~/.grok; o codex tem
+@@ -179,6 +182,14 @@ const SANDBOX_ENGINE_RW: Record<Engine, string[]> = {
+     ".claude/todos",
+     ".claude/shell-snapshots",
+   ],
++  // Estado da CLI, não os diretórios da IDE. OAuth precisa persistir refresh em RW.
++  // Nunca expor .gemini inteiro, config/, GEMINI.md ou settings/hooks da antigravity-cli.
++  agy: [
++    ".gemini/oauth_creds.json",
++    ".gemini/antigravity-cli/cache",
++    ".gemini/antigravity/artifacts",
++    ".gemini/antigravity/transcript.jsonl",
++  ],
+ };
+ /** Subpaths do HOME liberados RW: caches de build (acelera runs seguidos). */
+ const SANDBOX_HOME_RW = [".gradle", ".m2", ".cache/uv", ".cache/pip"];
+@@ -216,6 +227,8 @@ export interface SandboxSpec {
+   homeRw: string[];
+   /** paths extras montados RW (POLYAGENT_SANDBOX_EXTRA), antes do workspace. */
+   extraBinds: string[];
++  /** socket DBus da sessão, montado só quando o engine depende do keyring do host. */
++  sessionBus: string | null;
+   extraEnv: Array<[string, string]>;
+ }
+ 
+@@ -229,6 +242,8 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
+   for (const p of spec.systemRo) args.push("--ro-bind", p, p);
+   args.push("--bind", spec.isoHome, spec.home);
+   args.push("--bind", spec.tmpDir, "/tmp", "--tmpfs", "/run");
++  // Depois do --tmpfs /run, senão o tmpfs mascara o socket recém-montado.
++  if (spec.sessionBus) args.push("--bind", spec.sessionBus, spec.sessionBus);
+   for (const p of spec.homeRo) args.push("--ro-bind", p, p);
+   for (const p of spec.homeRw) args.push("--bind", p, p);
+   for (const p of spec.extraBinds) args.push("--bind", p, p);
+@@ -329,6 +344,12 @@ export const ENGINE_CAPABILITIES: Record<Engine, EngineCapability> = {
+     sandboxReadOnly: true,
+     modeAtEngineLevel: "mode emite --dangerously-skip-permissions (buildClaudeArgs)",
+   },
++  agy: {
++    webSearch: false,
++    engineReadOnly: false,
++    sandboxReadOnly: true,
++    modeAtEngineLevel: "--sandbox/--mode plan não garantem read-only; mode exige --dangerously-skip-permissions (buildAgyArgs)",
++  },
+   cursor: {
+     webSearch: false,
+     engineReadOnly: false,
+@@ -505,6 +526,8 @@ const QUOTA_PATTERNS: Record<Engine, RegExp[]> = {
+     /\bspend limit reached\b/,
+     /\bcredit balance (?:is )?too low\b/,
+   ],
++  // Nenhuma captura de cota da agy foi observada; não classificar mensagens por aproximação.
++  agy: [],
+   // Nenhuma captura de cota do cursor-agent existe; o que foi observado nele é erro de auth.
+   cursor: [],
+ };
+@@ -517,6 +540,7 @@ const RATE_LIMIT_PATTERNS: Record<Engine, RegExp[]> = {
+     /\bserver is temporarily limiting requests\b/,
+     /\brequest rejected \(429\)\b/,
+   ],
++  agy: [],
+   cursor: [],
+ };
+ 
+@@ -694,6 +718,18 @@ export function quotaErrorMessage(
+   return tool === undefined ? head : `${head} — retry with engine:"${candidates[0]}"`;
+ }
+ 
++/**
++ * Socket DBus da sessão do usuário. A `agy` não lê a credencial de nenhum arquivo do HOME: ela
++ * resolve o token pelo Secret Service do keyring, que só responde por este socket. Como o sandbox
++ * faz `--tmpfs /run`, sem o bind ela cai no fluxo de login interativo e trava em headless.
++ * Só o arquivo `bus` — o diretório traz o resto da sessão (pipewire, systemd user).
++ */
++function resolveSessionBus(): string | null {
++  const runtimeDir = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.()}`;
++  const socket = join(runtimeDir, "bus");
++  return existsSync(socket) ? socket : null;
++}
++
+ /** Cria os dirs efêmeros e sonda os paths existentes pra montar o SandboxSpec. */
+ export function buildSandboxSpec(
+   workspace: string,
+@@ -727,6 +763,9 @@ export function buildSandboxSpec(
+     ].filter((p) => existsSync(p)),
+     // só os que existem e não são o próprio workspace (esse já é o último bind)
+     extraBinds: SANDBOX_EXTRA.filter((p) => p !== workspace && existsSync(p)),
++    // Exclusivo da agy: é a única engine cuja credencial vive no keyring do host, não em arquivo.
++    // O custo — consciente — é que um worker nessa engine alcança o Secret Service do usuário.
++    sessionBus: engine === "agy" ? resolveSessionBus() : null,
+     extraEnv: SANDBOX_PROXY_ENV
+       .filter((k) => process.env[k])
+       .map((k) => [k, process.env[k] as string]),
+@@ -817,6 +856,22 @@ export function buildCursorArgs(opts: RunOpts): string[] {
+   return args;
+ }
+ 
++/**
++ * Args do Google Antigravity CLI (`agy`). Dialeto próprio: prompt como valor de `-p`, saída
++ * JSON em objeto único, resume via `--conversation` e autonomia via bypass. A persona não tem
++ * flag nativa de system prompt e segue como prefixo do prompt, igual ao cursor. Função pura.
++ */
++export function buildAgyArgs(opts: RunOpts): string[] {
++  const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
++  const args = ["-p", prompt, "--output-format", "json"];
++  if (opts.model) args.push("--model", opts.model);
++  if (opts.effort) args.push("--effort", opts.effort);
++  if (opts.resume) args.push("--conversation", opts.resume);
++  // `--mode plan` não garante read-only no engine; com mode o headless ainda precisa auto-aprovar.
++  if (FORCE || opts.force || opts.mode) args.push("--dangerously-skip-permissions");
++  return args;
++}
++
+ /**
+  * Args do Grok CLI (`grok`). Dialeto próprio: prompt é VALOR de `--single`, effort é flag separada
+  * (`--effort` — o xAI CLI atual renomeou `--reasoning-effort` → `--effort`), autonomia é
+@@ -901,6 +956,7 @@ export function buildArgs(engine: Engine, opts: RunOpts, sandboxed = false): str
+   if (engine === "grok") return buildGrokArgs(opts);
+   if (engine === "codex") return buildCodexArgs(opts, sandboxed);
+   if (engine === "claude") return buildClaudeArgs(opts);
++  if (engine === "agy") return buildAgyArgs(opts);
+   return buildCursorArgs(opts);
+ }
+ 
+@@ -911,19 +967,24 @@ export interface CliResult {
+ }
+ 
+ /**
+- * Extrai texto e session id do JSON headless. Tolerante aos dois dialetos de objeto único:
+- * cursor (`{result, session_id}`) e grok (`{text, sessionId}`). Degrada para texto cru.
++ * Extrai texto e session id do JSON headless. Tolerante aos dialetos de objeto único:
++ * cursor (`{result, session_id}`), grok (`{text, sessionId}`) e agy (`{response, conversation_id}`).
++ * Degrada para texto cru.
+  */
+ export function parseCliJson(raw: string): CliResult {
+   const trimmed = raw.trim();
+   try {
+     const obj = JSON.parse(trimmed) as {
+-      result?: unknown; text?: unknown; session_id?: unknown; sessionId?: unknown;
++      result?: unknown; text?: unknown; response?: unknown;
++      session_id?: unknown; sessionId?: unknown; conversation_id?: unknown; conversationId?: unknown;
+     };
+     const text = typeof obj.result === "string" ? obj.result
+-      : typeof obj.text === "string" ? obj.text : trimmed;
++      : typeof obj.text === "string" ? obj.text
++        : typeof obj.response === "string" ? obj.response : trimmed;
+     const sessionId = typeof obj.session_id === "string" ? obj.session_id
+-      : typeof obj.sessionId === "string" ? obj.sessionId : undefined;
++      : typeof obj.sessionId === "string" ? obj.sessionId
++        : typeof obj.conversation_id === "string" ? obj.conversation_id
++          : typeof obj.conversationId === "string" ? obj.conversationId : undefined;
+     return { text, sessionId };
+   } catch {
+     return { text: trimmed };
+@@ -973,7 +1034,8 @@ export function hasEngine(engine: Engine): boolean {
+   if (engine === "cursor") return true;
+   if (engine === "grok") return binExists(GROK_BIN);
+   if (engine === "codex") return binExists(CODEX_BIN);
+-  return binExists(CLAUDE_BIN); // claude
++  if (engine === "claude") return binExists(CLAUDE_BIN);
++  return binExists(AGY_BIN); // agy
+ }
+ 
+ export interface Tier {
+@@ -1128,6 +1190,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
+     const bin = engine === "grok" ? GROK_BIN
+       : engine === "codex" ? CODEX_BIN
+       : engine === "claude" ? CLAUDE_BIN
++      : engine === "agy" ? AGY_BIN
+       : POLYAGENT_CURSOR_BIN;
+     const workspace = runOpts.cwd ?? process.cwd();
+ 
+diff --git a/test/cli.test.ts b/test/cli.test.ts
+index 2dfdc59..d8789fb 100644
+--- a/test/cli.test.ts
++++ b/test/cli.test.ts
+@@ -1,13 +1,13 @@
+ import { describe, it, expect } from "vitest";
+-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
++import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+ import {
+-  buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
++  buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildAgyArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
+   budgetNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
+   resolveFastTier,
+   isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
+-  fallbackOpts, DEFAULT_MODEL,
++  fallbackOpts, DEFAULT_MODEL, parseOutput,
+   type SandboxSpec, type Engine,
+ } from "../src/cli.js";
+ import { computeEngineHealth } from "../src/usage.js";
+@@ -111,6 +111,12 @@ describe("session handles", () => {
+     expect(parseSessionHandle("codex:abc")).toEqual({ engine: "codex", id: "abc" });
+   });
+ 
++  it("reconhece o prefixo da agy", () => {
++    const handle = formatSessionHandle("agy", "a-1");
++    expect(handle).toBe("agy:a-1");
++    expect(parseSessionHandle(handle)).toEqual({ engine: "agy", id: "a-1" });
++  });
++
+   it("mantém ids legados sem prefixo", () => {
+     expect(parseSessionHandle("raw-uuid-no-prefix")).toEqual({ id: "raw-uuid-no-prefix" });
+   });
+@@ -200,8 +206,21 @@ describe("buildSandboxArgs", () => {
+     homeRw: ["/home/u/.gradle"],
+     extraBinds: ["/mnt/extra"],
+     extraEnv: [["HTTPS_PROXY", "http://proxy:8080"]],
++    sessionBus: null,
+   };
+ 
++  it("emite o bind do socket DBus DEPOIS do --tmpfs /run, senão o tmpfs o mascara", () => {
++    const args = buildSandboxArgs({ ...spec, sessionBus: "/run/user/1000/bus" });
++    const tmpfsAt = args.indexOf("--tmpfs");
++    const busAt = args.indexOf("/run/user/1000/bus");
++    expect(busAt).toBeGreaterThan(tmpfsAt);
++    expect(args[busAt - 1]).toBe("--bind");
++  });
++
++  it("não emite bind de socket DBus quando sessionBus é null", () => {
++    expect(buildSandboxArgs(spec).join(" ")).not.toContain("/bus");
++  });
++
+   it("monta o $HOME isolado ANTES dos binds de subpaths do HOME", () => {
+     const args = buildSandboxArgs(spec);
+     const isoHomeAt = args.indexOf("/tmp/iso");
+@@ -336,6 +355,47 @@ describe("buildSandboxArgs", () => {
+     }
+   });
+ 
++  it("expõe credencial e estado da CLI em RW, sem configs globais ou diretórios da IDE", () => {
++    const oldHome = process.env.HOME;
++    const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
++    const statePaths = [
++      ".gemini/oauth_creds.json", ".gemini/antigravity-cli/cache",
++      ".gemini/antigravity/artifacts", ".gemini/antigravity/transcript.jsonl",
++    ].map((p) => join(fakeHome, p));
++    mkdirSync(join(fakeHome, ".gemini/antigravity-cli/cache"), { recursive: true });
++    mkdirSync(join(fakeHome, ".gemini/antigravity/artifacts"), { recursive: true });
++    writeFileSync(statePaths[0], "{}");
++    writeFileSync(statePaths[3], "");
++    mkdirSync(join(fakeHome, ".gemini/config/plugins"), { recursive: true });
++    for (const p of ["config/mcp_config.json", "config/hooks.json", "antigravity-cli/settings.json", "antigravity-cli/hooks.json"]) {
++      writeFileSync(join(fakeHome, ".gemini", p), "{}");
++    }
++    symlinkSync("/outside/ai-instructions.md", join(fakeHome, ".gemini/GEMINI.md"));
++    mkdirSync(join(fakeHome, ".antigravity"));
++    mkdirSync(join(fakeHome, ".config/Antigravity"), { recursive: true });
++    process.env.HOME = fakeHome;
++    const agy = buildSandboxSpec("/repo", "agy");
++    const grok = buildSandboxSpec("/repo", "grok");
++    try {
++      expect(agy.spec.homeRw).toEqual(statePaths);
++      expect(agy.spec.homeRo).toEqual([]);
++      const args = buildSandboxArgs(agy.spec);
++      for (const path of statePaths) {
++        const bind = args.indexOf(path);
++        expect(args[bind - 1]).toBe("--bind");
++        expect(args[bind + 1]).toBe(path);
++      }
++      // os paths da agy não são expostos a outras engines
++      expect(grok.spec.homeRw).toEqual([]);
++    } finally {
++      agy.cleanup();
++      grok.cleanup();
++      if (oldHome === undefined) delete process.env.HOME;
++      else process.env.HOME = oldHome;
++      rmSync(fakeHome, { recursive: true, force: true });
++    }
++  });
++
+   it("monta CODEX_HOME (roteado por apps externos como o orca) como bind RW quando existe", () => {
+     const oldHome = process.env.HOME;
+     const oldCodexHome = process.env.CODEX_HOME;
+@@ -680,6 +740,48 @@ describe("buildClaudeArgs", () => {
+   });
+ });
+ 
++describe("buildAgyArgs", () => {
++  it("roda headless com prompt e saída JSON", () => {
++    const args = buildAgyArgs({ prompt: "do it" });
++    expect(args).toEqual(["-p", "do it", "--output-format", "json"]);
++  });
++
++  it("inclui model e effort somente quando informados", () => {
++    const args = buildAgyArgs({ prompt: "do it", model: "gemini-3.8-flash-high", effort: "high" });
++    expect(args[args.indexOf("--model") + 1]).toBe("gemini-3.8-flash-high");
++    expect(args[args.indexOf("--effort") + 1]).toBe("high");
++    expect(buildAgyArgs({ prompt: "do it" })).not.toContain("--model");
++    expect(buildAgyArgs({ prompt: "do it" })).not.toContain("--effort");
++  });
++
++  it("retoma a conversa com --conversation", () => {
++    const args = buildAgyArgs({ prompt: "more", resume: "a-1" });
++    expect(args[args.indexOf("--conversation") + 1]).toBe("a-1");
++  });
++
++  it("auto-aprova quando force", () => {
++    expect(buildAgyArgs({ prompt: "run", force: true })).toContain("--dangerously-skip-permissions");
++  });
++
++  it("auto-aprova quando mode está presente sem inventar --mode", () => {
++    const args = buildAgyArgs({ prompt: "map", mode: "plan" });
++    expect(args).toContain("--dangerously-skip-permissions");
++    expect(args).not.toContain("--mode");
++  });
++
++  it("prefixa agentPrompt no prompt, pois a agy não tem flag de system prompt", () => {
++    const persona = "You are a strict reviewer.";
++    const args = buildAgyArgs({ prompt: "review", agentPrompt: persona });
++    expect(args[args.indexOf("-p") + 1]).toBe(`${persona}\n\n---\n\nreview`);
++    expect(args).not.toContain("--append-system-prompt");
++  });
++
++  it("é selecionada pelo dispatcher buildArgs", () => {
++    const opts = { prompt: "hi", model: "gemini-3.1-pro-high", effort: "high" };
++    expect(buildArgs("agy", opts)).toEqual(buildAgyArgs(opts));
++  });
++});
++
+ describe("agentPrompt injection (cross-engine, não só claude)", () => {
+   const persona = "You are a strict reviewer.";
+ 
+@@ -725,6 +827,12 @@ describe("parseCliJson", () => {
+   it("falls back to raw text on non-json", () => {
+     expect(parseCliJson("plain")).toEqual({ text: "plain" });
+   });
++
++  it("extracts response and conversation_id (agy) e o dispatcher usa o parser comum", () => {
++    const raw = JSON.stringify({ response: "PONG", conversation_id: "a-1", status: "SUCCESS" });
++    expect(parseCliJson(raw)).toEqual({ text: "PONG", sessionId: "a-1" });
++    expect(parseOutput("agy", raw)).toEqual({ text: "PONG", sessionId: "a-1" });
++  });
+ });
+ 
+ describe("parseCodexJsonl", () => {
+@@ -753,3 +861,46 @@ describe("parseCodexJsonl", () => {
+     expect(parseCodexJsonl(raw)).toEqual({ text: "PONG", sessionId: "019f7049-22af-79a2" });
+   });
+ });
++
++describe("sessionBus no sandbox (credencial da agy vem do keyring, não de arquivo)", () => {
++  it("só a agy recebe o socket DBus — nenhuma outra engine", () => {
++    const outras: Engine[] = ["codex", "grok", "claude", "cursor"];
++    for (const engine of outras) {
++      const { spec, cleanup } = buildSandboxSpec("/repo", engine);
++      expect(spec.sessionBus, `engine ${engine} não pode ver o Secret Service`).toBeNull();
++      cleanup();
++    }
++  });
++
++  it("para agy, resolve o socket sob XDG_RUNTIME_DIR e monta só o arquivo bus", () => {
++    const runtimeDir = mkdtempSync(join(tmpdir(), "xdg-run-"));
++    writeFileSync(join(runtimeDir, "bus"), "");
++    const anterior = process.env.XDG_RUNTIME_DIR;
++    process.env.XDG_RUNTIME_DIR = runtimeDir;
++    try {
++      const { spec, cleanup } = buildSandboxSpec("/repo", "agy");
++      expect(spec.sessionBus).toBe(join(runtimeDir, "bus"));
++      expect(spec.sessionBus).not.toBe(runtimeDir);
++      cleanup();
++    } finally {
++      if (anterior === undefined) delete process.env.XDG_RUNTIME_DIR;
++      else process.env.XDG_RUNTIME_DIR = anterior;
++      rmSync(runtimeDir, { recursive: true, force: true });
++    }
++  });
++
++  it("socket ausente não quebra: sessionBus fica null", () => {
++    const runtimeDir = mkdtempSync(join(tmpdir(), "xdg-run-vazio-"));
++    const anterior = process.env.XDG_RUNTIME_DIR;
++    process.env.XDG_RUNTIME_DIR = runtimeDir;
++    try {
++      const { spec, cleanup } = buildSandboxSpec("/repo", "agy");
++      expect(spec.sessionBus).toBeNull();
++      cleanup();
++    } finally {
++      if (anterior === undefined) delete process.env.XDG_RUNTIME_DIR;
++      else process.env.XDG_RUNTIME_DIR = anterior;
++      rmSync(runtimeDir, { recursive: true, force: true });
++    }
++  });
++});
+diff --git a/test/quota.test.ts b/test/quota.test.ts
+index 7215663..9245076 100644
+--- a/test/quota.test.ts
++++ b/test/quota.test.ts
+@@ -124,7 +124,7 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
+   const all = (e: Engine) => e !== "cursor";
+ 
+   it("exclui a engine que estourou e mantém a ordem das demais instaladas", () => {
+-    expect(quotaCandidates("delegate", "codex", all, false, true)).toEqual(["grok", "claude"]);
++    expect(quotaCandidates("delegate", "codex", all, false, true)).toEqual(["grok", "claude", "agy"]);
+   });
+ 
+   it("exclui engine não instalada", () => {
+@@ -145,11 +145,11 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
+   it("com o sandbox desligado, tool read-only só aceita codex", () => {
+     expect(quotaCandidates("explore", "codex", () => true, true, false)).toEqual([]);
+     expect(quotaCandidates("explore", "grok", () => true, true, false)).toEqual(["codex"]);
+-    expect(quotaCandidates("explore", "codex", () => true, false, true)).toEqual(["grok", "claude"]);
++    expect(quotaCandidates("explore", "codex", () => true, false, true)).toEqual(["grok", "claude", "agy"]);
+   });
+ 
+   it("run_filtered aceita qualquer engine — roda com force por desenho", () => {
+-    expect(quotaCandidates("run_filtered", "codex", () => true, false, true)).toEqual(["grok", "claude"]);
++    expect(quotaCandidates("run_filtered", "codex", () => true, false, true)).toEqual(["grok", "claude", "agy"]);
+   });
+ 
+   it("generate_image só considera as engines com tool de imagem própria (codex/grok)", () => {
