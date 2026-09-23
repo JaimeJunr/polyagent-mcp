@@ -7,7 +7,9 @@ import { createInterface } from "node:readline";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+// ADOPTION_REPO/ADOPTION_OUT permitem rodar o "antes" com outra branch checada no repo (o script pode
+// não existir nela) sem deixar arquivo não rastreado que bloqueie a volta de branch.
+const REPO = process.env.ADOPTION_REPO ?? join(dirname(fileURLToPath(import.meta.url)), "..");
 const DATE = new Date().toISOString().slice(0, 10);
 const PREFIX = "mcp__polyagent__";
 const TIMEOUT_MS = 8 * 60 * 1000;
@@ -22,6 +24,12 @@ const PROMPTS = [
   { id: "risky-verdict", category: "fan-out", prompt: "Revise a função ratingStats em src/usage.ts procurando bug de lógica. Preciso de um veredito confiável antes de publicar.", expect: ["fan_out", "delegate"] },
   { id: "breadth", category: "fan-out", prompt: "Compare três abordagens diferentes para decidir a ordem da cascata do fast_delegate e recomende uma.", expect: ["fan_out"] },
   { id: "control-simple", category: "control", prompt: "Quantos arquivos .ts existem na pasta src?", expect: [], forbid: ["fan_out"] },
+  // Held-out (2026-09-23): escritos DEPOIS das regex do hook UserPromptSubmit e sem ajustá-las a eles —
+  // medem se a dica generaliza além do vocabulário dos 8 prompts acima.
+  { id: "h-two-models", category: "fan-out", heldout: true, prompt: "Pede para dois modelos diferentes avaliarem se a função resolveFastTier lida bem com engine sem cota, e junta o que eles disserem.", expect: ["fan_out"] },
+  { id: "h-design-choice", category: "fan-out", heldout: true, prompt: "Estou em dúvida entre guardar as notas do rate em SQLite ou continuar no JSONL. Me ajuda a decidir olhando por vários ângulos.", expect: ["fan_out", "delegate"] },
+  { id: "h-docs", category: "web", heldout: true, prompt: "O SDK de MCP para TypeScript mudou alguma coisa na forma de registrar tools nas últimas versões?", expect: ["web_lookup"] },
+  { id: "h-find", category: "code-reading", heldout: true, prompt: "Qual parte do código monta os argumentos do bwrap?", expect: ["explore", "read_slice"] },
 ];
 
 function emptyParse() {
@@ -120,6 +128,7 @@ function makeRow(prompt, label, run) {
     label,
     id: prompt.id,
     category: prompt.category,
+    heldout: Boolean(prompt.heldout),
     expect: prompt.expect,
     tools: parsed.toolNames.map(shortName),
     bridge,
@@ -148,9 +157,8 @@ async function main() {
     : PROMPTS;
   if (!selected.length) throw new Error("No prompts selected");
 
-  const outDir = join(REPO, "research/bench");
-  mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, `${DATE}-adoption.jsonl`);
+  const outPath = process.env.ADOPTION_OUT ?? join(REPO, "research/bench", `${DATE}-adoption.jsonl`);
+  mkdirSync(dirname(outPath), { recursive: true });
   const rows = [];
   for (const prompt of selected) {
     const run = await runClaude(prompt.prompt);
