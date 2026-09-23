@@ -163,6 +163,13 @@ async function main() {
   for (const prompt of selected) {
     const run = await runClaude(prompt.prompt);
     const row = makeRow(prompt, label, run);
+    // Erro de API sem nenhuma tool (ex.: "You've hit your session limit") não é escolha do host:
+    // gravar a linha poluiria a comparação com hit=false. Para a rodada inteira em vez de seguir falhando.
+    if (row.isError && row.tools.length === 0 && !row.timeout) {
+      console.error(`${row.id} api_error sem tools — rodada abortada, nada gravado para este prompt`);
+      process.exitCode = 2;
+      break;
+    }
     appendFileSync(outPath, JSON.stringify(row) + "\n");
     rows.push(row);
     console.log(`${row.id} hit=${row.hit} violation=${row.violation} bridge=${row.bridge} native=${row.native} timeout=${row.timeout}`);
