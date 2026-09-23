@@ -1,6 +1,6 @@
 # Como fazer o agente usar mais o polyagent (fan_out incluso) — pesquisa (2026-09-23)
 
-Status: **pesquisa**, nenhuma mudança aplicada ainda. Pergunta do dono: como MCPs fazem o host usar
+Status: **3 mudanças aplicadas e medidas** (PR feat/adoption-eval) — resultado inconclusivo, ver "Medição". Pergunta do dono: como MCPs fazem o host usar
 as tools deles, e como fazer o modelo se comportar como queremos — em especial usar mais o
 `fan_out` e afins.
 
@@ -53,7 +53,48 @@ as tools deles, e como fazer o modelo se comportar como queremos — em especial
 5. Tom do hook do host ("You are the ORCHESTRATOR… DEFAULT") no limite do que a Anthropic diz que
    faz disparar demais.
 
+## Medição (2026-09-23)
+
+`bench/adoption-eval.mjs`: 8 prompts fixos em `claude -p` real (config e hooks do usuário), 1 rodada
+por prompt, antes e depois das 3 mudanças (`fan_out` alwaysLoad + description com quando/quando não,
+hook `UserPromptSubmit` com dica por intenção, dica de cross-check após `delegate` nível 4/5).
+Dado bruto: [`bench/2026-09-23-adoption.jsonl`](bench/2026-09-23-adoption.jsonl) (`label` baseline/after).
+
+| Prompt | Antes | Depois |
+|---|---|---|
+| locate | ❌ Bash, Bash | ❌ Bash |
+| read | ✅ read_slice | ✅ read_slice |
+| web | ❌ Bash | ❌ Bash |
+| noisy-cmd | ✅ run_filtered | ✅ run_filtered |
+| second-opinion | ❌ delegate ×3 em série (timeout 8 min) | ✅ **fan_out**, read_slice, Bash |
+| risky-verdict | ✅ ToolSearch, read_slice, delegate, rate (timeout) | ❌ Bash, Read, Bash ×3 |
+| breadth | ❌ nenhuma tool (respondeu de memória) | ❌ nenhuma tool |
+| control-simple | ✅ Bash | ✅ Bash |
+
+| | Antes | Depois |
+|---|---:|---:|
+| acertos | 4/8 | 4/8 |
+| usos de fan_out | 0 | 1 |
+| timeouts | 2 | 0 |
+| custo reportado | $3,89 (6/8 reportados) | $5,37 (8/8) |
+
+Leitura:
+
+- **Ganho claro num caso:** pedido explícito de opiniões independentes trocou 3 `delegate` em série
+  (o anti-padrão que o `fan_out` existe para evitar) por um `fan_out`.
+- **Dica calma é ignorada quando a tool nativa é boa o bastante:** em locate e web o host usou
+  `grep`/`npm view` via Bash mesmo com a dica. `npm view` é resposta autoritativa e barata — o
+  gabarito "web_lookup" pode estar exigente demais. Revisar o `expect` desses dois.
+- **risky-verdict piorou**, e breadth continuou sem tool. Com **n=1** por prompt, essa troca não se
+  separa de ruído.
+- **Viés conhecido:** as regex da dica foram escritas conhecendo o vocabulário destes 8 prompts
+  ("veredito confiável", "opiniões independentes"). O "depois" é um teto otimista.
+
+Conclusão: nenhuma melhora líquida demonstrada; um ganho qualitativo real (fan_out no pedido
+explícito). Não dá para afirmar que as mudanças aumentam a adoção.
+
 ## Reavaliar
 
-Quando houver um eval de adoção (prompts fixos rodados em `claude -p`, contando chamadas do bridge
-vs nativas) para medir antes e depois de cada mudança.
+Rodar 3–5 repetições por prompt (`node bench/adoption-eval.mjs after-rN`) e acrescentar prompts
+**que a dica nunca viu** antes de decidir manter, endurecer (PreToolUse deny) ou reverter a dica.
+Revisar o `expect` de locate/web (Bash com grep/npm view pode ser a escolha certa).
