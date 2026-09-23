@@ -1,8 +1,20 @@
 import { describe, it, expect } from "vitest";
 import {
   isFullFileRequest, readSlicePrompt, runFilteredPrompt, explorePrompt, webLookupPrompt,
-  generateImagePrompt, generateImageGrokPrompt, fanOutArbiterPrompt,
+  generateImagePrompt, generateImageGrokPrompt, fanOutArbiterPrompt, appendDelegateRiskHint,
 } from "../src/prompts.js";
+
+describe("appendDelegateRiskHint", () => {
+  it("leaves level 3 unchanged", () => {
+    expect(appendDelegateRiskHint("result", 3)).toBe("result");
+  });
+
+  it.each([4, 5])("adds the cross-check hint to level %i", (level) => {
+    expect(appendDelegateRiskHint("result", level)).toBe(
+      `result\nLevel-${level} verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`,
+    );
+  });
+});
 
 describe("readSlicePrompt", () => {
   it("names the files and the target, and forbids the full dump", () => {

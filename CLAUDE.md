@@ -37,10 +37,11 @@ the **pure logic is testable without spawning a worker process**:
   (read/locate/web/grunt-work → bridge tools; native Read only when about to edit). These load at
   **startup** and are visible to the host even while tool schemas are deferred — that is why they
   matter for adoption. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
-  `web_lookup`) plus `fast_delegate` and `rate` register with `_meta: { "anthropic/alwaysLoad": true }` so
-  Claude Code (≥2.1.121) eagerly loads their schemas; secondary tools (`fan_out`, `generate_image`,
-  `follow_up`, `bridge_stats`, `decide`) stay deferred. `fast_delegate` was deferred and never got called —
-  the same adoption bug that motivated alwaysLoad on the core five. `format()` appends the `session_id`
+  `web_lookup`) plus `fast_delegate`, `fan_out`, and `rate` register with
+  `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas.
+  Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred.
+  `fast_delegate` and `fan_out` were deferred and never got called — the same adoption bug that
+  motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
   `follow_up` feeds that id back as `RunOpts.resume` so a prior worker session continues without
   resending its context — the footer and `follow_up` are two ends of the same loop.
@@ -382,13 +383,13 @@ points, all in `cli.ts`:
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
-  `run_filtered`, `web_lookup`) plus `fast_delegate` and `rate` register with
+  `run_filtered`, `web_lookup`) plus `fast_delegate`, `fan_out`, and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas
   instead of deferring them. Deferred tools lose to always-loaded native Read/Grep — that was the
-  root adoption bug, and `fast_delegate` hit it while deferred (the agent never called it).
-  Secondary tools (`generate_image`, `fan_out`, `follow_up`, `bridge_stats`) stay deferred. Do not
-  strip `alwaysLoad` from the core five, `fast_delegate`, or `rate`, or add it to the remaining secondary
-  set, without intent.
+  root adoption bug. `fast_delegate` and `fan_out` both hit it while deferred (the agent never called
+  them). Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred. Do
+  not strip `alwaysLoad` from the core five, `fast_delegate`, `fan_out`, or `rate`, or add it to the
+  remaining secondary set, without intent.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
   overridable via `POLYAGENT_TIMEOUT_MS`. Two pure helpers append notes to the prompt of the two
   **execution** tools (`delegate`, `fast_delegate`): `budgetNote(timeoutMs)` appends a
@@ -415,8 +416,8 @@ points, all in `cli.ts`:
 ## The hook (`hooks/prefer-polyagent.mjs`)
 
 Ships separately from the server: a hook the host wires (in its `settings.json`) as a `PreToolUse`
-matcher for `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write` (main-loop nudges), plus a
-`SessionStart` entry and a `SubagentStart` entry — each pointing at
+matcher for `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write` (main-loop nudges), plus
+`UserPromptSubmit`, `SessionStart`, and `SubagentStart` entries — each pointing at
 `hooks/prefer-polyagent.mjs`. It steers the agent toward the `polyagent` alias and no longer
 references the removed `plan`/`build` tools. Renaming from the old path is a breaking change for
 host `settings.json` entries that still point at it. Env
@@ -437,9 +438,9 @@ trims it). Design constraints, all tested in `test/hook.test.ts`:
   deny reason (`FAILOPEN_SUFFIX`) explicitly tells the model it may retry — critical under headless
   `-p` so it never hard-stalls. It **never** redirects Grep/Glob/Bash/Edit/Write (those stay
   nudge-only; blocking edits or git would break the host).
-- **Dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`): every
-  nudge/redirect fires at most once. A repeated fire is worse than none. This is why `Grep`/`Glob`
-  can sit in the matcher — they collapse to a single preload reminder.
+- **PreToolUse dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`):
+  every PreToolUse nudge/redirect fires at most once. A repeated fire is worse than none. This is why
+  `Grep`/`Glob` can sit in the matcher — they collapse to a single preload reminder.
 - The first qualifying nudge of a session also carries the one-time preload reminder.
 - **`SessionStart` closes the Bash-grep hole:** the PreToolUse preload only fires on the `Grep`/`Read`
   tool, but agents often use `Bash grep` (matches no matcher), so the preload never arrived.
@@ -462,9 +463,16 @@ main-loop steer: prefer calling `explore()` directly over spawning the Explore s
 and context-mode coexist without a race: they use separate channels (context-mode may still do its
 own thing; the bridge injects via `additionalContext` only). Fail-open/non-throwing as elsewhere.
 
-When changing hook behavior, update the pure functions (`decide`, `sessionStartContext`,
-`subagentStartContext`) not the I/O wrapper (`main`), and add/adjust a case in `test/hook.test.ts`
-— the test imports the `.mjs` directly and injects fakes for fs.
+**`UserPromptSubmit` routes each prompt independently.** The host must wire a separate
+`UserPromptSubmit` entry in `settings.json` to the same `hooks/prefer-polyagent.mjs` script. When a
+prompt asks for parallel opinions, current library information, filtered test/build output, or a
+code location, `main()` emits one calm `additionalContext` sentence naming the matching tool.
+This entry intentionally has no session dedup: every submitted prompt is judged on its own.
+`POLYAGENT_HOOK_MODE=off` remains a no-op, and routing errors fail open.
+
+When changing hook behavior, put decisions in pure functions (`decide`, `sessionStartContext`,
+`subagentStartContext`, `promptRouteContext`) and keep `main()` limited to dispatch/output. Add or
+adjust a case in `test/hook.test.ts` — the test imports the `.mjs` directly and injects fakes for fs.
 
 ## Project harness (`.claude/`, `research/`, `bench/`)
 

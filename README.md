@@ -22,7 +22,7 @@ The server exposes twelve tools:
 | `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. |
 | `decide` | Ask TypeSafe's Jev model for calibrated probabilities or a typed choice label. Pay-per-token through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
-| `fan_out` | Run the SAME prompt across N engines/tiers in parallel isolated sandboxes and get back ONLY a compact digest — `mode: "race"` (default) returns the first success, `mode: "consensus"` compares every output through one cheap arbiter. |
+| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. |
 | `follow_up` | Continue a prior session by `session_id`. |
 | `bridge_stats` | Report calls and chars returned to context per tool, plus ratings; optional `export: true` writes `research/bench/<YYYY-MM-DD>-ratings.md` (needs `POLYAGENT_LOG`). |
 | `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
@@ -158,10 +158,12 @@ Registering the tools is not enough. Two structural forces push the agent back t
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
 tools used to be **deferred** — the agent had to run a tool-search to load their schemas,
 so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
-**startup `instructions`** (routing boundary) and marks the five core tools, `fast_delegate`, and `rate` with
+**startup `instructions`** (routing boundary) and marks the five core tools, `fast_delegate`,
+`fan_out`, and `rate` with
 `_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
-eagerly. `fast_delegate` joined them for the same reason: deferred, it was never picked.
-The remaining secondary tools stay deferred. Four fixes, strongest first:
+eagerly. Both `fast_delegate` and `fan_out` joined them after they were deferred and never got
+called — the same adoption bug. The remaining secondary tools (`generate_image`, `follow_up`,
+`bridge_stats`, `decide`) stay deferred. Four fixes, strongest first:
 
 **1. Call-time hook (recommended).** A `PreToolUse` hook that steers the agent toward
 the bridge at the moment it reaches for a native tool — text in a config file loses under
@@ -179,6 +181,13 @@ nudges. Wire it into your host's settings (Claude Code `settings.json`):
 ```json
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit",
@@ -191,7 +200,11 @@ nudges. Wire it into your host's settings (Claude Code `settings.json`):
 }
 ```
 
-What it emits, and when — each fires **at most once per session** (deduplicated in a tmp
+`UserPromptSubmit` runs on every submitted prompt. That event has no matcher field; the hook's
+`promptRouteContext()` detects routing cues and stays silent when none match. This path is
+intentionally not deduplicated: each prompt is judged on its own.
+
+For `PreToolUse`, each nudge/redirect fires **at most once per session** (deduplicated in a tmp
 file keyed by `session_id`), because a repeated fire is worse than none: the agent learns
 to ignore it *and* every fire costs tokens. Dedup keys are saved **before** emitting so
 redirect is one-shot and fail-open (a second identical call is allowed through).
@@ -274,14 +287,15 @@ keep the expensive shell to orchestration only.
 > so they coexist cleanly — no `updatedInput` race, no delay, no import of
 > context-mode's routing.
 
-**2. Preload any still-deferred tools.** The five core tools, `fast_delegate`, and `rate` are already `alwaysLoad` on
-Claude Code ≥2.1.121. For secondary tools (or older hosts), tell the agent to load schemas
-once per session. Add to your `CLAUDE.md`/`AGENTS.md`:
+**2. Load deferred tools when needed.** The five core tools, `fast_delegate`, `fan_out`, and
+`rate` are `alwaysLoad` on Claude Code ≥2.1.121. Older hosts may still defer their schemas. The
+secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) remain deferred; load only
+the ones a task needs. Add to your `CLAUDE.md`/`AGENTS.md`:
 
 ```
-At the start of any session involving code reading/exploration, run tool-search once for
-`read_slice, explore, run_filtered, web_lookup` (and any secondary bridge tools you need) so
-their schemas are loaded if the host still defers them.
+If a required core schema is missing on an older host, run tool-search for
+`delegate, fast_delegate, explore, read_slice, run_filtered, web_lookup, fan_out, rate`.
+For secondary tools, load `generate_image`, `follow_up`, `bridge_stats`, or `decide` only when needed.
 ```
 
 **3. Reconcile the conflict in `CLAUDE.md`.** State the precedence explicitly:
