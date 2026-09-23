@@ -60,9 +60,9 @@ describe("matriz de capacidade por engine (US-004)", () => {
 });
 
 describe("resolveAuxTool — precedência (US-004)", () => {
-  it("sem override, as três de leitura mantêm codex + gpt-5.6-luna", () => {
+  it("sem override, as três de leitura mantêm codex + gpt-6-luna", () => {
     for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
-      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-5.6-luna" });
+      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-6-luna" });
     }
   });
 
@@ -88,10 +88,10 @@ describe("resolveAuxTool — precedência (US-004)", () => {
   });
 
   it("POLYAGENT_EXPLORE_MODEL segue valendo como default de modelo do codex nas três de leitura", () => {
-    const env = { POLYAGENT_EXPLORE_MODEL: "gpt-5.6-sol" };
-    expect(resolveAuxTool("explore", {}, env, true).model).toBe("gpt-5.6-sol");
-    expect(resolveAuxTool("read_slice", {}, env, true).model).toBe("gpt-5.6-sol");
-    expect(resolveAuxTool("web_lookup", {}, env, true).model).toBe("gpt-5.6-sol");
+    const env = { POLYAGENT_EXPLORE_MODEL: "gpt-6-sol" };
+    expect(resolveAuxTool("explore", {}, env, true).model).toBe("gpt-6-sol");
+    expect(resolveAuxTool("read_slice", {}, env, true).model).toBe("gpt-6-sol");
+    expect(resolveAuxTool("web_lookup", {}, env, true).model).toBe("gpt-6-sol");
   });
 
   it("engine não-codex sem modelo explícito usa o default do próprio CLI", () => {
@@ -156,10 +156,10 @@ describe("superfície das tools auxiliares (US-004)", () => {
 describe("resolveRunFiltered — cascata do fast_delegate", () => {
   const all: (e: Engine) => boolean = () => true;
 
-  it("sem param nem env, usa a cascata (codex luna low primeiro)", () => {
+  it("sem param nem env, usa a cascata (codex GPT-6 Luna low primeiro)", () => {
     expect(resolveRunFiltered({}, {}, all, false)).toEqual({
       engine: "codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       effort: "low",
     });
   });
@@ -219,8 +219,8 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
   });
 
   it("POLYAGENT_EXPLORE_MODEL não é o default do run_filtered (só da cascata / override codex)", () => {
-    const env = { POLYAGENT_EXPLORE_MODEL: "gpt-5.6-sol" };
-    expect(resolveRunFiltered({}, env, all, false).model).toBe("gpt-5.6-luna");
+    const env = { POLYAGENT_EXPLORE_MODEL: "gpt-6-sol" };
+    expect(resolveRunFiltered({}, env, all, false).model).toBe("gpt-6-luna");
   });
 
   it("cascata não esbarra em assertReadOnlyEngine — aceita grok com sandbox desligado", () => {
@@ -239,7 +239,7 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
 
   it("as três de leitura NÃO usam a cascata — continuam em codex + EXPLORE_MODEL", () => {
     for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
-      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-5.6-luna" });
+      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-6-luna" });
     }
   });
 });

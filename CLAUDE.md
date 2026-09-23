@@ -91,7 +91,7 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it
   stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
   It is the second `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — pay-per-token
-  fallback when the first (codex luna low, subscription) is missing, quota-exhausted or unhealthy.
+  fallback when the first (codex GPT-6 Luna low, subscription) is missing, quota-exhausted or unhealthy.
   The common `fast_delegate` path is subscription again; OpenRouter spend only happens on that
   fallback. It has no engine-level read-only mode; bwrap supplies that guard.
 - **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
@@ -115,24 +115,26 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   `--provider echo` exercises the dialect without token cost.
 
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
-using a distinct model at every level across the three active subscriptions: 1=GPT-5.6 Luna max
-(codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex),
-5=Claude Fable 5.1 max (claude). Os ids `gpt-6-astra` e `fable` foram confirmados em execução
-real (2026-09-14). **Custo:** os níveis 4 e 5 são caros — o 4 muito caro e o 5 muitíssimo mais, com
+using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
+cost-benefit ladder where each step costs ~3× the previous one (see
+`.ralph/polyagent/model-refresh-2026/spikes/tier-pareto-2026-09.md`): 1=GPT-6 Luna max
+(codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex),
+5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
+2026-09-14; `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23. O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`. **Custo:** os níveis 4 e 5 são caros — o 4 muito caro e o 5 muitíssimo mais, com
 folga o mais caro da matriz. São último recurso, não default: níveis 1-3 dão conta da maior parte do
 trabalho, implementação inclusa. Escalar para 4/5 só quando um nível barato já falhou ou a tarefa
-exige raciocínio de fronteira de verdade. Como codex ocupa 3 dos 5 níveis, cota estourada nele derruba os níveis 1, 2 e 4 de uma vez.
-Consequência aceita ao deixar a assinatura Google de fora — ver
-.ralph/polyagent/model-refresh-2026/prd-update-1.html. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
+exige raciocínio de fronteira de verdade. Como codex ocupa 4 dos 5 níveis, cota estourada nele derruba os níveis 1 a 4 de uma vez.
+Consequência aceita: Grok 4.6 saiu da matriz em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo)
+e a assinatura Google já estava de fora — ver .ralph/polyagent/model-refresh-2026/prd-update-1.html. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
 is missing, it falls back to the equivalent Cursor model only when `cursorEnabled` is true;
 otherwise it throws a clear error naming the missing CLI.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
-healthy candidate in `FAST_CANDIDATES` (Codex Luna low → OpenCode mercury-2 → Claude Haiku →
+healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna low → OpenCode mercury-2 → Claude Haiku →
 Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first candidate is
 **subscription** (codex); the second is **pay-per-token** (OpenRouter API key / mercury-2); the
 other two are subscription. On the common path `fast_delegate` is marginal-zero cost; it only
-spends real money when codex is missing, quota-exhausted or unhealthy. Luna low was **not
+spends real money when codex is missing, quota-exhausted or unhealthy. GPT-6 Luna low was **not
 measured** (codex quota exhausted — still pending) — its 1st place is owner knowledge, not
 measurement. Measured wall-clock (host, `runCursor`, sandbox on, same long-output prompt, 2 runs):
 mercury-2 7006ms (7885, 6126); haiku 10736ms (11330, 10141); grok-4.5 low 16301ms. Discarded:
@@ -286,7 +288,7 @@ points, all in `cli.ts`:
   window. The old fixed 5min
   ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
   timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
-- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered Codex Luna low
+- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna low
   (1st by owner knowledge, not measurement — quota blocked every timing run; still pending) →
   OpenCode `openrouter/inception/mercury-2` (pay-per-token, measured fastest at ~7s) → Claude
   Haiku (~11s) → Grok 4.5 low (~16s). `resolveFastTier` skips missing or unhealthy native
@@ -297,7 +299,7 @@ points, all in `cli.ts`:
   o caminho comum é custo marginal zero; o pago (opencode) só entra quando o codex está ausente,
   sem cota ou unhealthy.
 - **`explore`/`read_slice`/`web_lookup` resolvem engine e modelo por `resolveAuxTool`, com
-  default codex + `EXPLORE_MODEL=gpt-5.6-luna`.** `run_filtered` é a exceção: o default dele é a
+  default codex + `EXPLORE_MODEL=gpt-6-luna`.** `run_filtered` é a exceção: o default dele é a
   cascata do `fast_delegate` (`resolveRunFiltered` → `resolveFastTier`), pelos mesmos motivos de
   velocidade — e para não falhar quando a cota do codex está esgotada, caindo no próximo engine
   saudável. **Custo novo dessa tool:** a cascata pode cair no opencode (pay-per-token); o
@@ -313,7 +315,7 @@ points, all in `cli.ts`:
   (só codex) para `web_lookup` — e nunca degrada para acesso total em silêncio; `run_filtered`
   aceita qualquer engine porque roda com `force: true` por desenho, e a cascata não esbarra em
   `assertReadOnlyEngine` (essa guard vale só para as três de leitura). Com engine não-codex e
-  nenhum modelo definido, o modelo fica `undefined` de propósito: `gpt-5.6-luna` é id de codex e
+  nenhum modelo definido, o modelo fica `undefined` de propósito: `gpt-6-luna` é id de codex e
   quebraria em grok/claude. An explicit `model` still wins. `explore` and `read_slice` pass a
   mode for `-s read-only`; `web_lookup` also sets `RunOpts.web`, which adds
   `-c tools.web_search=true` for real web search; `run_filtered` deliberately omits mode and uses
@@ -334,7 +336,7 @@ points, all in `cli.ts`:
   primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
   caller values). `opencode` and `muse` (pay-per-token) stay outside `TIERS`. `muse` also stays
   outside `FAST_CANDIDATES`; `opencode` is the second `FAST_CANDIDATES` entry (pay-per-token
-  fallback after subscription luna low — see the `fast_delegate` invariant).
+  fallback after subscription GPT-6 Luna low — see the `fast_delegate` invariant).
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in
@@ -343,7 +345,7 @@ points, all in `cli.ts`:
 - **`generate_image` is codex-only.** It is the sole tool with no cursor fallback: the built-in
   `image_gen`/`gpt-image-2` (keyless, via the ChatGPT/Codex subscription) exists only in codex, so the
   handler hard-fails when `hasEngine("codex")` is false. It forces `codex exec` at `IMAGE_MODEL` (env
-  `POLYAGENT_IMAGE_MODEL`, default `gpt-5.6-sol`) with `effort:"low"` — the built-in tool does the
+  `POLYAGENT_IMAGE_MODEL`, default `gpt-6-sol`) with `effort:"low"` — the built-in tool does the
   pixels, the driver model just fires it. `RunOpts.images` (input files for editing) become `-i <file>`
   in `buildCodexArgs`, **followed by a `--` terminator**: `-i/--image` is variadic (`<FILE>...`), so
   without `--` the clap parser swallows the positional prompt as another image file and codex falls back
@@ -435,7 +437,7 @@ the hook wires a dedicated `SubagentStart` entry. When `hook_event_name === "Sub
 subagentStartContext(data.agent_type) } }`. Pure `subagentStartContext(agent_type)` reuses
 `AGENT_PREF_BODY` and appends `EXPLORE_EXTRA` when `agent_type === "Explore"` — an extra line
 telling that run (spawned on the orchestrator's expensive model) to route all reading through
-`explore`/`read_slice` (which run on Codex Luna). `sessionStartContext()` carries the matching
+`explore`/`read_slice` (which run on GPT-6 Luna). `sessionStartContext()` carries the matching
 main-loop steer: prefer calling `explore()` directly over spawning the Explore subagent. The bridge
 and context-mode coexist without a race: they use separate channels (context-mode may still do its
 own thing; the bridge injects via `additionalContext` only). Fail-open/non-throwing as elsewhere.
