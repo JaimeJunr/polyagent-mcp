@@ -19,7 +19,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
 | 2026-09-23 | [Escada de níveis pela fronteira de Pareto](2026-09-23-tier-pareto.md) | Matriz `TIERS` do `delegate` (Luna max · Sol high · Sol max · Astra max · Opus 5.5 max) |
-| 2026-09-23 | [Bench das tools auxiliares e do fast_delegate](2026-09-23-aux-tools-bench.md) | **Proposta:** Luna medium explícito nas auxiliares; cascata Luna medium → Haiku → mercury-2 → Grok |
+| 2026-09-23 | [Bench das tools auxiliares e do fast_delegate](2026-09-23-aux-tools-bench.md) | **Aplicada:** Luna medium explícito nas auxiliares; cascata Luna medium → Haiku → mercury-2 → Grok |
 | 2026-09-18 | [Dialeto de flags de cada CLI](2026-09-18-cli-dialects.md) | Como cada engine recebe prompt, modelo, esforço, autonomia e resume |
 | 2026-09-18 | [Engine opencode](2026-09-18-opencode-engine.md) | Integração do `opencode run` (pay-per-token, OpenRouter) |
 | 2026-09-18 | [Engine kimi](2026-09-18-kimi-engine.md) | Integração do `kimi -p` |

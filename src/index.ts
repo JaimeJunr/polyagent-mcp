@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  runCursor, EXPLORE_MODEL, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
+  runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveAuxTool, resolveRunFiltered,
@@ -225,7 +225,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first candidate is subscription (codex GPT-6 Luna low, marginal-zero); pay-per-token OpenRouter (mercury-2) is the 2nd fallback, used only when codex is missing, quota-exhausted or unhealthy. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku low, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
@@ -271,7 +271,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Read-only codebase exploration, the cheap Explore. Prefer this over spawning the Explore subagent for locating/mapping code: it runs on GPT-6 Luna (cheap/fast) and keeps file dumps out of your context — you get back only the conclusion plus concrete file:line references. Three modes: (a) `question` alone → broad fan-out search across the repo (follows naming conventions, checks multiple locations) returning file:line refs; (b) `question`+`files` → scoped answer about those files; (c) neither → a general project map. It LOCATES, it does not review/audit — use a Task subagent for judgment.",
+      `Read-only codebase exploration, the cheap Explore. Prefer this over spawning the Explore subagent for locating/mapping code: Codex uses ${EXPLORE_MODEL} with explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT), keeps file dumps out of your context, and returns only the conclusion plus concrete file:line references. Three modes: (a) \`question\` alone → broad fan-out search across the repo (follows naming conventions, checks multiple locations) returning file:line refs; (b) \`question\`+\`files\` → scoped answer about those files; (c) neither → a general project map. It LOCATES, it does not review/audit — use a Task subagent for judgment.`,
     inputSchema: {
       question: z
         .string()
@@ -288,20 +288,20 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. explore is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); explore is read-only: a non-codex engine needs the sandbox on."),
       ...routing,
     },
   },
   async ({ question, files, breadth, cwd, model, effort, engine: engineParam }) => {
     const { prompt, mode } = explorePrompt(question, files, breadth);
-    // read-only (mode) com o modelo barato de leitura (GPT-6 Luna) por default. O worker localiza/mapeia sem editar.
-    const { engine, model: auxModel } = resolveAuxTool("explore", { engine: engineParam, model });
+    // read-only (mode) com modelo+effort explícitos no codex por default. O worker localiza/mapeia sem editar.
+    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("explore", { engine: engineParam, model, effort });
     return formatRun(
       "explore",
       engine,
-      () => runCursor({ prompt, cwd, engine, model: auxModel, effort, mode, agentPrompt: withTerseStyle(), tool: "explore" }),
+      () => runCursor({ prompt, cwd, engine, model: auxModel, effort: auxEffort, mode, agentPrompt: withTerseStyle(), tool: "explore" }),
       undefined,
-      { model: auxModel, effort },
+      { model: auxModel, effort: auxEffort },
     );
   },
 );
@@ -311,13 +311,13 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Read-only surgical read: the Cursor agent reads the given file(s) and returns ONLY the code relevant to `want` (exact lines with file:line), never the whole file. Full-file/verbatim dump requests are refused by design and enforced before the worker is spawned. Use instead of Read when you need a specific function/section from large files — the full file never enters your context.",
+      `Read-only surgical read: the worker reads the given file(s) and returns ONLY the code relevant to \`want\` (exact lines with file:line), never the whole file. On Codex, the default is ${EXPLORE_MODEL} with explicit ${EXPLORE_EFFORT} effort (override with POLYAGENT_EXPLORE_EFFORT). Full-file/verbatim dump requests are refused by design and enforced before the worker is spawned. Use instead of Read when you need a specific function/section from large files — the full file never enters your context.`,
     inputSchema: {
       files: z.array(z.string()).min(1).describe("File paths to read from (relative to cwd or absolute)."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. read_slice is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); read_slice is read-only: a non-codex engine needs the sandbox on."),
       want: z.string().describe("What to extract, e.g. 'the login handler and its imports'."),
       ...routing,
     },
@@ -334,13 +334,13 @@ server.registerTool(
         ].join(" "),
       });
     }
-    const { engine, model: auxModel } = resolveAuxTool("read_slice", { engine: engineParam, model });
+    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("read_slice", { engine: engineParam, model, effort });
     return formatRun(
       "read_slice",
       engine,
-      () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice" }),
+      () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice" }),
       undefined,
-      { model: auxModel, effort },
+      { model: auxModel, effort: auxEffort },
     );
   },
 );
@@ -350,13 +350,13 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Run a shell command via the Cursor agent and get back ONLY the relevant lines/summary — semantic filtering of huge output (build/test/log). Complements mechanical filters: use when the noise needs judgment to strip. The full output stays on Cursor's side.",
+      "Run a shell command via the coding-agent worker and get back ONLY the relevant lines/summary — semantic filtering of huge output (build/test/log). Complements mechanical filters: use when the noise needs judgment to strip. The default cascade is codex GPT-6 Luna medium, then Claude Haiku low (both subscriptions); OpenRouter mercury-2 is only reached when both are missing, quota-exhausted or unhealthy, so the pay-per-token cost is a late fallback. The full output stays on the worker's side.",
     inputSchema: {
       command: z.string().describe("The exact shell command to run."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna low first). run_filtered accepts any engine."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna medium, then Claude Haiku, then OpenRouter mercury-2). run_filtered accepts any engine."),
       want: z.string().optional().describe("What matters in the output, e.g. 'only failing tests'. Omit for meaningful-signal-only."),
       ...routing,
     },
@@ -387,26 +387,26 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a web/documentation lookup to the Cursor agent (which has web access): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.",
+      `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
     inputSchema: {
       query: z.string().describe("What to look up on the web."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude' or 'cursor'. Beats POLYAGENT_WEB_LOOKUP_ENGINE. web_lookup requires web search, which only codex has."),
+        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude' or 'cursor'. Beats POLYAGENT_WEB_LOOKUP_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); web_lookup requires web search, which only codex has."),
       ...routing,
     },
   },
   async ({ query, cwd, model, effort, engine: engineParam }) => {
     // read-only (mode:'ask' → filesystem intocado) + web:true liga a busca web do codex
     // (-c tools.web_search=true). approval_policy=never evita pendurar em headless.
-    const { engine, model: auxModel } = resolveAuxTool("web_lookup", { engine: engineParam, model });
+    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("web_lookup", { engine: engineParam, model, effort });
     return formatRun(
       "web_lookup",
       engine,
-      () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup" }),
+      () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup" }),
       undefined,
-      { model: auxModel, effort },
+      { model: auxModel, effort: auxEffort },
     );
   },
 );

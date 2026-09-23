@@ -752,36 +752,38 @@ describe("resolveTier", () => {
 });
 
 describe("resolveFastTier", () => {
-  it("FAST_CANDIDATES está na ordem GPT-6 Luna low → mercury-2 → haiku → grok-4.5 low", () => {
+  // Bench de 2026-09-23: codex medium e Claude Haiku são assinaturas estáveis;
+  // o OpenRouter pay-per-token só deve entrar depois que ambas falharem.
+  it("FAST_CANDIDATES está na ordem GPT-6 Luna medium → haiku → mercury-2 → grok-4.5 low", () => {
     expect(FAST_CANDIDATES).toEqual([
-      { engine: "codex", model: "gpt-6-luna", effort: "low" },
-      { engine: "opencode", model: "openrouter/inception/mercury-2" },
+      { engine: "codex", model: "gpt-6-luna", effort: "medium" },
       { engine: "claude", model: "haiku", effort: "low" },
+      { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "grok", model: "grok-4.5", effort: "low" },
     ]);
   });
 
-  it("escolhe a engine saudável mais rápida na ordem codex, opencode, claude, grok", () => {
+  it("escolhe a engine saudável mais rápida na ordem codex, claude, opencode, grok", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "low" });
+    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "medium" });
   });
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
-    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
-    expect(resolveFastTier((e) => e !== "codex" && e !== "opencode")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
+    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
+    expect(resolveFastTier((e) => e !== "codex" && e !== "claude")).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
     expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
 
   it("pula engine instalada mas unhealthy", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all, false, { codex: 0.29, opencode: 0.8 })).toEqual({
-      engine: "opencode",
-      model: "openrouter/inception/mercury-2",
-    });
-    expect(resolveFastTier(all, false, { codex: 0.29, opencode: 0.29, claude: 0.8 })).toEqual({
+    expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
       model: "haiku",
       effort: "low",
+    });
+    expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.29, opencode: 0.8 })).toEqual({
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
     });
   });
 

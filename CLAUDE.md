@@ -90,10 +90,11 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   continuation via `-c`, but the bridge does not use `-c`. Autonomy uses `--auto`, persona uses a
   prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it
   stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
-  It is the second `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — pay-per-token
-  fallback when the first (codex GPT-6 Luna low, subscription) is missing, quota-exhausted or unhealthy.
-  The common `fast_delegate` path is subscription again; OpenRouter spend only happens on that
-  fallback. It has no engine-level read-only mode; bwrap supplies that guard.
+  It is the third `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — pay-per-token
+  fallback after the first two subscription candidates (codex GPT-6 Luna medium, then Claude Haiku
+  low) are missing, quota-exhausted or unhealthy. The common `fast_delegate` path is subscription;
+  OpenRouter spend only happens after both codex and claude fail. It has no engine-level read-only
+  mode; bwrap supplies that guard.
 - **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
   resume via `-S`. `-p` already is non-interactive and **rejects** `--auto`/`-y`/`--yolo`; persona
   is a prompt prefix. No engine-level read-only; bwrap supplies that guard. Subscription OAuth, so
@@ -130,16 +131,21 @@ is missing, it falls back to the equivalent Cursor model only when `cursorEnable
 otherwise it throws a clear error naming the missing CLI.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
-healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna low → OpenCode mercury-2 → Claude Haiku →
-Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first candidate is
-**subscription** (codex); the second is **pay-per-token** (OpenRouter API key / mercury-2); the
-other two are subscription. On the common path `fast_delegate` is marginal-zero cost; it only
-spends real money when codex is missing, quota-exhausted or unhealthy. GPT-6 Luna low was **not
-measured** (codex quota exhausted — still pending) — its 1st place is owner knowledge, not
-measurement. Measured wall-clock (host, `runCursor`, sandbox on, same long-output prompt, 2 runs):
-mercury-2 7006ms (7885, 6126); haiku 10736ms (11330, 10141); grok-4.5 low 16301ms. Discarded:
-gemini-flash-lite-latest (unstable, 18519ms with a 30s outlier), gpt-oss-120b OpenRouter (19251ms),
-groq gpt-oss-120b (120s timeout + wrong answer). It keeps the same full read/edit/shell access,
+healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna medium → Claude Haiku low → OpenCode
+mercury-2 → Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first
+two candidates are **subscriptions** (codex and claude); the third is **pay-per-token** (OpenRouter
+API key / mercury-2). The Claude subscription candidate deliberately uses the same subscription as a
+Claude Code host orchestrator. On the common path `fast_delegate` is marginal-zero cost; it only
+spends real money on OpenRouter when codex and claude are missing, quota-exhausted or unhealthy.
+
+Older historical measurement (host, `runCursor`, sandbox on, same long-output prompt, 2 runs):
+mercury-2 7006ms (7885, 6126); haiku 10736ms (11330, 10141); grok-4.5 low 16301ms; GPT-6 Luna
+was not measured because codex quota was exhausted. Discarded: gemini-flash-lite-latest (unstable,
+18519ms with a 30s outlier), gpt-oss-120b OpenRouter (19251ms), groq gpt-oss-120b (120s timeout +
+wrong answer). The 2026-09-23 bench (40 real runs via `runCursor` + bwrap) measured Luna medium
+8/8, median 10.8s, worst 13.1s; Luna low 8/8, median 11.8s, worst 15.4s; Haiku 6/6, median
+10.4s, worst 13.7s; mercury-2 5/6, median 14.8s, worst 240s timeout; Grok had no quota.
+See `research/2026-09-23-aux-tools-bench.md`. It keeps the same full read/edit/shell access,
 persona resolution, timeout budget note, and explicit `model`/`effort` overrides as `delegate`.
 - `prompts.ts` — pure prompt builders (`readSlicePrompt`, `runFilteredPrompt`, `explorePrompt`,
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
@@ -298,22 +304,26 @@ points, all in `cli.ts`:
   window. The old fixed 5min
   ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
   timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
-- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna low
-  (1st by owner knowledge, not measurement — quota blocked every timing run; still pending) →
-  OpenCode `openrouter/inception/mercury-2` (pay-per-token, measured fastest at ~7s) → Claude
-  Haiku (~11s) → Grok 4.5 low (~16s). `resolveFastTier` skips missing or unhealthy native
-  engines before the opt-in Cursor fallback. Keep it level-free, with the neutral usage receipt
-  `{ requestedLevel: 0, matchedRequest: true }`. It IS marked `alwaysLoad`: while deferred it
-  was never called, the same adoption bug that motivated alwaysLoad on the five core tools
-  (deferred schemas lose to always-loaded native Read/Grep). **Custo:** o 1º é assinatura, então
-  o caminho comum é custo marginal zero; o pago (opencode) só entra quando o codex está ausente,
-  sem cota ou unhealthy.
-- **`explore`/`read_slice`/`web_lookup` resolvem engine e modelo por `resolveAuxTool`, com
-  default codex + `EXPLORE_MODEL=gpt-6-luna`.** `run_filtered` é a exceção: o default dele é a
+- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna medium
+  → Claude Haiku low → OpenCode `openrouter/inception/mercury-2` → Grok 4.5 low. `resolveFastTier`
+  skips missing or unhealthy native engines before the opt-in Cursor fallback. Keep it level-free,
+  with the neutral usage receipt `{ requestedLevel: 0, matchedRequest: true }`. It IS marked
+  `alwaysLoad`: while deferred it was never called, the same adoption bug that motivated alwaysLoad
+  on the five core tools (deferred schemas lose to always-loaded native Read/Grep). **Custo:** os
+  dois primeiros são assinaturas (codex e claude); o 2º usa a assinatura Claude do orquestrador
+  Claude Code e é um custo aceito. O pago (opencode) só entra quando codex e claude estão ausentes,
+  sem cota ou unhealthy. A ordem e os números do bench de 2026-09-23 estão em
+  `research/2026-09-23-aux-tools-bench.md`; medium manteve a velocidade do low e teve nota maior.
+- **`explore`/`read_slice`/`web_lookup` resolvem engine, modelo e effort por `resolveAuxTool`, com
+  default codex + `EXPLORE_MODEL=gpt-6-luna` + `EXPLORE_EFFORT=medium` explícito.** O effort
+  usa `POLYAGENT_EXPLORE_EFFORT` quando configurado, só é injetado se a engine resolvida é codex,
+  e um `effort` explícito do chamador sempre vence; engine não-codex sem override fica com effort
+  `undefined`. `run_filtered` é a exceção: o default dele é a
   cascata do `fast_delegate` (`resolveRunFiltered` → `resolveFastTier`), pelos mesmos motivos de
   velocidade — e para não falhar quando a cota do codex está esgotada, caindo no próximo engine
-  saudável. **Custo novo dessa tool:** a cascata pode cair no opencode (pay-per-token); o
-  `run_filtered` passa a poder gastar dinheiro quando o codex não estiver disponível. Não há mais
+  saudável. **Custo novo dessa tool:** a cascata pode cair no claude (assinatura) e depois no
+  opencode (pay-per-token); o `run_filtered` só pode gastar dinheiro quando codex e claude não
+  estiverem disponíveis. Não há mais
   `engine: "codex"` hardcoded no handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita
   um parâmetro `engine` opcional no **próprio inputSchema** — nunca no objeto `routing`
   compartilhado, que é spread nas ferramentas de roteamento e daria `engine` também a
@@ -345,8 +355,8 @@ points, all in `cli.ts`:
   without `engine`, `resolveDelegate` uses `resolveTier`. When the explicit engine differs from the level's
   primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
   caller values). `opencode` and `muse` (pay-per-token) stay outside `TIERS`. `muse` also stays
-  outside `FAST_CANDIDATES`; `opencode` is the second `FAST_CANDIDATES` entry (pay-per-token
-  fallback after subscription GPT-6 Luna low — see the `fast_delegate` invariant).
+  outside `FAST_CANDIDATES`; `opencode` is the third `FAST_CANDIDATES` entry (pay-per-token
+  fallback after subscription GPT-6 Luna medium and Claude Haiku — see the `fast_delegate` invariant).
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in

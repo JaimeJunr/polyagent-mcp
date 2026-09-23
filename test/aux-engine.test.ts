@@ -60,10 +60,31 @@ describe("matriz de capacidade por engine (US-004)", () => {
 });
 
 describe("resolveAuxTool — precedência (US-004)", () => {
-  it("sem override, as três de leitura mantêm codex + gpt-6-luna", () => {
+  it("sem override, as três de leitura mantêm codex + gpt-6-luna + medium explícito", () => {
     for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
-      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-6-luna" });
+      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({
+        engine: "codex",
+        model: "gpt-6-luna",
+        effort: "medium",
+      });
     }
+  });
+
+  it("usa o effort explícito do chamador no codex", () => {
+    expect(resolveAuxTool("explore", { effort: "high" }, {}, true)).toEqual({
+      engine: "codex",
+      model: "gpt-6-luna",
+      effort: "high",
+    });
+  });
+
+  it("usa POLYAGENT_EXPLORE_EFFORT como override injetado", () => {
+    expect(resolveAuxTool("read_slice", {}, { POLYAGENT_EXPLORE_EFFORT: "low" }, true).effort).toBe("low");
+  });
+
+  it("não injeta effort default em engine não-codex, mas preserva effort explícito", () => {
+    expect(resolveAuxTool("explore", { engine: "claude" }, {}, true).effort).toBeUndefined();
+    expect(resolveAuxTool("explore", { engine: "claude", effort: "low" }, {}, true).effort).toBe("low");
   });
 
   it("a env da tool sobrepõe o default", () => {
@@ -156,24 +177,29 @@ describe("superfície das tools auxiliares (US-004)", () => {
 describe("resolveRunFiltered — cascata do fast_delegate", () => {
   const all: (e: Engine) => boolean = () => true;
 
-  it("sem param nem env, usa a cascata (codex GPT-6 Luna low primeiro)", () => {
+  it("sem param nem env, usa a cascata (codex GPT-6 Luna medium primeiro)", () => {
     expect(resolveRunFiltered({}, {}, all, false)).toEqual({
       engine: "codex",
       model: "gpt-6-luna",
-      effort: "low",
+      effort: "medium",
     });
   });
 
   it("pula o primeiro da cascata quando está ausente ou unhealthy", () => {
     expect(resolveRunFiltered({}, {}, (e) => e !== "codex", false)).toEqual({
+      engine: "claude",
+      model: "haiku",
+      effort: "low",
+    });
+    expect(resolveRunFiltered({}, {}, (e) => e !== "codex" && e !== "claude", false)).toEqual({
       engine: "opencode",
       model: "openrouter/inception/mercury-2",
       effort: undefined,
     });
-    expect(resolveRunFiltered({}, {}, all, false, { codex: 0.29, opencode: 0.8 })).toEqual({
-      engine: "opencode",
-      model: "openrouter/inception/mercury-2",
-      effort: undefined,
+    expect(resolveRunFiltered({}, {}, all, false, { codex: 0.29, claude: 0.8 })).toEqual({
+      engine: "claude",
+      model: "haiku",
+      effort: "low",
     });
   });
 
@@ -209,7 +235,7 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
     expect(resolveRunFiltered({}, env, all, false)).toEqual({
       engine: "codex",
       model: "custom-model",
-      effort: "low",
+      effort: "medium",
     });
   });
 
@@ -239,7 +265,11 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
 
   it("as três de leitura NÃO usam a cascata — continuam em codex + EXPLORE_MODEL", () => {
     for (const tool of ["explore", "read_slice", "web_lookup"] as const) {
-      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({ engine: "codex", model: "gpt-6-luna" });
+      expect(resolveAuxTool(tool, {}, {}, true)).toEqual({
+        engine: "codex",
+        model: "gpt-6-luna",
+        effort: "medium",
+      });
     }
   });
 });
