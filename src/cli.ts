@@ -83,20 +83,20 @@ export const MUSE_BIN = process.env.POLYAGENT_MUSE_BIN ?? "muse";
 export const DEFAULT_MODEL = process.env.POLYAGENT_MODEL ?? "composer-2.5-fast";
 
 /**
- * Modelo barato de leitura do `explore`/`read_slice`/`web_lookup`: GPT-5.6 Luna via
+ * Modelo barato de leitura do `explore`/`read_slice`/`web_lookup`: GPT-6 Luna via
  * codex (keyless, pela assinatura Codex), rodando read-only (`-s read-only`). Substitui o composer do
  * cursor cancelado — localizar/ler pede o modelo mais barato e ágil. Override via
  * POLYAGENT_EXPLORE_MODEL. Só se aplica quando o chamador não passa `model`.
  * `run_filtered` NÃO usa este default: o default dele é a cascata do `resolveFastTier`.
  */
-const EXPLORE_MODEL_FALLBACK = "gpt-5.6-luna";
+const EXPLORE_MODEL_FALLBACK = "gpt-6-luna";
 export const EXPLORE_MODEL = process.env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK;
 
 /**
  * Modelo codex que dispara o image_gen built-in (gpt-image-2 faz o trabalho pesado; effort baixo basta).
  * Override via POLYAGENT_IMAGE_MODEL.
  */
-export const IMAGE_MODEL = process.env.POLYAGENT_IMAGE_MODEL ?? "gpt-5.6-sol";
+export const IMAGE_MODEL = process.env.POLYAGENT_IMAGE_MODEL ?? "gpt-6-sol";
 
 /** Se truthy, passa --force (roda comandos sem prompt). Default off por segurança. */
 export const FORCE = ["1", "true", "yes"].includes((process.env.POLYAGENT_FORCE ?? "").toLowerCase());
@@ -463,7 +463,7 @@ export function resolveAuxTool(
  * FAST_CANDIDATES). Motivo: velocidade — e com a cota do codex esgotada a tool
  * antiga falhava; a cascata cai no próximo engine saudável.
  *
- * CUSTO: o 1º da cascata é assinatura (codex luna low) — caminho comum é custo
+ * CUSTO: o 1º da cascata é assinatura (codex GPT-6 Luna low) — caminho comum é custo
  * marginal zero. O 2º é pay-per-token (opencode/mercury-2). `run_filtered` passa
  * a poder gastar dinheiro quando o codex está ausente, sem cota ou unhealthy.
  * Engine/modelo explícitos ainda vencem e não disparam a cascata.
@@ -1413,23 +1413,27 @@ interface TierEntry {
 }
 
 /**
- * Matriz do `delegate`: cada nível usa um MODELO DISTINTO, sem repetir entre níveis, escalando a
- * dificuldade e distribuindo pelas 3 assinaturas (codex/grok/claude). O cursor saiu do caminho
- * padrão (assinatura cancelada) — vira fallback só sob CURSOR_ENABLED. Leitura barata (explore/
- * read_slice) reaproveita o modelo do nível 1 (gpt-5.6-luna). Níveis 1/2/4 usam Codex Luna/Sol/Astra,
- * 3 usa Grok 4.6, e 5 usa Claude Fable. A concentração em codex é consequência de a assinatura
- * Google (engine agy) ter ficado de fora — ver .ralph/polyagent/model-refresh-2026/spikes/agy-google-cli.md.
+ * Matriz do `delegate`: escada de custo-benefício só com pontos da fronteira de Pareto (nota vs.
+ * custo/tarefa, Artificial Analysis 2026-09-23), cada degrau ~3× mais caro que o anterior — ver
+ * .ralph/polyagent/model-refresh-2026/spikes/tier-pareto-2026-09.md. Tudo por assinatura
+ * (codex/claude): pay-per-token (MiMo, DeepSeek) fica fora de propósito. Níveis 1-4 usam GPT-6
+ * Luna max / Sol high / Sol max / Astra max, e 5 usa Claude Opus 5.5 max. Grok 4.6 saiu (mesma nota
+ * do Sol xhigh a 3,5× o custo) e o Astra ficou apesar de dominado na nota geral: em código (Coding
+ * Agent Index 62) é o topo medido. Custo aceito: codex tem 4 de 5 níveis, então cota estourada nele
+ * derruba 1-4 de uma vez. O cursor saiu do caminho padrão (assinatura cancelada) — vira fallback só
+ * sob CURSOR_ENABLED. Leitura barata (explore/read_slice) reaproveita o modelo do nível 1.
  */
 const TIERS: Record<number, TierEntry> = {
-  1: { primary: { engine: "codex", model: "gpt-5.6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
-  2: { primary: { engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  3: { primary: { engine: "grok", model: "grok-4.6", effort: "high" }, cursorModel: "grok-4.6-high-fast" },
-  // gpt-6-astra e fable: ids confirmados em execução real (2026-09-14, ambos responderam via bwrap).
-  // Já os cursorModel destes dois níveis seguem DEDUZIDOS do padrão dos vizinhos, não verificados —
-  // e o padrão tem exceção (o nível 2 antigo usava o prefixo "cursor-" e o 4 não), então trate só
-  // esses dois como palpite. Verificar exige a assinatura cursor, que está cancelada.
+  1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
+  2: { primary: { engine: "codex", model: "gpt-6-sol", effort: "high" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
+  3: { primary: { engine: "codex", model: "gpt-6-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
+  // IDs primários confirmados em execução real: gpt-6-luna, gpt-6-sol e claude-opus-5-5
+  // (2026-09-23); gpt-6-astra (2026-09-14). O alias `opus` ainda resolve para o claude-opus-5
+  // antigo — use sempre o id completo claude-opus-5-5.
+  // Os cursorModel NÃO acompanham o refresh: o cursor é legado (assinatura cancelada) e os ids
+  // dele ficaram como estavam — deduzidos do padrão dos vizinhos, nunca verificados.
   4: { primary: { engine: "codex", model: "gpt-6-astra", effort: "max" }, cursorModel: "gpt-6-astra-max-fast" },
-  5: { primary: { engine: "claude", model: "fable", effort: "max" }, cursorModel: "claude-fable-max-fast" },
+  5: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "max" }, cursorModel: "claude-fable-max-fast" },
 };
 
 /**
@@ -1448,11 +1452,11 @@ export const HEALTH_THRESHOLD = 0.3;
  *   opencode openrouter/inception/mercury-2  7006ms  (7885, 6126) — mais rápido e consistente
  *   claude haiku                             10736ms (11330, 10141) — consistente
  *   grok grok-4.5 low                        16301ms
- *   codex gpt-5.6-luna low                   NÃO MEDIDO — cota do codex esgotada
+ *   codex gpt-6-luna low                     NÃO MEDIDO (o gpt-5.6-luna antes dele também não: cota esgotada)
  * Descartados: gemini-flash-lite-latest (18519ms, instável, outlier 30s);
  * openrouter/openai/gpt-oss-120b (19251ms); groq/openai/gpt-oss-120b (timeout 120s + resposta errada).
  *
- * Luna low fica em 1º por ESCOLHA do dono, NÃO por medição — tentei medir de
+ * GPT-6 Luna low fica em 1º por ESCOLHA do dono, NÃO por medição — tentei medir de
  * novo e a cota do codex segue esgotada. As medições reais (mercury-2 / haiku /
  * grok-4.5) continuam valendo; a ordem não as segue.
  *
@@ -1475,7 +1479,7 @@ export const HEALTH_THRESHOLD = 0.3;
  *   o fast_delegate só erra nessa 2ª escolha quando o codex já não estava disponível.
  */
 export const FAST_CANDIDATES: Tier[] = [
-  { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
+  { engine: "codex", model: "gpt-6-luna", effort: "low" },
   { engine: "opencode", model: "openrouter/inception/mercury-2" },
   // effort low no haiku é consistência com os vizinhos, não ganho: medido em 10100ms sem
   // effort contra 10125ms com low (2 runs cada) — diferença dentro do ruído.

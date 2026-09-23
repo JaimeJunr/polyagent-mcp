@@ -204,12 +204,12 @@ describe("quotaErrorMessage — erro acionável por tool (US-006)", () => {
   });
 
   it("no delegate sugere o menor level cuja engine primária está disponível", () => {
-    // grok estourou: o nível 3 sai; o menor restante é 1 (codex).
+    // grok estourou: fora da matriz desde 2026-09-23; o menor restante é 1 (codex).
     expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["codex", "claude"]))
       .toContain("retry with level:1");
-    // codex estourou: sobram 3 (grok) e 5 (claude) — o menor é 3.
+    // codex estourou: ele tem os níveis 1-4, então só sobra o 5 (claude) — grok não tem nível.
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["grok", "claude"]))
-      .toContain("retry with level:3");
+      .toContain("retry with level:5");
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["claude"]))
       .toContain("retry with level:5");
   });

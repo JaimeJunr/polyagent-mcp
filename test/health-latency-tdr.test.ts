@@ -15,8 +15,9 @@ describe("regressão: latência sozinha nunca derruba uma engine abaixo do thres
   it("sucesso de 22min (topo da faixa real observada) continua saudável", () => {
     const health = computeEngineHealth(rec(22 * 60_000), NOW, WINDOW, TIMEOUT);
     expect(health.grok).toBeGreaterThanOrEqual(0.3);
-    // consequência de roteamento: grok segue disponível — zero falhas, só foi lento.
-    expect(resolveTier(3, (e) => e === "grok", false, health)).toEqual({ engine: "grok", model: "grok-4.6", effort: "high" });
+    // consequência de roteamento: grok segue disponível — zero falhas, só foi lento. (Grok saiu da
+    // matriz do delegate em 2026-09-23; a cascata do fast_delegate é onde ele ainda é roteado.)
+    expect(resolveFastTier((e) => e === "grok", false, health)).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
 
   it("mesmo um sucesso arbitrariamente lento (10x o teto) não cruza o threshold — só failure/timeout derruba", () => {

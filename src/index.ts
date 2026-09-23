@@ -119,7 +119,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The `level` (1-5) picks a DISTINCT model by task difficulty, spread across the codex/grok/claude subscriptions: 1=GPT-5.6 Luna max (codex, cheapest), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex), 5=Claude Fable 5.1 max (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: levels 4 and 5 are EXPENSIVE. Level 4 (GPT-6 Astra max) is very costly, and level 5 (Claude Fable 5.1 max) is the most expensive by a wide margin — it is a last resort, not a default. Do NOT reach for 4 or 5 because a task 'feels important': use them only when a cheaper level already failed or the task genuinely needs frontier reasoning (hard debugging, cross-file impact, a review verdict that must hold). Levels 1-3 handle almost everything, including most implementation. Give a complete, self-contained instruction — the worker does not see your context.",
+      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The `level` (1-5) picks a DISTINCT model by task difficulty, a cost-benefit ladder on the codex/claude subscriptions, each step ~3x the previous: 1=GPT-6 Luna max (codex, cheapest), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex), 5=Claude Opus 5.5 max (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: levels 4 and 5 are EXPENSIVE. Level 4 (GPT-6 Astra max) is very costly, and level 5 (Claude Opus 5.5 max) is the most expensive by a wide margin — it is a last resort, not a default. Do NOT reach for 4 or 5 because a task 'feels important': use them only when a cheaper level already failed or the task genuinely needs frontier reasoning (hard debugging, cross-file impact, a review verdict that must hold). Levels 1-3 handle almost everything, including most implementation. Give a complete, self-contained instruction — the worker does not see your context.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       level: z
@@ -127,7 +127,7 @@ server.registerTool(
         .int()
         .min(1)
         .max(5)
-        .describe("Task difficulty 1-5, each a distinct model: 1=GPT-5.6 Luna max (codex), 2=GPT-5.6 Sol xhigh (codex), 3=Grok 4.6 high (grok), 4=GPT-6 Astra max (codex), 5=Claude Fable 5.1 max (claude). Use the lowest level that fits. COST: 4 is very expensive and 5 is MUCH more expensive still — reserve both for tasks a cheaper level cannot do, never as a default."),
+        .describe("Task difficulty 1-5, each a distinct model+effort: 1=GPT-6 Luna max (codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex), 5=Claude Opus 5.5 max (claude). Use the lowest level that fits. COST: 4 is very expensive and 5 is MUCH more expensive still — reserve both for tasks a cheaper level cannot do, never as a default."),
       engine: z
         .string()
         .optional()
@@ -181,7 +181,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first candidate is subscription (codex luna low, marginal-zero); pay-per-token OpenRouter (mercury-2) is the 2nd fallback, used only when codex is missing, quota-exhausted or unhealthy. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first candidate is subscription (codex GPT-6 Luna low, marginal-zero); pay-per-token OpenRouter (mercury-2) is the 2nd fallback, used only when codex is missing, quota-exhausted or unhealthy. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
@@ -224,7 +224,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Read-only codebase exploration, the cheap Explore. Prefer this over spawning the Explore subagent for locating/mapping code: it runs on Codex Luna (cheap/fast) and keeps file dumps out of your context — you get back only the conclusion plus concrete file:line references. Three modes: (a) `question` alone → broad fan-out search across the repo (follows naming conventions, checks multiple locations) returning file:line refs; (b) `question`+`files` → scoped answer about those files; (c) neither → a general project map. It LOCATES, it does not review/audit — use a Task subagent for judgment.",
+      "Read-only codebase exploration, the cheap Explore. Prefer this over spawning the Explore subagent for locating/mapping code: it runs on GPT-6 Luna (cheap/fast) and keeps file dumps out of your context — you get back only the conclusion plus concrete file:line references. Three modes: (a) `question` alone → broad fan-out search across the repo (follows naming conventions, checks multiple locations) returning file:line refs; (b) `question`+`files` → scoped answer about those files; (c) neither → a general project map. It LOCATES, it does not review/audit — use a Task subagent for judgment.",
     inputSchema: {
       question: z
         .string()
@@ -247,7 +247,7 @@ server.registerTool(
   },
   async ({ question, files, breadth, cwd, model, effort, engine: engineParam }) => {
     const { prompt, mode } = explorePrompt(question, files, breadth);
-    // read-only (mode) com o modelo barato de leitura (luna) por default. O worker localiza/mapeia sem editar.
+    // read-only (mode) com o modelo barato de leitura (GPT-6 Luna) por default. O worker localiza/mapeia sem editar.
     const { engine, model: auxModel } = resolveAuxTool("explore", { engine: engineParam, model });
     return format("explore", await runCursor({ prompt, cwd, engine, model: auxModel, effort, mode, agentPrompt: withTerseStyle(), tool: "explore" }));
   },
@@ -297,7 +297,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex luna low first). run_filtered accepts any engine."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna low first). run_filtered accepts any engine."),
       want: z.string().optional().describe("What matters in the output, e.g. 'only failing tests'. Omit for meaningful-signal-only."),
       ...routing,
     },

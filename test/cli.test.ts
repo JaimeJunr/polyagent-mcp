@@ -7,7 +7,7 @@ import {
   budgetNote, evidenceNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
   FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
-  fallbackOpts, DEFAULT_MODEL,
+  fallbackOpts, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
   type SandboxSpec, type Engine,
 } from "../src/cli.js";
 import { computeEngineHealth } from "../src/usage.js";
@@ -46,7 +46,7 @@ describe("codex environment fallback helpers", () => {
 
     it("drops model/effort/resume/images along with mode", () => {
       const opts = {
-        prompt: "q", engine: "codex" as Engine, model: "gpt-5.6-sol", effort: "high",
+        prompt: "q", engine: "codex" as Engine, model: "gpt-6-sol", effort: "high",
         resume: "codex-session-id", images: ["/repo/a.png"], mode: "plan" as const,
       };
       const result = fallbackOpts(opts, "grok");
@@ -567,18 +567,18 @@ describe("buildGrokArgs", () => {
 
 describe("buildCodexArgs", () => {
   it("usa o subcomando exec, --json e bypass de aprovação", () => {
-    const args = buildCodexArgs({ prompt: "fix it", model: "gpt-5.6-sol", effort: "medium" });
+    const args = buildCodexArgs({ prompt: "fix it", model: "gpt-6-sol", effort: "medium" });
     expect(args[0]).toBe("exec");
     expect(args).toContain("--json");
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
-    expect(args[args.indexOf("-m") + 1]).toBe("gpt-5.6-sol");
+    expect(args[args.indexOf("-m") + 1]).toBe("gpt-6-sol");
     // effort é config override, não flag
     expect(args[args.indexOf("-c") + 1]).toBe('model_reasoning_effort="medium"');
     expect(args.at(-1)).toBe("fix it"); // prompt é posicional no fim
   });
 
   it("read-only (mode) SEM bwrap externo usa -s read-only do codex + approval_policy never", () => {
-    const args = buildCodexArgs({ prompt: "read", model: "gpt-5.6-luna", mode: "ask" }); // sandboxed=false
+    const args = buildCodexArgs({ prompt: "read", model: "gpt-6-luna", mode: "ask" }); // sandboxed=false
     expect(args[args.indexOf("-s") + 1]).toBe("read-only");
     expect(args).toContain('approval_policy="never"');
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
@@ -587,7 +587,7 @@ describe("buildCodexArgs", () => {
   it("mode:'plan' (homônimo da tool removida) continua virando -s read-only no codex", () => {
     // RunOpts.mode é o modo read-only do codex, NÃO a tool `plan` (removida na US-003):
     // explore/read_slice seguem dependendo dele.
-    const args = buildCodexArgs({ prompt: "map it", model: "gpt-5.6-luna", mode: "plan" });
+    const args = buildCodexArgs({ prompt: "map it", model: "gpt-6-luna", mode: "plan" });
     expect(args[args.indexOf("-s") + 1]).toBe("read-only");
     expect(args).toContain('approval_policy="never"');
   });
@@ -596,7 +596,7 @@ describe("buildCodexArgs", () => {
     // Regressão: `codex -s read-only` cria um sandbox interno; aninhado dentro do bwrap do bridge ele
     // quebra com "bwrap: No permissions to create new namespace". Com bwrap externo o read-only vem
     // do --ro-bind do workspace, então o codex roda em bypass (não aninha).
-    const args = buildCodexArgs({ prompt: "read", model: "gpt-5.6-luna", mode: "ask" }, true);
+    const args = buildCodexArgs({ prompt: "read", model: "gpt-6-luna", mode: "ask" }, true);
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(args).not.toContain("read-only");
     expect(args).not.toContain("-s");
@@ -609,7 +609,7 @@ describe("buildCodexArgs", () => {
   });
 
   it("sem mode usa o bypass total (delegate/generate_image podem escrever)", () => {
-    const args = buildCodexArgs({ prompt: "do", model: "gpt-5.6-sol" });
+    const args = buildCodexArgs({ prompt: "do", model: "gpt-6-sol" });
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(args).not.toContain("read-only");
   });
@@ -622,7 +622,7 @@ describe("buildCodexArgs", () => {
   it("usa o subcomando resume com o id quando há resume", () => {
     // resume do codex é subcomando: `codex exec resume [OPTIONS] <id> <prompt>`. buildCodexArgs
     // ignorava opts.resume → follow_up começava sessão nova em vez de continuar.
-    const args = buildCodexArgs({ prompt: "more", model: "gpt-5.6-sol", resume: "uuid-1" });
+    const args = buildCodexArgs({ prompt: "more", model: "gpt-6-sol", resume: "uuid-1" });
     expect(args[0]).toBe("exec");
     expect(args[1]).toBe("resume");
     expect(args).toContain("--json");
@@ -633,7 +633,7 @@ describe("buildCodexArgs", () => {
   });
 
   it("anexa -i por imagem de entrada quando opts.images está setado", () => {
-    const args = buildCodexArgs({ prompt: "edit", model: "gpt-5.6-sol", images: ["a.png", "b.png"] });
+    const args = buildCodexArgs({ prompt: "edit", model: "gpt-6-sol", images: ["a.png", "b.png"] });
     expect(args).toContain("-i");
     expect(args[args.indexOf("-i") + 1]).toBe("a.png");
     expect(args[args.indexOf("-i", args.indexOf("-i") + 1) + 1]).toBe("b.png");
@@ -655,7 +655,7 @@ describe("buildCodexArgs", () => {
   it("inclui -i no resume path quando há resume e images", () => {
     const args = buildCodexArgs({
       prompt: "more",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       resume: "uuid-1",
       images: ["src.png"],
     });
@@ -674,17 +674,23 @@ describe("resolveTier", () => {
   const all: (e: Engine) => boolean = () => true;
   const noCodex: (e: Engine) => boolean = (e) => e !== "codex";
 
-  it("mapeia cada nível para a engine+modelo preferido (matriz mista 3 assinaturas)", () => {
-    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "max" });
-    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-5.6-sol", effort: "xhigh" });
-    expect(resolveTier(3, all)).toEqual({ engine: "grok", model: "grok-4.6", effort: "high" });
-    expect(resolveTier(4, all)).toEqual({ engine: "codex", model: "gpt-6-astra", effort: "max" });
-    expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "fable", effort: "max" });
+  it("mantém os defaults de leitura e imagem no roster atual", () => {
+    expect(EXPLORE_MODEL).toBe("gpt-6-luna");
+    expect(IMAGE_MODEL).toBe("gpt-6-sol");
   });
 
-  it("usa um modelo DISTINTO em cada nível (sem repetição)", () => {
-    const models = [1, 2, 3, 4, 5].map((l) => resolveTier(l, all).model);
-    expect(new Set(models).size).toBe(5);
+  it("mapeia cada nível para a engine+modelo preferido (escada de Pareto codex + claude)", () => {
+    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
+    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "high" });
+    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "max" });
+    expect(resolveTier(4, all)).toEqual({ engine: "codex", model: "gpt-6-astra", effort: "max" });
+    expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "max" });
+  });
+
+  // Sol aparece nos níveis 2 (high) e 3 (max): o que não pode repetir é o par modelo+esforço.
+  it("usa um par modelo+esforço DISTINTO em cada nível (sem repetição)", () => {
+    const pairs = [1, 2, 3, 4, 5].map((l) => { const t = resolveTier(l, all); return `${t.model}:${t.effort}`; });
+    expect(new Set(pairs).size).toBe(5);
   });
 
   it("cai para o cursor-agent equivalente só quando CURSOR habilitado e a engine preferida falta", () => {
@@ -708,8 +714,8 @@ describe("resolveTier", () => {
   });
 
   it("ignora health quando omitido (comportamento existente inalterado)", () => {
-    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "max" });
-    expect(resolveTier(1, all, true)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "max" });
+    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
+    expect(resolveTier(1, all, true)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
   });
 
   it("trata health vazio (log sem registros relevantes) igual a omitir health", () => {
@@ -730,7 +736,7 @@ describe("resolveTier", () => {
   it("mantém a engine preferida quando health está OK", () => {
     expect(resolveTier(1, all, true, { codex: 0.9 })).toEqual({
       engine: "codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       effort: "max",
     });
   });
@@ -746,9 +752,9 @@ describe("resolveTier", () => {
 });
 
 describe("resolveFastTier", () => {
-  it("FAST_CANDIDATES está na ordem luna low → mercury-2 → haiku → grok-4.5 low", () => {
+  it("FAST_CANDIDATES está na ordem GPT-6 Luna low → mercury-2 → haiku → grok-4.5 low", () => {
     expect(FAST_CANDIDATES).toEqual([
-      { engine: "codex", model: "gpt-5.6-luna", effort: "low" },
+      { engine: "codex", model: "gpt-6-luna", effort: "low" },
       { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "claude", model: "haiku", effort: "low" },
       { engine: "grok", model: "grok-4.5", effort: "low" },
@@ -757,7 +763,7 @@ describe("resolveFastTier", () => {
 
   it("escolhe a engine saudável mais rápida na ordem codex, opencode, claude, grok", () => {
     const all: (e: Engine) => boolean = () => true;
-    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-5.6-luna", effort: "low" });
+    expect(resolveFastTier(all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "low" });
   });
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
@@ -801,14 +807,14 @@ describe("isDefaultTierEngine (tier-integrity receipt)", () => {
   it("is true when the resolved engine matches the tier's preferred engine", () => {
     expect(isDefaultTierEngine(1, "codex")).toBe(true);
     expect(isDefaultTierEngine(2, "codex")).toBe(true);
-    expect(isDefaultTierEngine(3, "grok")).toBe(true);
+    expect(isDefaultTierEngine(3, "codex")).toBe(true);
     expect(isDefaultTierEngine(4, "codex")).toBe(true);
     expect(isDefaultTierEngine(5, "claude")).toBe(true);
   });
 
   it("is false when the resolved engine is a fallback (e.g. cursor)", () => {
     expect(isDefaultTierEngine(1, "cursor")).toBe(false);
-    expect(isDefaultTierEngine(3, "codex")).toBe(false);
+    expect(isDefaultTierEngine(3, "grok")).toBe(false);
     expect(isDefaultTierEngine(5, "cursor")).toBe(false);
   });
 
@@ -903,8 +909,8 @@ describe("buildOpencodeArgs", () => {
   });
 
   it("recusa modelo sem provider e mostra o valor recebido e o formato esperado", () => {
-    expect(() => buildOpencodeArgs({ prompt: "x", model: "gpt-5.6-luna" })).toThrow(
-      'invalid model: received "gpt-5.6-luna", expected "provider/model"',
+    expect(() => buildOpencodeArgs({ prompt: "x", model: "gpt-6-luna" })).toThrow(
+      'invalid model: received "gpt-6-luna", expected "provider/model"',
     );
   });
 });
@@ -1218,7 +1224,7 @@ describe("resolveDelegate com engine explícito", () => {
 
   it("herda model/effort quando a engine explícita é a primária do nível", () => {
     expect(resolveDelegate(1, { engine: "codex" }, all)).toEqual({
-      engine: "codex", model: "gpt-5.6-luna", effort: "max",
+      engine: "codex", model: "gpt-6-luna", effort: "max",
     });
   });
 });

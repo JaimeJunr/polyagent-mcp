@@ -67,7 +67,7 @@ const EDIT_DELEGATE_TEXT =
   "polyagent available: if this edit is part of a self-contained task (a feature, a bugfix, a " +
   "mechanical change across files, or running/fixing a build), hand the WHOLE task to " +
   "delegate(prompt, level) — the Cursor worker has full read/edit/shell access in cwd and runs cheap " +
-  "(level 1 = GPT-5.6 Luna max on codex; levels 2-5 escalate across codex/grok/claude) — instead of implementing " +
+  "(level 1 = GPT-6 Luna max on codex; levels 2-5 escalate across codex/claude) — instead of implementing " +
   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
   "Keep editing inline only for a quick one-off you're already positioned for.";
 
@@ -89,17 +89,17 @@ export function sessionStartContext() {
     "default and you burn expensive tokens on cheap work. For PURE reading/locating/web with no edit ahead, " +
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
-    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-5.6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
+    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
     "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (GPT-6 Astra max, " +
-    "Claude Fable 5.1 max) are EXPENSIVE — 5 by far the most — and are a last resort for real " +
+    "Claude Opus 5.5 max) are EXPENSIVE — 5 by far the most — and are a last resort for real " +
     "reasoning — code review with a verdict, cross-file impact analysis, hard debugging. The Cursor worker " +
     "runs with full read/edit/shell access in cwd. The win of delegating execution AND judgment is context " +
     "economy: the worker's file reading and raw output never enter your context, whatever the tier. Hand " +
-    "execution (level 1, Luna max) and judgment (levels 4 and 5, Astra max/Fable 5.1 max) to delegate, then review the result; edit " +
+    "execution (level 1, GPT-6 Luna max) and judgment (levels 4 and 5, Astra max/Opus 5.5 max) to delegate, then review the result; edit " +
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +
-    "native Explore subagent — the bridge runs on Codex Luna (cheap) while a spawned " +
+    "native Explore subagent — the bridge runs on GPT-6 Luna (cheap) while a spawned " +
     "Explore would run on your expensive model."
   );
 }
@@ -123,10 +123,10 @@ const AGENT_PREF_BODY =
 
 // Reforço só para o subagente Explore: ele foi spawnado no modelo caro do orquestrador
 // (o Explore herda o modelo da sessão, capado em Opus), então empurra TODO o trabalho de
-// leitura pro polyagent, que roda no Codex Luna barato — o shell caro só orquestra.
+// leitura pro polyagent, que roda no GPT-6 Luna barato — o shell caro só orquestra.
 const EXPLORE_EXTRA =
   " You are an Explore run spawned on the orchestrator's expensive model: do ALL file reading and " +
-  "locating via explore(question)/read_slice(files,want), which run on Codex Luna (cheap) " +
+  "locating via explore(question)/read_slice(files,want), which run on GPT-6 Luna (cheap) " +
   "and keep dumps out of your context. Use native Read only for a file you are about to edit.";
 
 /**

@@ -120,14 +120,14 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/grunt|commits\b/i);
   });
 
-  it("enquadra delegate como executor E juiz (levels 4 and 5 = Astra/Fable), Task só pra subagent especializado", () => {
+  it("enquadra delegate como executor E juiz (levels 4 and 5 = Astra/Opus), Task só pra subagent especializado", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/delegate\(prompt, level\)/);
     expect(text).toMatch(/DEFAULT/);
-    // delegate cobre julgamento também, via os tiers altos (GPT-6 Astra e Claude Fable 5.1)
+    // delegate cobre julgamento também, via os tiers altos (GPT-6 Astra e Claude Opus 5.5)
     expect(text).toMatch(/judgment/i);
     expect(text).toMatch(/levels 4 and 5/i);
-    expect(text).toMatch(/Astra max.*Fable 5\.1 max/i);
+    expect(text).toMatch(/Astra max.*Opus 5\.5 max/i);
     // Task fica só pra subagent com toolset próprio, não pra julgamento genérico
     expect(text).toMatch(/specialized|toolset/i);
   });
@@ -205,7 +205,7 @@ describe("subagentStartContext — contexto injetado no subagente", () => {
   it("agent_type Explore inclui o reforço específico", () => {
     const text = subagentStartContext("Explore");
     expect(text).toMatch(/Explore run|you are an explore/i);
-    expect(text).toMatch(/Codex Luna/i);
+    expect(text).toMatch(/GPT-6 Luna/i);
   });
 
   it("tipos diferentes de Explore não recebem o reforço específico", () => {
