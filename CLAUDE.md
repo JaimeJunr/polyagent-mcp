@@ -489,7 +489,10 @@ when an agent runs here.
   commit it.
 - **`research/`** is the project's research base: one dated study per decision, with sources and a
   "Reavaliar" section, indexed in `research/README.md`. Code comments that justify a model choice
-  point there. `research/bench/` holds raw JSONL from `npm run bench` (`bench/aux-bench.mjs`).
+  point there. `research/bench/` holds raw JSONL from `npm run bench` (`bench/aux-bench.mjs`) and from
+  `node bench/adoption-eval.mjs <label>` — the adoption eval: fixed prompts run in a real `claude -p`
+  (user config + hooks) to measure whether the host picks polyagent tools; it spends real Claude
+  usage, so run it deliberately and compare labels (e.g. `baseline` vs `after`).
 
 ## Conventions
 
