@@ -1,6 +1,6 @@
 # Como fazer o agente usar mais o polyagent (fan_out incluso) — pesquisa (2026-09-23)
 
-Status: **3 mudanças aplicadas e medidas** (PR feat/adoption-eval) — resultado inconclusivo, ver "Medição". Pergunta do dono: como MCPs fazem o host usar
+Status: **3 mudanças aplicadas e medidas** (PR feat/adoption-eval). Com host Opus 5.5 medium: direção positiva e sem regressão (acertos 7 → 9 em 19 pares, 2 melhoras × 0 pioras), mas ainda não significativo — ver "Medição 2".
 as tools deles, e como fazer o modelo se comportar como queremos — em especial usar mais o
 `fan_out` e afins.
 
@@ -93,8 +93,55 @@ Leitura:
 Conclusão: nenhuma melhora líquida demonstrada; um ganho qualitativo real (fan_out no pedido
 explícito). Não dá para afirmar que as mudanças aumentam a adoção.
 
+## Medição 2 — host fixo em Opus 5.5 medium (2026-09-23, 20h)
+
+A Medição 1 rodou com o default do usuário (`opus[1m]`), e o alias resolvia para **claude-opus-5**,
+não o 5.5. Esta rodada fixa `--model claude-opus-5-5 --effort medium` e grava o modelo que respondeu
+em cada linha (todas: `claude-opus-5-5`). Soma 4 prompts **held-out**, escritos depois das regex e
+sem ajustá-las. Ordem intercalada (antes r1 → depois r1 → antes r2 → depois r2), para que um corte
+pelo limite de sessão deixasse os dois lados equilibrados. O corte veio: foram 43 de 48 rodadas, e a
+comparação usa só os **19 pares completos** (mesmo prompt, mesma repetição, nos dois lados). Dado bruto:
+labels `o55-*` em [`bench/2026-09-23-adoption.jsonl`](bench/2026-09-23-adoption.jsonl).
+
+| Prompt | Antes | Depois |
+|---|---|---|
+| locate | ❌❌ | ❌❌ |
+| read | ✅✅ | ✅✅ |
+| web | ❌❌ | ❌❌ |
+| noisy-cmd | ✅✅ | ✅✅ |
+| second-opinion | ✅❌ | ✅✅ |
+| risky-verdict | ❌❌ | ❌❌ |
+| breadth | ❌❌ | ❌❌ |
+| control-simple | ✅ | ✅ |
+| h-two-models (held-out) | ❌ | ✅ (fan_out) |
+| h-design-choice (held-out) | ❌ | ❌ |
+| h-docs (held-out) | ✅ | ✅ |
+| h-find (held-out) | ❌ | ❌ |
+
+| | Antes | Depois |
+|---|---:|---:|
+| acertos (19 pares) | 7 | 9 |
+| usos de fan_out | 1 | 3 |
+| pares que mudaram | — | 2 melhoraram, 0 pioraram |
+| timeouts | 0 | 0 |
+| custo reportado | $12,16 | $12,34 |
+
+Leitura:
+
+- **Direção positiva e sem efeito colateral**: as 2 mudanças são ganhos de `fan_out`, nenhum par piorou
+  e o custo ficou igual.
+- **Um dos ganhos é held-out** (`h-two-models`): sinal, ainda pequeno, de que a dica generaliza além do
+  vocabulário que a inspirou.
+- **Não significativo**: 2 × 0 pares discordantes dá p ≈ 0,5 no teste do sinal. Não dá para afirmar
+  efeito.
+- **Nada move locate, web, risky-verdict nem breadth.** Em locate/web o host prefere Bash (`grep`,
+  `npm view`), o que pode ser a escolha certa. breadth e risky-verdict ficam no próprio host.
+- **O Opus 5.5 já adota mais sem ajuda**: usou `fan_out` no "antes" (second-opinion r1). O Opus 5 da
+  Medição 1 nunca usou. O modelo do host pesa tanto quanto os empurrões.
+
 ## Reavaliar
 
-Rodar 3–5 repetições por prompt (`node bench/adoption-eval.mjs after-rN`) e acrescentar prompts
-**que a dica nunca viu** antes de decidir manter, endurecer (PreToolUse deny) ou reverter a dica.
-Revisar o `expect` de locate/web (Bash com grep/npm view pode ser a escolha certa).
+Completar as 5 rodadas cortadas e somar pelo menos mais 2 repetições (`ADOPTION_MODEL=claude-opus-5-5
+ADOPTION_EFFORT=medium node bench/adoption-eval.mjs <label>`), longe do limite de sessão. Revisar o
+`expect` de locate/web: se Bash com `grep`/`npm view` for aceitável, o gabarito deve aceitar. Só depois
+decidir manter, endurecer (PreToolUse deny) ou reverter a dica.
