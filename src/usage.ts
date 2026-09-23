@@ -8,6 +8,12 @@ export interface UsageEntry {
   tool: string;
   /** Chars devolvidos ao contexto do chamador — o custo real da chamada. */
   outChars: number;
+  /** Handle engine:id exibido no footer e usado para ligar uma avaliação ao run. */
+  sessionId?: string;
+  /** Modelo efetivamente usado pelo CLI. */
+  model?: string;
+  /** Esforço efetivamente usado pelo CLI. */
+  effort?: string;
   /** Tier-integrity receipt: nível pedido pelo chamador (só presente em tools com resolveTier). */
   requestedLevel?: number;
   /** true se a engine resolvida é a preferida do nível; false quando resolveTier caiu no fallback. */
@@ -22,6 +28,12 @@ export interface UsageEntry {
   outcome?: "success" | "failure" | "timeout" | "quota";
   /** Duração do run em ms. Usado por computeEngineHealth para penalizar latência alta. */
   durationMs?: number;
+  /** Handle avaliado por um registro com tool="rate". */
+  ratedSessionId?: string;
+  /** Nota inteira de 1 a 5 de um registro com tool="rate". */
+  score?: number;
+  /** Observação opcional de uma avaliação. */
+  note?: string;
 }
 
 export interface ToolStats {
@@ -39,6 +51,9 @@ export interface TierReceipt {
 /** Métricas do run (engine que rodou, resultado, duração) — populadas pelo wrap em src/index.ts. */
 export interface UsageRun {
   engine?: string;
+  model?: string;
+  effort?: string;
+  sessionId?: string;
   outcome?: UsageEntry["outcome"];
   durationMs?: number;
 }
@@ -72,6 +87,131 @@ export function logUsage(tool: string, outChars: number, tier?: TierReceipt, run
   }
 }
 
+/** Monta uma avaliação local de uma sessão. Função pura. */
+export function buildRatingEntry(
+  sessionHandle: string,
+  score: number,
+  note = "",
+  now: number,
+): UsageEntry {
+  if (!Number.isInteger(score) || score < 1 || score > 5) {
+    throw new Error(`Invalid rating score: received ${String(score)}; expected an integer in range 1-5`);
+  }
+  if (!sessionHandle.trim()) {
+    throw new Error("Invalid rating sessionHandle: sessionHandle must not be empty");
+  }
+  return {
+    ts: now,
+    tool: "rate",
+    outChars: 0,
+    ratedSessionId: sessionHandle,
+    score,
+    note: note.trim().slice(0, 300),
+  };
+}
+
+/** Acrescenta uma avaliação ao JSONL sem deixar falhas de logging chegarem ao caller. */
+export function logRating(
+  sessionHandle: string,
+  score: number,
+  note = "",
+  now: number = Date.now(),
+): boolean {
+  if (!USAGE_LOG) return false;
+  try {
+    const entry = buildRatingEntry(sessionHandle, score, note, now);
+    appendFileSync(USAGE_LOG, JSON.stringify(entry) + "\n");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface RatingStat {
+  ratings: number;
+  avgScore: number;
+  calls: number;
+  /** Fração entre 0 e 1; null quando nenhuma execução do grupo registrou outcome (0 leria como "sempre falha"). */
+  successRate: number | null;
+  p50DurationMs: number | null;
+}
+
+export type RatingStats = Record<string, RatingStat>;
+
+function ratingGroupKey(entry: UsageEntry): string {
+  const field = (value: string | undefined): string => value && value.length > 0 ? value : "-";
+  return [field(entry.engine), field(entry.model), field(entry.effort), field(entry.tool)].join("|");
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/** Liga avaliações à última execução da sessão e agrega somente os grupos avaliados. */
+export function ratingStats(entries: UsageEntry[]): RatingStats {
+  const usageBySession = new Map<string, UsageEntry>();
+  const usageByGroup = new Map<string, { calls: number; successes: number; withOutcome: number; durations: number[] }>();
+
+  for (const entry of entries) {
+    if (entry.tool === "rate") continue;
+    if (entry.sessionId) usageBySession.set(entry.sessionId, entry);
+    const key = ratingGroupKey(entry);
+    const group = usageByGroup.get(key) ?? { calls: 0, successes: 0, withOutcome: 0, durations: [] };
+    group.calls += 1;
+    if (entry.outcome !== undefined) {
+      group.withOutcome += 1;
+      if (entry.outcome === "success") group.successes += 1;
+    }
+    if (typeof entry.durationMs === "number" && Number.isFinite(entry.durationMs)) {
+      group.durations.push(entry.durationMs);
+    }
+    usageByGroup.set(key, group);
+  }
+
+  const scoresByGroup = new Map<string, number[]>();
+  for (const entry of entries) {
+    if (entry.tool !== "rate" || typeof entry.score !== "number" || !Number.isFinite(entry.score)) continue;
+    const matched = entry.ratedSessionId ? usageBySession.get(entry.ratedSessionId) : undefined;
+    const key = matched ? ratingGroupKey(matched) : "unknown";
+    const scores = scoresByGroup.get(key) ?? [];
+    scores.push(entry.score);
+    scoresByGroup.set(key, scores);
+  }
+
+  const stats: RatingStats = {};
+  for (const [key, scores] of scoresByGroup) {
+    const usage = usageByGroup.get(key);
+    const avgScore = Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 10) / 10;
+    stats[key] = {
+      ratings: scores.length,
+      avgScore,
+      calls: usage?.calls ?? 0,
+      successRate: usage && usage.withOutcome > 0 ? usage.successes / usage.withOutcome : null,
+      p50DurationMs: median(usage?.durations ?? []),
+    };
+  }
+  return stats;
+}
+
+/** Renderiza as avaliações em uma tabela curta, priorizando grupos com mais amostras. */
+export function renderRatingStats(stats: RatingStats): string {
+  const rows = Object.entries(stats)
+    .sort(([aKey, a], [bKey, b]) => b.ratings - a.ratings || aKey.localeCompare(bKey))
+    .map(([key, stat]) => {
+      const success = stat.successRate === null ? "-" : `${(stat.successRate * 100).toFixed(1)}%`;
+      const p50 = stat.p50DurationMs === null ? "-" : String(stat.p50DurationMs);
+      return `| ${key.replaceAll("|", "\\|")} | ${stat.ratings} | ${stat.avgScore.toFixed(1)} | ${stat.calls} | ${success} | ${p50} |`;
+    });
+  return [
+    "| group | ratings | avg score | calls | success rate | p50 durationMs |",
+    "|---|---:|---:|---:|---:|---:|",
+    ...rows,
+  ].join("\n");
+}
+
 /** Lê e parseia o JSONL. Devolve [] se o arquivo não existir ou não houver log. */
 export function readUsage(): UsageEntry[] {
   if (!USAGE_LOG) return [];
@@ -87,7 +227,11 @@ export function readUsage(): UsageEntry[] {
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     try {
-      out.push(JSON.parse(line) as UsageEntry);
+      const parsed: unknown = JSON.parse(line);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const entry = parsed as { tool?: unknown };
+      if (typeof entry.tool !== "string") continue;
+      out.push(parsed as UsageEntry);
     } catch {
       // pula a linha corrompida
     }

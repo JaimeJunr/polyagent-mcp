@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -17,7 +19,8 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
+  USAGE_LOG, logRating, logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
+  ratingStats, renderRatingStats,
   type TierReceipt, type UsageRun,
 } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
@@ -27,11 +30,12 @@ const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5). Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Worker tools return a session_id for follow_up; decide returns structured JSON.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5). Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
   },
 );
 
 const PROCESS_ENV = process.env;
+const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // Params de roteamento compartilhados.
 const routing = {
@@ -70,11 +74,12 @@ function format(
     ? formatSessionHandle(res.engine, res.sessionId)
     : res.sessionId;
   const footer = res.sessionId
-    ? `\n\n---\nsession_id: ${sessionHandle} (pass to follow_up to continue this session)`
+    ? `\n\n---\nsession_id: ${sessionHandle} (pass to follow_up to continue; grade it with rate(session_id, score 1-5))`
     : "";
   const { text: scrubbed, redacted } = scrubSecrets(res.text);
   const text = scrubbed + footer;
-  logUsage(tool, text.length, tier, run);
+  const usageRun = sessionHandle ? { ...run, sessionId: sessionHandle } : run;
+  logUsage(tool, text.length, tier, usageRun);
   if (redacted) logUsage("blocked_exfil", text.length);
   return { content: [{ type: "text", text }] };
 }
@@ -94,19 +99,57 @@ async function formatRun(
   tool: string,
   engine: Engine,
   work: () => Promise<CliResult>,
-  receipt: TierReceipt,
+  receipt?: TierReceipt,
+  metadata?: Pick<UsageRun, "model" | "effort">,
 ): Promise<{ content: { type: "text"; text: string }[] }> {
   const started = Date.now();
   try {
     const res = await work();
     return format(tool, res, receipt, {
+      ...metadata,
       engine: res.engine ?? engine,
       outcome: "success",
       durationMs: Date.now() - started,
     });
   } catch (err) {
     logUsage(tool, 0, receipt, {
+      ...metadata,
       engine,
+      outcome: classifyOutcome(err),
+      durationMs: Date.now() - started,
+    });
+    throw err;
+  }
+}
+
+/** Registra cada worker do fan_out, inclusive os que não vencem a corrida. */
+async function runFanOutWorker(
+  prompt: string,
+  cwd: string | undefined,
+  level: number,
+  tier: { engine: Engine; model?: string; effort?: string },
+): Promise<{ level: number; tier: typeof tier; res: CliResult }> {
+  const started = Date.now();
+  const receipt = { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) };
+  try {
+    const res = await runCursor({ prompt, cwd, engine: tier.engine, model: tier.model, effort: tier.effort, force: true, tool: "fan_out" });
+    const sessionId = res.sessionId
+      ? formatSessionHandle(res.engine ?? tier.engine, res.sessionId)
+      : undefined;
+    logUsage("fan_out", 0, receipt, {
+      engine: res.engine ?? tier.engine,
+      model: tier.model,
+      effort: tier.effort,
+      sessionId,
+      outcome: "success",
+      durationMs: Date.now() - started,
+    });
+    return { level, tier, res };
+  } catch (err) {
+    logUsage("fan_out", 0, receipt, {
+      engine: tier.engine,
+      model: tier.model,
+      effort: tier.effort,
       outcome: classifyOutcome(err),
       durationMs: Date.now() - started,
     });
@@ -172,6 +215,7 @@ server.registerTool(
         tool: "delegate",
       }),
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
+      { model: tier.model, effort: tier.effort },
     );
   },
 );
@@ -197,6 +241,8 @@ server.registerTool(
   // A ordem observada escolhe engine+modelo+effort; overrides explícitos continuam vencendo.
   async ({ prompt, agent, timeout_ms, cwd, model, effort }) => {
     const tier = resolveFastTier(hasEngine, CURSOR_ENABLED, currentEngineHealth());
+    const selectedModel = model ?? tier.model;
+    const selectedEffort = effort ?? tier.effort;
     const resolved = agent ? resolveAgent(agent, cwd ?? process.cwd()) : undefined;
     return formatRun(
       "fast_delegate",
@@ -205,8 +251,8 @@ server.registerTool(
         prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
         cwd,
         engine: tier.engine,
-        model: model ?? tier.model,
-        effort: effort ?? tier.effort,
+        model: selectedModel,
+        effort: selectedEffort,
         agentPrompt: withTerseStyle(resolved?.prompt),
         force: true,
         timeoutMs: timeout_ms,
@@ -215,6 +261,7 @@ server.registerTool(
       // matchedRequest reflete se saiu uma engine nativa (FAST_CANDIDATES) ou o fallback pro cursor
       // — sem isso, o downgrade pro cursor ficava indistinguível de um roteamento nativo no log.
       { requestedLevel: 0, matchedRequest: FAST_CANDIDATES.some((c) => c.engine === tier.engine) },
+      { model: selectedModel, effort: selectedEffort },
     );
   },
 );
@@ -249,7 +296,13 @@ server.registerTool(
     const { prompt, mode } = explorePrompt(question, files, breadth);
     // read-only (mode) com o modelo barato de leitura (GPT-6 Luna) por default. O worker localiza/mapeia sem editar.
     const { engine, model: auxModel } = resolveAuxTool("explore", { engine: engineParam, model });
-    return format("explore", await runCursor({ prompt, cwd, engine, model: auxModel, effort, mode, agentPrompt: withTerseStyle(), tool: "explore" }));
+    return formatRun(
+      "explore",
+      engine,
+      () => runCursor({ prompt, cwd, engine, model: auxModel, effort, mode, agentPrompt: withTerseStyle(), tool: "explore" }),
+      undefined,
+      { model: auxModel, effort },
+    );
   },
 );
 
@@ -282,7 +335,13 @@ server.registerTool(
       });
     }
     const { engine, model: auxModel } = resolveAuxTool("read_slice", { engine: engineParam, model });
-    return format("read_slice", await runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice" }));
+    return formatRun(
+      "read_slice",
+      engine,
+      () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice" }),
+      undefined,
+      { model: auxModel, effort },
+    );
   },
 );
 
@@ -313,7 +372,13 @@ server.registerTool(
       CURSOR_ENABLED,
       currentEngineHealth(),
     );
-    return format("run_filtered", await runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered" }));
+    return formatRun(
+      "run_filtered",
+      engine,
+      () => runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered" }),
+      undefined,
+      { model: auxModel, effort: auxEffort },
+    );
   },
 );
 
@@ -336,7 +401,13 @@ server.registerTool(
     // read-only (mode:'ask' → filesystem intocado) + web:true liga a busca web do codex
     // (-c tools.web_search=true). approval_policy=never evita pendurar em headless.
     const { engine, model: auxModel } = resolveAuxTool("web_lookup", { engine: engineParam, model });
-    return format("web_lookup", await runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup" }));
+    return formatRun(
+      "web_lookup",
+      engine,
+      () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup" }),
+      undefined,
+      { model: auxModel, effort },
+    );
   },
 );
 
@@ -361,13 +432,17 @@ server.registerTool(
   async ({ prompt, levels, mode, cwd }) => {
     const tiers = levels.map((level) => ({ level, tier: resolveTier(level) }));
     const runs = tiers.map(({ level, tier }) =>
-      runCursor({ prompt, cwd, engine: tier.engine, model: tier.model, effort: tier.effort, force: true, tool: "fan_out" })
-        .then((res) => ({ level, tier, res })),
+      runFanOutWorker(prompt, cwd, level, tier),
     );
 
     if (mode === "race") {
       const { res, level, tier } = await raceFirstSuccess(runs);
-      return format("fan_out", res, { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) });
+      return format(
+        "fan_out",
+        res,
+        { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
+        { engine: res.engine ?? tier.engine, model: tier.model, effort: tier.effort },
+      );
     }
 
     const settled = await Promise.allSettled(runs);
@@ -376,19 +451,41 @@ server.registerTool(
         ? { engine: s.value.tier.engine, level: s.value.level, sessionId: s.value.res.sessionId, text: s.value.res.text }
         : { engine: tiers[i].tier.engine, level: tiers[i].level, text: String(s.reason), error: true },
     );
-    const arbiter = await runCursor({
-      prompt: fanOutArbiterPrompt(outputs),
-      cwd,
-      engine: "codex",
-      model: EXPLORE_MODEL,
-      mode: "ask",
-      agentPrompt: withTerseStyle(),
-      tool: "fan_out",
-    });
+    const arbiterStarted = Date.now();
+    let arbiter: CliResult;
+    try {
+      arbiter = await runCursor({
+        prompt: fanOutArbiterPrompt(outputs),
+        cwd,
+        engine: "codex",
+        model: EXPLORE_MODEL,
+        mode: "ask",
+        agentPrompt: withTerseStyle(),
+        tool: "fan_out",
+      });
+    } catch (err) {
+      logUsage("fan_out", 0, undefined, {
+        engine: "codex",
+        model: EXPLORE_MODEL,
+        outcome: classifyOutcome(err),
+        durationMs: Date.now() - arbiterStarted,
+      });
+      throw err;
+    }
     const footer = outputs
       .map((o) => `- ${o.engine} (level ${o.level})${o.sessionId ? `: ${formatSessionHandle(o.engine as Engine, o.sessionId)}` : o.error ? ": FAILED" : ": no session_id"}`)
       .join("\n");
-    return format("fan_out", { ...arbiter, text: `${arbiter.text}\n\nWorker sessions (pass to follow_up):\n${footer}` });
+    return format(
+      "fan_out",
+      { ...arbiter, text: `${arbiter.text}\n\nWorker sessions (pass to follow_up):\n${footer}` },
+      undefined,
+      {
+        engine: arbiter.engine ?? "codex",
+        model: EXPLORE_MODEL,
+        outcome: "success",
+        durationMs: Date.now() - arbiterStarted,
+      },
+    );
   },
 );
 
@@ -427,14 +524,17 @@ server.registerTool(
       ? generateImageGrokPrompt(description, out_path, input_images)
       : generateImagePrompt(description, out_path, input_images);
     if (eng === "grok") {
-      return format(
+      return formatRun(
         "generate_image",
-        await runCursor({ prompt, cwd, engine: "grok", force: true, tool: "generate_image" }),
+        "grok",
+        () => runCursor({ prompt, cwd, engine: "grok", force: true, tool: "generate_image" }),
+        undefined,
       );
     }
-    return format(
+    return formatRun(
       "generate_image",
-      await runCursor({
+      "codex",
+      () => runCursor({
         prompt,
         cwd,
         engine: "codex",
@@ -444,6 +544,8 @@ server.registerTool(
         images: input_images,
         tool: "generate_image",
       }),
+      undefined,
+      { model: IMAGE_MODEL, effort: "low" },
     );
   },
 );
@@ -478,23 +580,77 @@ server.registerTool(
   "bridge_stats",
   {
     description:
-      "Report this bridge's usage: calls and chars returned to context per tool (the real cost). Requires POLYAGENT_LOG to be set so calls are logged; otherwise reports that logging is off.",
-    inputSchema: {},
+      "Report this bridge's usage: calls and chars returned to context per tool (the real cost), plus local rating benchmarks when available. Requires POLYAGENT_LOG to be set so calls are logged; otherwise reports that logging is off.",
+    inputSchema: {
+      export: z.boolean().optional().describe("Also export the ratings markdown to research/bench/<YYYY-MM-DD>-ratings.md."),
+    },
   },
-  async () => {
-    const stats = aggregate(readUsage());
+  async ({ export: exportRequested }) => {
+    const entries = readUsage();
+    const stats = aggregate(entries);
+    const ratings = ratingStats(entries);
+    const ratingGroups = Object.keys(ratings);
     const tools = Object.keys(stats);
-    if (!tools.length) {
+    const sections: string[] = [];
+    if (tools.length) {
+      const lines = tools
+        .sort((a, b) => stats[b].totalOutChars - stats[a].totalOutChars)
+        .map((t) => `${t}: ${stats[t].calls} calls, ${stats[t].totalOutChars} chars returned (avg ${stats[t].avgOutChars})`);
+      sections.push(lines.join("\n"));
+    }
+    if (ratingGroups.length) {
+      const table = renderRatingStats(ratings);
+      const ratingCount = Object.values(ratings).reduce((sum, stat) => sum + stat.ratings, 0);
+      sections.push(`Ratings (${ratingCount})\n${table}`);
+      if (exportRequested) {
+        const date = new Date().toISOString().slice(0, 10);
+        const exportPath = join(REPO_ROOT, "research", "bench", `${date}-ratings.md`);
+        try {
+          mkdirSync(dirname(exportPath), { recursive: true });
+          writeFileSync(exportPath, `# Bridge ratings — ${date} (${ratingCount} ratings)\n\n${table}\n`, "utf8");
+          sections.push(`Ratings exported to ${exportPath}`);
+        } catch {
+          sections.push(`Could not export ratings to ${exportPath}.`);
+        }
+      }
+    }
+    if (!sections.length) {
       return {
         content: [
           { type: "text" as const, text: "No usage logged. Set POLYAGENT_LOG=/path/to/log.jsonl to enable logging." },
         ],
       };
     }
-    const lines = tools
-      .sort((a, b) => stats[b].totalOutChars - stats[a].totalOutChars)
-      .map((t) => `${t}: ${stats[t].calls} calls, ${stats[t].totalOutChars} chars returned (avg ${stats[t].avgOutChars})`);
-    return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    return { content: [{ type: "text" as const, text: sections.join("\n\n") }] };
+  },
+);
+
+server.registerTool(
+  "rate",
+  {
+    _meta: { "anthropic/alwaysLoad": true },
+    description:
+      "Rate after you reviewed the result; ratings stay local in POLYAGENT_LOG and feed bridge_stats. Anchored scale: 5 = correct and complete, no fixes needed; 4 = correct, small gaps; 3 = usable after fixes; 2 = mostly wrong or incomplete; 1 = wrong, harmful, or hollow evidence (claimed checks that proved nothing).",
+    inputSchema: {
+      session_id: z.string().describe("The session_id footer handle to grade, such as codex:abc."),
+      score: z.number().int().min(1).max(5).describe("Integer score from 1 to 5 using the anchored scale in this tool description."),
+      note: z.string().optional().describe("Optional private note; secrets are scrubbed and the note is capped at 300 characters."),
+    },
+  },
+  async ({ session_id, score, note }) => {
+    if (!USAGE_LOG) {
+      return { content: [{ type: "text" as const, text: "Ratings need POLYAGENT_LOG to be set; no rating was stored." }] };
+    }
+    const scrubbedNote = scrubSecrets(note ?? "").text;
+    const stored = logRating(session_id, score, scrubbedNote);
+    if (!stored) {
+      return { content: [{ type: "text" as const, text: "Rating was not stored. Check that POLYAGENT_LOG is writable." }] };
+    }
+    const found = readUsage().some((entry) => entry.tool !== "rate" && entry.sessionId === session_id);
+    const text = found
+      ? `Rating stored for ${session_id}.`
+      : `Rating stored for ${session_id}; session was not found in POLYAGENT_LOG and will remain unrouted.`;
+    return { content: [{ type: "text" as const, text }] };
   },
 );
 

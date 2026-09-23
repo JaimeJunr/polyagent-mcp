@@ -10,7 +10,7 @@ subscriptions; `delegate` also accepts an explicit engine, including pay-per-tok
 
 ## Tools
 
-The server exposes eleven tools:
+The server exposes twelve tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -24,7 +24,8 @@ The server exposes eleven tools:
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
 | `fan_out` | Run the SAME prompt across N engines/tiers in parallel isolated sandboxes and get back ONLY a compact digest — `mode: "race"` (default) returns the first success, `mode: "consensus"` compares every output through one cheap arbiter. |
 | `follow_up` | Continue a prior session by `session_id`. |
-| `bridge_stats` | Report calls and chars returned to context per tool (needs `POLYAGENT_LOG`). |
+| `bridge_stats` | Report calls and chars returned to context per tool, plus ratings; optional `export: true` writes `research/bench/<YYYY-MM-DD>-ratings.md` (needs `POLYAGENT_LOG`). |
+| `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
 
 Worker tools accept `cwd`, `model`, and `effort` where applicable. `delegate` requires a **level**
 (1-5); `fast_delegate` has none and picks the fastest healthy engine. Explicit `model`/`effort`
@@ -156,7 +157,7 @@ Registering the tools is not enough. Two structural forces push the agent back t
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
 tools used to be **deferred** — the agent had to run a tool-search to load their schemas,
 so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
-**startup `instructions`** (routing boundary) and marks the five core tools with
+**startup `instructions`** (routing boundary) and marks the five core tools, `fast_delegate`, and `rate` with
 `_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
 eagerly. `fast_delegate` joined them for the same reason: deferred, it was never picked.
 The remaining secondary tools stay deferred. Four fixes, strongest first:
@@ -272,7 +273,7 @@ keep the expensive shell to orchestration only.
 > so they coexist cleanly — no `updatedInput` race, no delay, no import of
 > context-mode's routing.
 
-**2. Preload any still-deferred tools.** The five core tools and `fast_delegate` are already `alwaysLoad` on
+**2. Preload any still-deferred tools.** The five core tools, `fast_delegate`, and `rate` are already `alwaysLoad` on
 Claude Code ≥2.1.121. For secondary tools (or older hosts), tell the agent to load schemas
 once per session. Add to your `CLAUDE.md`/`AGENTS.md`:
 

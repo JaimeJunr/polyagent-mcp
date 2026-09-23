@@ -29,15 +29,15 @@ There is no linter configured. `npm run build` (tsc, `strict: true`) is the type
 Seven small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
 the **pure logic is testable without spawning a worker process**:
 
-- `index.ts` — MCP server + tool registrations (eleven tools: `delegate`, `fast_delegate`, `explore`,
+- `index.ts` — MCP server + tool registrations (twelve tools: `delegate`, `fast_delegate`, `explore`,
   `read_slice`, `run_filtered`, `web_lookup`, `fan_out`, `generate_image`, `follow_up`,
-  `bridge_stats`, `decide`).
+  `bridge_stats`, `decide`, `rate`).
   Owns tool descriptions and the shared `routing` params (`cwd`/`model`/`effort`). The second arg
   to `new McpServer(...)` is an `instructions` string that states the routing boundary
   (read/locate/web/grunt-work → bridge tools; native Read only when about to edit). These load at
   **startup** and are visible to the host even while tool schemas are deferred — that is why they
   matter for adoption. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
-  `web_lookup`) plus `fast_delegate` register with `_meta: { "anthropic/alwaysLoad": true }` so
+  `web_lookup`) plus `fast_delegate` and `rate` register with `_meta: { "anthropic/alwaysLoad": true }` so
   Claude Code (≥2.1.121) eagerly loads their schemas; secondary tools (`fan_out`, `generate_image`,
   `follow_up`, `bridge_stats`, `decide`) stay deferred. `fast_delegate` was deferred and never got called —
   the same adoption bug that motivated alwaysLoad on the core five. `format()` appends the `session_id`
@@ -117,7 +117,7 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
 using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
 cost-benefit ladder where each step costs ~3× the previous one (see
-`.ralph/polyagent/model-refresh-2026/spikes/tier-pareto-2026-09.md`): 1=GPT-6 Luna max
+`research/2026-09-23-tier-pareto.md`): 1=GPT-6 Luna max
 (codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex),
 5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
 2026-09-14; `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23. O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`. **Custo:** os níveis 4 e 5 são caros — o 4 muito caro e o 5 muitíssimo mais, com
@@ -125,7 +125,7 @@ folga o mais caro da matriz. São último recurso, não default: níveis 1-3 dã
 trabalho, implementação inclusa. Escalar para 4/5 só quando um nível barato já falhou ou a tarefa
 exige raciocínio de fronteira de verdade. Como codex ocupa 4 dos 5 níveis, cota estourada nele derruba os níveis 1 a 4 de uma vez.
 Consequência aceita: Grok 4.6 saiu da matriz em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo)
-e a assinatura Google já estava de fora — ver .ralph/polyagent/model-refresh-2026/prd-update-1.html. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
+e a assinatura Google já estava de fora — ver `research/2026-09-18-agy-google-cli.md`. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
 is missing, it falls back to the equivalent Cursor model only when `cursorEnabled` is true;
 otherwise it throws a clear error naming the missing CLI.
 
@@ -144,7 +144,17 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
 - `prompts.ts` — pure prompt builders (`readSlicePrompt`, `runFilteredPrompt`, `explorePrompt`,
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
-- `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` tool.
+- `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` and `rate` tools.
+
+### Ratings (`rate`)
+
+Ratings stay local in the JSONL file configured by `POLYAGENT_LOG`; `rate` stores only the session
+handle, 1–5 score, and scrubbed note, never prompts or results. `ratingStats` joins each rating to
+the last usage entry with the same `sessionId` and groups engine/model/effort/tool. The anchored
+scale is 5 = correct and complete, no fixes needed; 4 = correct, small gaps; 3 = usable after
+fixes; 2 = mostly wrong or incomplete; 1 = wrong, harmful, or hollow evidence (claimed checks that
+proved nothing). `bridge_stats(export:
+true)` writes the table to `research/bench/<YYYY-MM-DD>-ratings.md`.
 
 ### Jev (`decide`)
 
@@ -216,7 +226,7 @@ points, all in `cli.ts`:
   Um padrão que não casa devolve `null` e a falha propaga crua — classificar errado é pior que não
   classificar: o `ralph.sh` tratou `OAuth session expired` como cota e mascarou um bug do bridge que
   queimava a credencial do usuário (ADENDO 3 do spike). Fonte dos padrões, com origem e confiança
-  declaradas por engine: `.ralph/mcp-bridge-v2/spikes/quota-patterns.md`. Só o grok (402 +
+  declaradas por engine: `research/2026-09-14-quota-patterns.md`. Só o grok (402 +
   `Grok Build usage balance exhausted`, com `http_status` aninhado como TEXTO dentro de `errors[0]` —
   por isso o parser desaninha) e a string de cota do codex foram observados em runtime; os padrões do
   claude vêm do fonte/doc e seguem sendo hipótese.
@@ -322,10 +332,10 @@ points, all in `cli.ts`:
   bypass so it can run the requested command. `explore` takes `breadth` (`medium`|`thorough`) and
   LOCATES, never reviews.
 - **`plan` and `build` no longer exist as tools.** They were removed together with `planPrompt`/
-  `buildPrompt` in `prompts.ts` and their tests; the server registers eleven tools. What survives is the
+  `buildPrompt` in `prompts.ts` and their tests; the server registers twelve tools. What survives is the
   homonym: `RunOpts.mode: "plan" | "ask"` in `cli.ts` and `ExploreMode` in `prompts.ts` are the codex
   read-only mode (`-s read-only`), used by `explore`/`read_slice`/`web_lookup` and `follow_up` — do
-  not delete them chasing the removed tool. `test/tools.test.ts` pins the eleven-tool surface.
+  not delete them chasing the removed tool. `test/tools.test.ts` pins the twelve-tool surface.
 - **Agent personas are additive and cross-engine.** `delegate` and `fast_delegate` accept a named or
   inline agent. Resolve it on the host in `agents.ts`, then pass its body via `RunOpts.agentPrompt`: Claude
   `--append-system-prompt`, Grok `--rules`, Codex `-c developer_instructions=` encoded by
@@ -362,12 +372,12 @@ points, all in `cli.ts`:
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
-  `run_filtered`, `web_lookup`) plus `fast_delegate` register with
+  `run_filtered`, `web_lookup`) plus `fast_delegate` and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas
   instead of deferring them. Deferred tools lose to always-loaded native Read/Grep — that was the
   root adoption bug, and `fast_delegate` hit it while deferred (the agent never called it).
   Secondary tools (`generate_image`, `fan_out`, `follow_up`, `bridge_stats`) stay deferred. Do not
-  strip `alwaysLoad` from the core five or `fast_delegate`, or add it to the remaining secondary
+  strip `alwaysLoad` from the core five, `fast_delegate`, or `rate`, or add it to the remaining secondary
   set, without intent.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
   overridable via `POLYAGENT_TIMEOUT_MS`. Two pure helpers append notes to the prompt of the two
@@ -445,6 +455,23 @@ own thing; the bridge injects via `additionalContext` only). Fail-open/non-throw
 When changing hook behavior, update the pure functions (`decide`, `sessionStartContext`,
 `subagentStartContext`) not the I/O wrapper (`main`), and add/adjust a case in `test/hook.test.ts`
 — the test imports the `.mjs` directly and injects fakes for fs.
+
+## Project harness (`.claude/`, `research/`, `bench/`)
+
+Distinct from the shipped hook above: this is the harness for **maintaining this repo**, active only
+when an agent runs here.
+
+- **Skills** (`.claude/skills/`): `model-refresh` (new model released → ids, placement, tests,
+  docs), `run-bench` (measure models on the real bridge path), `add-engine` (touch points for a new
+  CLI), `ship` (commit → PR → merge → rebuild `dist/` → MCP restart). Each one's `description` says
+  when it applies.
+- **Hooks** (`.claude/settings.json`, versioned): `polyagent-git-sync.sh` (SessionStart,
+  fast-forward only on a clean tree) and `polyagent-pr-reminder.sh` (after `git push`, reminds to
+  feed back `CLAUDE.md` and `research/`). `.claude/settings.local.json` is machine-local — never
+  commit it.
+- **`research/`** is the project's research base: one dated study per decision, with sources and a
+  "Reavaliar" section, indexed in `research/README.md`. Code comments that justify a model choice
+  point there. `research/bench/` holds raw JSONL from `npm run bench` (`bench/aux-bench.mjs`).
 
 ## Conventions
 
