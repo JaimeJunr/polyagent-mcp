@@ -26,12 +26,12 @@ There is no linter configured. `npm run build` (tsc, `strict: true`) is the type
 
 ## Architecture
 
-Five small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
+Seven small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
 the **pure logic is testable without spawning a worker process**:
 
-- `index.ts` — MCP server + tool registrations (ten tools: `delegate`, `fast_delegate`, `explore`,
+- `index.ts` — MCP server + tool registrations (eleven tools: `delegate`, `fast_delegate`, `explore`,
   `read_slice`, `run_filtered`, `web_lookup`, `fan_out`, `generate_image`, `follow_up`,
-  `bridge_stats`).
+  `bridge_stats`, `decide`).
   Owns tool descriptions and the shared `routing` params (`cwd`/`model`/`effort`). The second arg
   to `new McpServer(...)` is an `instructions` string that states the routing boundary
   (read/locate/web/grunt-work → bridge tools; native Read only when about to edit). These load at
@@ -39,7 +39,7 @@ the **pure logic is testable without spawning a worker process**:
   matter for adoption. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
   `web_lookup`) plus `fast_delegate` register with `_meta: { "anthropic/alwaysLoad": true }` so
   Claude Code (≥2.1.121) eagerly loads their schemas; secondary tools (`fan_out`, `generate_image`,
-  `follow_up`, `bridge_stats`) stay deferred. `fast_delegate` was deferred and never got called —
+  `follow_up`, `bridge_stats`, `decide`) stay deferred. `fast_delegate` was deferred and never got called —
   the same adoption bug that motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
   `follow_up` feeds that id back as `RunOpts.resume` so a prior worker session continues without
@@ -143,6 +143,13 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
 - `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` tool.
+
+### Jev (`decide`)
+
+The HTTP boundary lives in `src/jev.ts`, separate from `cli.ts` and its process-spawn boundary.
+Jev is not an engine and is not part of `TIERS` or `FAST_CANDIDATES`. Key resolution checks
+`OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`. It is a
+pay-per-token OpenRouter call. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
 
 ### The sandbox (default-on, mandatory for ALL engines, in `cli.ts`)
 
@@ -297,7 +304,7 @@ points, all in `cli.ts`:
   `run_filtered` passa a poder gastar dinheiro quando o codex não estiver disponível. Não há mais
   `engine: "codex"` hardcoded no handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita
   um parâmetro `engine` opcional no **próprio inputSchema** — nunca no objeto `routing`
-  compartilhado, que é spread em 10 registrações e daria `engine` também a
+  compartilhado, que é spread nas ferramentas de roteamento e daria `engine` também a
   `delegate`/`fan_out`/`follow_up`. Precedência (inalterada): parâmetro da chamada > env da tool >
   default. Nas três de leitura a resolução é a função pura `resolveAuxTool(tool, params, env,
   sandboxOn)` em `cli.ts`; no `run_filtered` é `resolveRunFiltered` (param/env explícitos reusam
@@ -313,10 +320,10 @@ points, all in `cli.ts`:
   bypass so it can run the requested command. `explore` takes `breadth` (`medium`|`thorough`) and
   LOCATES, never reviews.
 - **`plan` and `build` no longer exist as tools.** They were removed together with `planPrompt`/
-  `buildPrompt` in `prompts.ts` and their tests; the server registers ten tools. What survives is the
+  `buildPrompt` in `prompts.ts` and their tests; the server registers eleven tools. What survives is the
   homonym: `RunOpts.mode: "plan" | "ask"` in `cli.ts` and `ExploreMode` in `prompts.ts` are the codex
   read-only mode (`-s read-only`), used by `explore`/`read_slice`/`web_lookup` and `follow_up` — do
-  not delete them chasing the removed tool. `test/tools.test.ts` pins the ten-tool surface.
+  not delete them chasing the removed tool. `test/tools.test.ts` pins the eleven-tool surface.
 - **Agent personas are additive and cross-engine.** `delegate` and `fast_delegate` accept a named or
   inline agent. Resolve it on the host in `agents.ts`, then pass its body via `RunOpts.agentPrompt`: Claude
   `--append-system-prompt`, Grok `--rules`, Codex `-c developer_instructions=` encoded by

@@ -10,7 +10,7 @@ subscriptions; `delegate` also accepts an explicit engine, including pay-per-tok
 
 ## Tools
 
-The server exposes ten tools:
+The server exposes eleven tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -20,6 +20,7 @@ The server exposes ten tools:
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Use instead of reading large files whole. |
 | `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade as `fast_delegate` (codex luna low first; may spend OpenRouter credit if it falls through to mercury-2). |
 | `web_lookup` | Web/docs lookup through Codex/Luna with real web search enabled and a read-only filesystem. |
+| `decide` | Ask TypeSafe's Jev model for calibrated probabilities or a typed choice label. Pay-per-token through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
 | `fan_out` | Run the SAME prompt across N engines/tiers in parallel isolated sandboxes and get back ONLY a compact digest — `mode: "race"` (default) returns the first success, `mode: "consensus"` compares every output through one cheap arbiter. |
 | `follow_up` | Continue a prior session by `session_id`. |
