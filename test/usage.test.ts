@@ -313,9 +313,11 @@ describe("computeEngineHealth", () => {
     const health = computeEngineHealth(records, NOW, WINDOW);
     expect(health.codex).toBeLessThan(HEALTH_THRESHOLD);
     const all: (e: Engine) => boolean = () => true;
+    // Regra atual: Claude é a segunda assinatura; OpenRouter só entra depois de Codex e Claude.
     expect(resolveFastTier(all, false, health)).toEqual({
-      engine: "opencode",
-      model: "openrouter/inception/mercury-2",
+      engine: "claude",
+      model: "haiku",
+      effort: "low",
     });
   });
 
@@ -357,8 +359,9 @@ describe("computeEngineHealth", () => {
     expect(health.codex).toBeLessThan(HEALTH_THRESHOLD);
     const all: (e: Engine) => boolean = () => true;
     expect(resolveFastTier(all, false, health)).toEqual({
-      engine: "opencode",
-      model: "openrouter/inception/mercury-2",
+      engine: "claude",
+      model: "haiku",
+      effort: "low",
     });
   });
 });

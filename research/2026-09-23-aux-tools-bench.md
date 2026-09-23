@@ -1,6 +1,6 @@
 # Bench — modelos das tools auxiliares e do fast_delegate (2026-09-23)
 
-Status: **proposta**, aguardando decisão do dono. Nada mudou no código por causa deste estudo.
+Status: **aplicada** em 2026-09-23 (PR feat/aux-bench-proposal)
 
 Pergunta: qual modelo/esforço deve atender `explore`, `read_slice`, `web_lookup`, `run_filtered` e a
 cascata do `fast_delegate` (`FAST_CANDIDATES`) depois da troca para GPT-6? Estas tools pedem

@@ -91,6 +91,9 @@ export const DEFAULT_MODEL = process.env.POLYAGENT_MODEL ?? "composer-2.5-fast";
  */
 const EXPLORE_MODEL_FALLBACK = "gpt-6-luna";
 export const EXPLORE_MODEL = process.env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK;
+/** Effort explícito das três tools de leitura quando resolvidas no codex. Override via POLYAGENT_EXPLORE_EFFORT. */
+const EXPLORE_EFFORT_FALLBACK = "medium";
+export const EXPLORE_EFFORT = process.env.POLYAGENT_EXPLORE_EFFORT ?? EXPLORE_EFFORT_FALLBACK;
 
 /**
  * Modelo codex que dispara o image_gen built-in (gpt-image-2 faz o trabalho pesado; effort baixo basta).
@@ -416,22 +419,24 @@ function parseEngine(raw: string, source: string): Engine {
 }
 
 /**
- * Resolve (engine, modelo) de uma tool auxiliar. Precedência: parâmetro da chamada > env própria da
+ * Resolve (engine, modelo, effort) de uma tool auxiliar. Precedência: parâmetro da chamada > env própria da
  * tool (POLYAGENT_<TOOL>_ENGINE/_MODEL) > default (codex + POLYAGENT_EXPLORE_MODEL, o modelo barato
  * de leitura das três tools de leitura). `run_filtered` no handler NÃO passa por aqui no caminho
  * default — usa `resolveRunFiltered`, cuja cascata substitui esse default. Com engine não-codex e
  * sem modelo explícito devolve `undefined`: o modelo default é um id de codex, mandá-lo para
- * grok/claude falharia — melhor deixar o CLI usar o próprio default.
+ * grok/claude falharia — melhor deixar o CLI usar o próprio default. As três tools de leitura
+ * recebem `POLYAGENT_EXPLORE_EFFORT` (medium por default) só quando a engine resolvida é codex;
+ * `run_filtered` não recebe esse default.
  *
  * Recusa, nomeando o motivo, engine que não atenda o requisito da tool (read-only, web search).
  * Função pura: `env` e `sandboxOn` são injetados para teste.
  */
 export function resolveAuxTool(
   tool: AuxTool,
-  params: { engine?: string; model?: string } = {},
+  params: { engine?: string; model?: string; effort?: string } = {},
   env: NodeJS.ProcessEnv = process.env,
   sandboxOn = SANDBOX_ON,
-): { engine: Engine; model: string | undefined } {
+): { engine: Engine; model: string | undefined; effort?: string } {
   const prefix = AUX_TOOL_ENV[tool];
   const engine = params.engine
     ? parseEngine(params.engine, `parâmetro engine de ${tool}`)
@@ -451,7 +456,12 @@ export function resolveAuxTool(
   const defaultModel = engine === "codex"
     ? env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK
     : undefined;
-  return { engine, model: params.model ?? env[`${prefix}_MODEL`] ?? defaultModel };
+  const model = params.model ?? env[`${prefix}_MODEL`] ?? defaultModel;
+  const defaultEffort = tool !== "run_filtered" && engine === "codex"
+    ? env.POLYAGENT_EXPLORE_EFFORT ?? EXPLORE_EFFORT_FALLBACK
+    : undefined;
+  const effort = params.effort ?? defaultEffort;
+  return effort === undefined ? { engine, model } : { engine, model, effort };
 }
 
 /**
@@ -463,9 +473,10 @@ export function resolveAuxTool(
  * FAST_CANDIDATES). Motivo: velocidade — e com a cota do codex esgotada a tool
  * antiga falhava; a cascata cai no próximo engine saudável.
  *
- * CUSTO: o 1º da cascata é assinatura (codex GPT-6 Luna low) — caminho comum é custo
- * marginal zero. O 2º é pay-per-token (opencode/mercury-2). `run_filtered` passa
- * a poder gastar dinheiro quando o codex está ausente, sem cota ou unhealthy.
+ * CUSTO: os dois primeiros candidatos são assinaturas (codex GPT-6 Luna medium e Claude Haiku
+ * low), então o caminho comum é custo marginal zero. O 3º é pay-per-token (opencode/mercury-2),
+ * usado só quando codex e claude estão ausentes, sem cota ou unhealthy. `run_filtered` passa a
+ * poder gastar dinheiro apenas depois dessas duas assinaturas falharem.
  * Engine/modelo explícitos ainda vencem e não disparam a cascata.
  *
  * Engine explícito (param ou env) reusa `resolveAuxTool`: mesmo parse, mesmas
@@ -1447,43 +1458,49 @@ export const HEALTH_THRESHOLD = 0.3;
 /**
  * Ordem de velocidade do fast_delegate (primeiro instalado E saudável vence).
  *
- * Medido no host pelo caminho real (`runCursor`, sandbox ligado), mesmo prompt de
- * saída longa, 2 execuções por candidato (2026-09):
+ * Medição histórica anterior, no host pelo caminho real (`runCursor`, sandbox ligado), mesmo
+ * prompt de saída longa, 2 execuções por candidato:
  *   opencode openrouter/inception/mercury-2  7006ms  (7885, 6126) — mais rápido e consistente
  *   claude haiku                             10736ms (11330, 10141) — consistente
  *   grok grok-4.5 low                        16301ms
- *   codex gpt-6-luna low                     NÃO MEDIDO (o gpt-5.6-luna antes dele também não: cota esgotada)
+ *   codex gpt-6-luna low                     NÃO MEDIDO (cota esgotada)
  * Descartados: gemini-flash-lite-latest (18519ms, instável, outlier 30s);
  * openrouter/openai/gpt-oss-120b (19251ms); groq/openai/gpt-oss-120b (timeout 120s + resposta errada).
  *
- * GPT-6 Luna low fica em 1º por ESCOLHA do dono, NÃO por medição — tentei medir de
- * novo e a cota do codex segue esgotada. As medições reais (mercury-2 / haiku /
- * grok-4.5) continuam valendo; a ordem não as segue.
+ * Bench atualizado em 2026-09-23 (`research/2026-09-23-aux-tools-bench.md`), com 40 execuções
+ * reais via `runCursor` + bwrap:
+ *   codex gpt-6-luna medium  8/8  mediana 10,8s  pior 13,1s
+ *   codex gpt-6-luna low     8/8  mediana 11,8s  pior 15,4s
+ *   claude haiku low         6/6  mediana 10,4s  pior 13,7s
+ *   opencode mercury-2       5/6  mediana 14,8s  pior 240s (timeout)
+ *   grok grok-4.5 low        sem cota nas 6 rodadas
+ * Medium manteve a velocidade do low e teve nota maior; Haiku foi o mais estável fora do codex.
+ * A cauda de latência do mercury-2 justifica deixá-lo depois das duas assinaturas.
  *
- * CUSTO: o 1º candidato é assinatura (codex). O 2º é pay-per-token (API key do
- * OpenRouter / mercury-2). No caminho comum o fast_delegate volta a ser custo
- * marginal zero; só cai no pago quando o codex está ausente, sem cota ou
- * unhealthy. Os outros dois (claude, grok) também são assinatura. cursor só
- * entra como fallback final, igual ao resolveTier.
+ * CUSTO: os dois primeiros candidatos são assinatura (codex e claude). O 2º usa a assinatura
+ * Claude do mesmo host que orquestra via Claude Code — custo aceito para manter uma saída estável
+ * fora do codex. O 3º é pay-per-token (API key do OpenRouter / mercury-2) e só gasta quando codex
+ * e claude estão ausentes, sem cota ou unhealthy. Grok também é assinatura; cursor só entra como
+ * fallback final, igual ao resolveTier.
  *
- * Duas consequências do opencode como 2º candidato (antes era 1º), ainda EM ABERTO:
+ * Consequências do opencode como 3º candidato:
  * - `QUOTA_PATTERNS.opencode` está vazio (nenhuma captura de cota foi observada, e o
  *   projeto não classifica por aproximação). Como este é o único candidato que gasta
  *   crédito, 'acabou o saldo' é o modo de falha que propaga erro cru em vez da
- *   mensagem acionável — agora só no fallback, quando o caminho comum (codex) já
- *   falhou. Autocura só parcial: as falhas derrubam o health e a seleção acaba
- *   caindo pro claude, mas depois de N erros ilegíveis. Fechar isso exige capturar
+ *   mensagem acionável — agora só no fallback, depois que codex e claude já falharam.
+ *   Autocura só parcial: as falhas derrubam o health e a seleção acaba caindo pro grok,
+ *   mas depois de N erros ilegíveis. Fechar isso exige capturar
  *   um 402/insufficient-credits real do OpenRouter — não inventar regex.
  * - `hasEngine("opencode")` só prova que o binário existe, não que há provider
  *   configurado nem crédito. Num host com opencode instalado e OpenRouter ausente,
- *   o fast_delegate só erra nessa 2ª escolha quando o codex já não estava disponível.
+ *   o fast_delegate só erra nessa 3ª escolha quando codex e claude já não estavam disponíveis.
  */
 export const FAST_CANDIDATES: Tier[] = [
-  { engine: "codex", model: "gpt-6-luna", effort: "low" },
-  { engine: "opencode", model: "openrouter/inception/mercury-2" },
+  { engine: "codex", model: "gpt-6-luna", effort: "medium" },
   // effort low no haiku é consistência com os vizinhos, não ganho: medido em 10100ms sem
   // effort contra 10125ms com low (2 runs cada) — diferença dentro do ruído.
   { engine: "claude", model: "haiku", effort: "low" },
+  { engine: "opencode", model: "openrouter/inception/mercury-2" },
   { engine: "grok", model: "grok-4.5", effort: "low" },
 ];
 
