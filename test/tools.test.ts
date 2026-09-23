@@ -8,9 +8,9 @@ const indexSrc = readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
 const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
 describe("tool surface (US-003)", () => {
-  it("registra exatamente dez tools", () => {
+  it("registra exatamente onze tools", () => {
     const calls = indexSrc.match(/server\.registerTool\(/g) ?? [];
-    expect(calls).toHaveLength(10);
+    expect(calls).toHaveLength(11);
   });
 
   it("não registra mais as tools plan e build", () => {
@@ -24,7 +24,7 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).not.toMatch(/Two-phase work/);
     // o resto do roteamento continua intacto
     expect(indexSrc).toMatch(/self-contained implementation, commits, PRs/);
-    expect(indexSrc).toMatch(/Every tool returns a session_id for follow_up\./);
+    expect(indexSrc).toMatch(/Worker tools return a session_id for follow_up; decide returns structured JSON\./);
   });
 
   it("prompts.ts não exporta mais planPrompt/buildPrompt, mas mantém ExploreMode", async () => {
@@ -64,15 +64,15 @@ describe("tool surface (US-003)", () => {
     for (const tool of alwaysLoad) {
       expect(registeredToolBlock(tool)).toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
     }
-    for (const tool of ["fan_out", "generate_image", "follow_up", "bridge_stats"]) {
+    for (const tool of ["fan_out", "generate_image", "follow_up", "bridge_stats", "decide"]) {
       expect(registeredToolBlock(tool)).not.toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
     }
   });
 
-  it("README lista as dez tools reais, sem linhas de plan/build", () => {
+  it("README lista as onze tools reais, sem linhas de plan/build", () => {
     for (const tool of [
       "delegate", "fast_delegate", "explore", "read_slice", "run_filtered",
-      "web_lookup", "fan_out", "generate_image", "follow_up", "bridge_stats",
+      "web_lookup", "fan_out", "generate_image", "follow_up", "bridge_stats", "decide",
     ]) {
       expect(readme).toMatch(new RegExp(`^\\| \`${tool}\` \\|`, "m"));
     }

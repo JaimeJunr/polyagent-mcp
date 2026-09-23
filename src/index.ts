@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -20,14 +21,17 @@ import {
   type TierReceipt, type UsageRun,
 } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
+import { askJev, JEV_MODEL, resolveOpenRouterKey } from "./jev.js";
 
 const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5). Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Every tool returns a session_id for follow_up.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5). Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Worker tools return a session_id for follow_up; decide returns structured JSON.",
   },
 );
+
+const PROCESS_ENV = process.env;
 
 // Params de roteamento compartilhados.
 const routing = {
@@ -491,6 +495,57 @@ server.registerTool(
       .sort((a, b) => stats[b].totalOutChars - stats[a].totalOutChars)
       .map((t) => `${t}: ${stats[t].calls} calls, ${stats[t].totalOutChars} chars returned (avg ${stats[t].avgOutChars})`);
     return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+  },
+);
+
+server.registerTool(
+  "decide",
+  {
+    description:
+      "Ask TypeSafe's Jev System One model for a structured decision: calibrated probabilities for noul questions or a typed label with probabilities for choice questions, not free-form text. Useful for gating risky tool calls, classification, or verifying a worker's claim. Cheap (~$0.04/M input tokens, output free), ~0.5s, pay-per-token through OpenRouter.",
+    inputSchema: {
+      state: z
+        .union([z.string(), z.record(z.unknown())])
+        .describe("Current decision state as text or a JSON object."),
+      questions: z
+        .record(z.object({
+          type: z.enum(["noul", "choice"]),
+          instructions: z.string(),
+          criteria: z.record(z.string()).optional(),
+        }))
+        .describe("Named questions. A choice question must include at least one criteria label and description."),
+      model: z.string().optional().describe(`Jev model override. Defaults to ${JEV_MODEL}.`),
+    },
+  },
+  async ({ state, questions, model }) => {
+    const started = Date.now();
+    try {
+      const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"));
+      const result = await askJev(
+        { state, questions, model },
+        { fetch: (url, init) => globalThis.fetch(url, init), key },
+      );
+      const latencyMs = Date.now() - started;
+      const text = JSON.stringify({
+        answers: result.answers,
+        model: result.model ?? model ?? JEV_MODEL,
+        usage: { cost: result.usage?.cost ?? null },
+        latency_ms: latencyMs,
+      });
+      logUsage("decide", text.length, undefined, {
+        engine: "jev",
+        outcome: "success",
+        durationMs: latencyMs,
+      });
+      return { content: [{ type: "text" as const, text }] };
+    } catch (error) {
+      logUsage("decide", 0, undefined, {
+        engine: "jev",
+        outcome: "failure",
+        durationMs: Date.now() - started,
+      });
+      throw error;
+    }
   },
 );
 
