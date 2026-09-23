@@ -1,7 +1,7 @@
 # Spike — engine `agy` (Google Antigravity CLI): implementada, validada e ADIADA
 
 Data: 2026-09-14 · Status final: **ADIADA por decisão do dono do projeto**, não por falta de viabilidade.
-Código preservado em `agy-engine.patch` (450 linhas, aplicável com `git apply`).
+Código preservado em `2026-09-18-agy-engine.patch` (450 linhas, aplicável com `git apply`).
 
 Este doc existe para que a próxima tentativa **não repita a investigação**. Tudo abaixo foi observado
 em execução real no host, não inferido.
@@ -74,7 +74,7 @@ volta a exigir login. Ela muda de comportamento ao enxergar um `.gemini` parcial
 precisa entender esse gatilho primeiro — e a saída preferível é um diretório de conversas **dedicado
 do bridge**, persistente entre runs, isolado do histórico do usuário, nunca o `conversations` dele.
 
-## Estado do código preservado (`agy-engine.patch`)
+## Estado do código preservado (`2026-09-18-agy-engine.patch`)
 
 Completo e verde: `Engine` + `AGY_BIN`, `buildAgyArgs` puro, dispatcher, `parseCliJson` estendido,
 `formatSessionHandle`/`parseSessionHandle`, binds corrigidos para `~/.gemini`, `ENGINE_CAPABILITIES`

@@ -8,9 +8,9 @@ const indexSrc = readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
 const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
 describe("tool surface (US-003)", () => {
-  it("registra exatamente onze tools", () => {
+  it("registra exatamente doze tools", () => {
     const calls = indexSrc.match(/server\.registerTool\(/g) ?? [];
-    expect(calls).toHaveLength(11);
+    expect(calls).toHaveLength(12);
   });
 
   it("não registra mais as tools plan e build", () => {
@@ -24,7 +24,7 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).not.toMatch(/Two-phase work/);
     // o resto do roteamento continua intacto
     expect(indexSrc).toMatch(/self-contained implementation, commits, PRs/);
-    expect(indexSrc).toMatch(/Worker tools return a session_id for follow_up; decide returns structured JSON\./);
+    expect(indexSrc).toMatch(/Worker tools return a session_id for follow_up; decide returns structured JSON\. Results can be graded with rate\./);
   });
 
   it("prompts.ts não exporta mais planPrompt/buildPrompt, mas mantém ExploreMode", async () => {
@@ -56,10 +56,11 @@ describe("tool surface (US-003)", () => {
     }
   });
 
-  it("alwaysLoad inclui as cinco core E o fast_delegate (não é mais deferred)", () => {
+  it("alwaysLoad inclui as cinco core, fast_delegate e rate", () => {
     // A lista EXIGE fast_delegate — se alguém o tirar daqui o teste falha, não apenas "tolera".
     const alwaysLoad = [
       "delegate", "fast_delegate", "explore", "read_slice", "run_filtered", "web_lookup",
+      "rate",
     ];
     for (const tool of alwaysLoad) {
       expect(registeredToolBlock(tool)).toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
@@ -69,15 +70,20 @@ describe("tool surface (US-003)", () => {
     }
   });
 
-  it("README lista as onze tools reais, sem linhas de plan/build", () => {
+  it("README lista as doze tools reais, sem linhas de plan/build", () => {
     for (const tool of [
       "delegate", "fast_delegate", "explore", "read_slice", "run_filtered",
       "web_lookup", "fan_out", "generate_image", "follow_up", "bridge_stats", "decide",
+      "rate",
     ]) {
       expect(readme).toMatch(new RegExp(`^\\| \`${tool}\` \\|`, "m"));
     }
     expect(readme).not.toMatch(/^\| `plan` \|/m);
     expect(readme).not.toMatch(/^\| `build` \|/m);
     expect(readme).not.toMatch(/plan\(task\) then build\(plan\)/);
+  });
+
+  it("footer orienta a continuar e avaliar a sessão", () => {
+    expect(indexSrc).toContain("session_id: ${sessionHandle} (pass to follow_up to continue; grade it with rate(session_id, score 1-5))");
   });
 });

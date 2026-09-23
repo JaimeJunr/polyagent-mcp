@@ -1,0 +1,40 @@
+{"date":"2026-09-23","task":"T1-explore","cand":"luna-low","rep":1,"ms":12414,"ok":true,"chars":96,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T1-explore","cand":"luna-medium","rep":1,"ms":11539,"ok":true,"chars":96,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T1-explore","cand":"mercury-2","rep":1,"ms":15768,"ok":true,"chars":195,"err":null,"engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T1-explore","cand":"deepseek-v4.1-flash","rep":1,"ms":14074,"ok":true,"chars":54,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T1-explore","cand":"haiku-low","rep":1,"ms":5885,"ok":true,"chars":21,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T1-explore","cand":"grok-4.5-low","rep":1,"ms":5476,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"luna-low","rep":1,"ms":15351,"ok":true,"chars":584,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"luna-medium","rep":1,"ms":12677,"ok":true,"chars":584,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"mercury-2","rep":1,"ms":28032,"ok":true,"chars":382,"err":null,"engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"deepseek-v4.1-flash","rep":1,"ms":87883,"ok":true,"chars":587,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"haiku-low","rep":1,"ms":13694,"ok":true,"chars":584,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"grok-4.5-low","rep":1,"ms":3650,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"luna-low","rep":1,"ms":9713,"ok":true,"chars":26,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"luna-medium","rep":1,"ms":9740,"ok":true,"chars":26,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"mercury-2","rep":1,"ms":10982,"ok":true,"chars":20,"err":null,"engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"deepseek-v4.1-flash","rep":1,"ms":8399,"ok":true,"chars":20,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"haiku-low","rep":1,"ms":6476,"ok":true,"chars":24,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"grok-4.5-low","rep":1,"ms":3211,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T1-explore","cand":"luna-low","rep":2,"ms":10147,"ok":true,"chars":96,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T1-explore","cand":"luna-medium","rep":2,"ms":9529,"ok":true,"chars":96,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T1-explore","cand":"mercury-2","rep":2,"ms":240179,"ok":false,"chars":0,"err":"opencode agent timed out after 240000ms: ","engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T1-explore","cand":"deepseek-v4.1-flash","rep":2,"ms":8917,"ok":true,"chars":17,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T1-explore","cand":"haiku-low","rep":2,"ms":9276,"ok":true,"chars":230,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T1-explore","cand":"grok-4.5-low","rep":2,"ms":3908,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"luna-low","rep":2,"ms":13325,"ok":true,"chars":584,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"luna-medium","rep":2,"ms":13116,"ok":true,"chars":584,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"mercury-2","rep":2,"ms":13792,"ok":true,"chars":584,"err":null,"engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"deepseek-v4.1-flash","rep":2,"ms":51732,"ok":true,"chars":585,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"haiku-low","rep":2,"ms":12044,"ok":true,"chars":584,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T2-read_slice","cand":"grok-4.5-low","rep":2,"ms":4408,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"luna-low","rep":2,"ms":12069,"ok":true,"chars":26,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"luna-medium","rep":2,"ms":9483,"ok":true,"chars":26,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"mercury-2","rep":2,"ms":8544,"ok":true,"chars":20,"err":null,"engine":"opencode","model":"openrouter/inception/mercury-2","effort":null}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"deepseek-v4.1-flash","rep":2,"ms":9471,"ok":true,"chars":20,"err":null,"engine":"opencode","model":"openrouter/deepseek/deepseek-v4.1-flash","effort":null}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"haiku-low","rep":2,"ms":11532,"ok":true,"chars":23,"err":null,"engine":"claude","model":"haiku","effort":"low"}
+{"date":"2026-09-23","task":"T3-run_filtered","cand":"grok-4.5-low","rep":2,"ms":3237,"ok":false,"chars":0,"err":"grok quota exhausted — available engines: codex, claude, opencode, kimi, muse","engine":"grok","model":"grok-4.5","effort":"low"}
+{"date":"2026-09-23","task":"T4-web_lookup","cand":"luna-low","rep":1,"ms":11474,"ok":true,"chars":186,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T4-web_lookup","cand":"luna-medium","rep":1,"ms":10650,"ok":true,"chars":179,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}
+{"date":"2026-09-23","task":"T4-web_lookup","cand":"luna-low","rep":2,"ms":10891,"ok":true,"chars":194,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"low"}
+{"date":"2026-09-23","task":"T4-web_lookup","cand":"luna-medium","rep":2,"ms":11049,"ok":true,"chars":206,"err":null,"engine":"codex","model":"gpt-6-luna","effort":"medium"}

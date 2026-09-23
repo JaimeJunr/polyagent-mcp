@@ -9,7 +9,7 @@ import { classifyOutcome, computeEngineHealth, type UsageEntry } from "../src/us
  * Fixtures por engine, com ORIGEM DECLARADA — a diferença importa para o grau de confiança:
  *
  * - grok: payload REAL capturado em runtime (2026-09-13), registrado no ADENDO de
- *   .ralph/mcp-bridge-v2/spikes/quota-patterns.md. Contradisse a previsão original do spike
+ *   research/2026-09-14-quota-patterns.md. Contradisse a previsão original do spike
  *   (402, não 429; "Grok Build usage balance exhausted", não "free grok build usage limit").
  * - codex: mensagem canônica do binário (0.154.0) confirmada em runtime no ADENDO 2 — o evento
  *   JSONL abaixo é reconstruído no formato do `exec --json`, não uma captura byte-a-byte.

@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { aggregate, buildUsageEntry, classifyOutcome, computeEngineHealth, LATENCY_FLOOR, QUOTA_WINDOW_MS, type UsageEntry } from "../src/usage.js";
+import {
+  aggregate,
+  buildRatingEntry,
+  buildUsageEntry,
+  classifyOutcome,
+  computeEngineHealth,
+  LATENCY_FLOOR,
+  QUOTA_WINDOW_MS,
+  ratingStats,
+  renderRatingStats,
+  type UsageEntry,
+} from "../src/usage.js";
 import { HEALTH_THRESHOLD, resolveFastTier, type Engine } from "../src/cli.js";
 
 describe("aggregate", () => {
@@ -59,6 +70,89 @@ describe("buildUsageEntry (tier-integrity receipt)", () => {
     expect(entry).not.toHaveProperty("engine");
     expect(entry).not.toHaveProperty("outcome");
     expect(entry).not.toHaveProperty("durationMs");
+  });
+});
+
+describe("ratings", () => {
+  it("builds a trimmed, capped rating entry", () => {
+    const entry = buildRatingEntry("codex:abc", 5, `  ${"x".repeat(305)}  `, 123);
+    expect(entry).toEqual({
+      ts: 123,
+      tool: "rate",
+      outChars: 0,
+      ratedSessionId: "codex:abc",
+      score: 5,
+      note: "x".repeat(300),
+    });
+  });
+
+  it.each([0, 6, 2.5])("rejects score %s with the received value and range", (score) => {
+    expect(() => buildRatingEntry("codex:abc", score, "", 123))
+      .toThrow(new RegExp(`received.*${String(score)}.*1.*5`, "i"));
+  });
+
+  it("rejects an empty session handle", () => {
+    expect(() => buildRatingEntry("  ", 3, "", 123)).toThrow(/sessionHandle.*empty/i);
+  });
+
+  it("joins ratings to the last session entry and computes grouped quality metrics from all calls", () => {
+    const entries: UsageEntry[] = [
+      { ts: 1, tool: "delegate", outChars: 1, sessionId: "codex:a", engine: "codex", model: "gpt-6-luna", effort: "low", outcome: "success", durationMs: 100 },
+      { ts: 2, tool: "delegate", outChars: 1, sessionId: "codex:b", engine: "codex", model: "gpt-6-luna", effort: "low", outcome: "failure", durationMs: 300 },
+      { ts: 3, tool: "delegate", outChars: 1, sessionId: "codex:c", engine: "codex", model: "gpt-6-luna", effort: "low", outcome: "success", durationMs: 200 },
+      { ts: 4, tool: "explore", outChars: 1, sessionId: "codex:replace", engine: "codex", model: "old-model", effort: "high", outcome: "success", durationMs: 999 },
+      { ts: 5, tool: "delegate", outChars: 1, sessionId: "codex:replace", engine: "codex", model: "gpt-6-sol", effort: "max", outcome: "failure", durationMs: 400 },
+      { ts: 6, tool: "web_lookup", outChars: 1, sessionId: "no-meta", outcome: "success", durationMs: 50 },
+      { ts: 7, tool: "rate", outChars: 0, ratedSessionId: "codex:a", score: 5, note: "good" },
+      { ts: 8, tool: "rate", outChars: 0, ratedSessionId: "codex:b", score: 4, note: "fixes" },
+      { ts: 9, tool: "rate", outChars: 0, ratedSessionId: "codex:replace", score: 3, note: "last wins" },
+      { ts: 10, tool: "rate", outChars: 0, ratedSessionId: "no-meta", score: 2, note: "missing fields" },
+      { ts: 11, tool: "rate", outChars: 0, ratedSessionId: "missing", score: 1, note: "unknown" },
+    ];
+
+    expect(ratingStats(entries)).toEqual({
+      "codex|gpt-6-luna|low|delegate": {
+        ratings: 2,
+        avgScore: 4.5,
+        calls: 3,
+        successRate: 2 / 3,
+        p50DurationMs: 200,
+      },
+      "codex|gpt-6-sol|max|delegate": {
+        ratings: 1,
+        avgScore: 3,
+        calls: 1,
+        successRate: 0,
+        p50DurationMs: 400,
+      },
+      "-|-|-|web_lookup": {
+        ratings: 1,
+        avgScore: 2,
+        calls: 1,
+        successRate: 1,
+        p50DurationMs: 50,
+      },
+      unknown: {
+        ratings: 1,
+        avgScore: 1,
+        calls: 0,
+        successRate: null,
+        p50DurationMs: null,
+      },
+    });
+  });
+
+  it("renders a compact table sorted by rating count descending", () => {
+    const rendered = renderRatingStats({
+      unknown: { ratings: 1, avgScore: 1, calls: 0, successRate: null, p50DurationMs: null },
+      "codex|gpt-6-luna|low|delegate": { ratings: 2, avgScore: 4.5, calls: 4, successRate: 0.75, p50DurationMs: 200 },
+    });
+    expect(rendered).toContain("| group | ratings | avg score | calls | success rate | p50 durationMs |");
+    expect(rendered.indexOf("codex\\|gpt-6-luna\\|low\\|delegate")).toBeLessThan(rendered.indexOf("unknown"));
+    expect(rendered).toContain("| 75.0% |");
+    // sem nenhuma execução com outcome, a taxa é desconhecida — "0.0%" leria como "sempre falha".
+    expect(rendered).toContain("| unknown | 1 | 1.0 | 0 | - | - |");
+    expect(rendered).toContain("| - |");
   });
 });
 

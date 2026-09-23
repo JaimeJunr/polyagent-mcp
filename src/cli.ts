@@ -632,7 +632,7 @@ const RATE_LIMIT_PATTERNS: Record<Engine, RegExp[]> = {
  * extraídas — os CLIs emitem o JSON útil em stdout, e o exit code só distingue sucesso de falha.
  * Um padrão que não casa devolve null e a falha propaga crua: classificar errado é pior que não
  * classificar (ver ADENDO 3 do spike — auth expirado tratado como cota mascarou um bug do bridge).
- * Função pura. Padrões: .ralph/mcp-bridge-v2/spikes/quota-patterns.md (incluindo os adendos).
+ * Função pura. Padrões: research/2026-09-14-quota-patterns.md (incluindo os adendos).
  */
 export function classifyQuotaError(output: CliFailureOutput, engine: Engine): QuotaErrorKind | null {
   // Guarda contra uma resposta bem-sucedida que apenas mencione essas mensagens.
@@ -1415,7 +1415,7 @@ interface TierEntry {
 /**
  * Matriz do `delegate`: escada de custo-benefício só com pontos da fronteira de Pareto (nota vs.
  * custo/tarefa, Artificial Analysis 2026-09-23), cada degrau ~3× mais caro que o anterior — ver
- * .ralph/polyagent/model-refresh-2026/spikes/tier-pareto-2026-09.md. Tudo por assinatura
+ * research/2026-09-23-tier-pareto.md. Tudo por assinatura
  * (codex/claude): pay-per-token (MiMo, DeepSeek) fica fora de propósito. Níveis 1-4 usam GPT-6
  * Luna max / Sol high / Sol max / Astra max, e 5 usa Claude Opus 5.5 max. Grok 4.6 saiu (mesma nota
  * do Sol xhigh a 3,5× o custo) e o Astra ficou apesar de dominado na nota geral: em código (Coding
