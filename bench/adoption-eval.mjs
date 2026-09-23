@@ -13,6 +13,10 @@ const REPO = process.env.ADOPTION_REPO ?? join(dirname(fileURLToPath(import.meta
 const DATE = new Date().toISOString().slice(0, 10);
 const PREFIX = "mcp__polyagent__";
 const TIMEOUT_MS = 8 * 60 * 1000;
+// Modelo/esforço do HOST (o Claude que escolhe as tools). Sem isso vale o default do usuário, e o alias
+// `opus` resolvia para claude-opus-5 em 2026-09-23 — medir o host errado sem perceber.
+const HOST_MODEL = process.env.ADOPTION_MODEL ?? null;
+const HOST_EFFORT = process.env.ADOPTION_EFFORT ?? null;
 const NATIVE_TOOLS = new Set(["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch", "Task", "Agent"]);
 
 const PROMPTS = [
@@ -36,7 +40,7 @@ function emptyParse() {
   return {
     toolNames: [],
     usedToolSearchForPolyagent: false,
-    result: { total_cost_usd: null, duration_ms: null, num_turns: null, is_error: null },
+    result: { total_cost_usd: null, duration_ms: null, num_turns: null, is_error: null, models: [] },
   };
 }
 
@@ -61,6 +65,7 @@ function parseLine(line, parsed) {
       duration_ms: event.duration_ms ?? null,
       num_turns: event.num_turns ?? null,
       is_error: event.is_error ?? null,
+      models: event.modelUsage && typeof event.modelUsage === "object" ? Object.keys(event.modelUsage) : [],
     };
   }
 }
@@ -83,6 +88,8 @@ function runClaude(prompt) {
       "--verbose",
       "--permission-mode", "bypassPermissions",
       "--disallowedTools", "Edit", "Write", "NotebookEdit",
+      ...(HOST_MODEL ? ["--model", HOST_MODEL] : []),
+      ...(HOST_EFFORT ? ["--effort", HOST_EFFORT] : []),
     ], { cwd: REPO, stdio: ["ignore", "pipe", "ignore"] });
 
     const output = child.stdout && createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -142,6 +149,9 @@ function makeRow(prompt, label, run) {
     turns: parsed.result.num_turns,
     isError: parsed.result.is_error,
     timeout: run.timeout,
+    hostModelRequested: HOST_MODEL,
+    hostEffort: HOST_EFFORT,
+    models: parsed.result.models,
   };
 }
 
