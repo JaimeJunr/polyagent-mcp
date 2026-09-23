@@ -225,3 +225,9 @@ export function generateImageGrokPrompt(description: string, outPath: string, in
 
   return [task, saveRule, "Report ONLY the final saved path — no summary."].join("\n\n");
 }
+
+/** Anexa uma sugestão de segunda opinião aos resultados dos níveis mais caros do delegate. */
+export function appendDelegateRiskHint(text: string, level: number): string {
+  if (level !== 4 && level !== 5) return text;
+  return `${text}\nLevel-${level} verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`;
+}

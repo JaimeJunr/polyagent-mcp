@@ -16,6 +16,7 @@ import { resolveAgent } from "./agents.js";
 import {
   isFullFileRequest, readSlicePrompt, runFilteredPrompt, explorePrompt, webLookupPrompt,
   generateImagePrompt, generateImageGrokPrompt, fanOutArbiterPrompt,
+  appendDelegateRiskHint,
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
@@ -203,17 +204,20 @@ server.registerTool(
     return formatRun(
       "delegate",
       tier.engine,
-      () => runCursor({
-        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
-        cwd,
-        engine: tier.engine,
-        model: tier.model,
-        effort: tier.effort,
-        agentPrompt: withTerseStyle(resolved?.prompt),
-        force: true,
-        timeoutMs: timeout_ms,
-        tool: "delegate",
-      }),
+      async () => {
+        const res = await runCursor({
+          prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
+          cwd,
+          engine: tier.engine,
+          model: tier.model,
+          effort: tier.effort,
+          agentPrompt: withTerseStyle(resolved?.prompt),
+          force: true,
+          timeoutMs: timeout_ms,
+          tool: "delegate",
+        });
+        return { ...res, text: appendDelegateRiskHint(res.text, level) };
+      },
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
       { model: tier.model, effort: tier.effort },
     );
@@ -414,8 +418,10 @@ server.registerTool(
 server.registerTool(
   "fan_out",
   {
+    // Schemas deferidos perdem adoção, o mesmo problema que levou fast_delegate a alwaysLoad.
+    _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Run the SAME prompt across N engines/tiers in parallel isolated sandboxes, for cross-checking a claim or catching a single worker's blind spot. Returns ONLY a compact digest, never the N raw transcripts — context economy on the caller side. mode:'race' (default) resolves on the first successful result and skips the slower ones. mode:'consensus' waits for every worker then runs one cheap arbiter call that compares all outputs and returns its consensus/disagreement digest plus each worker's session_id for follow_up.",
+      "Use for independent second opinions, comparing 2+ approaches/designs/options/alternatives, cross-checking a risky verdict before acting (mode:'consensus'), or broad research that splits into independent parts. Do not use for simple lookups, single-file edits, or tightly coupled sequential work: it runs several workers and costs several times a single delegate. It returns a compact digest; mode:'race' returns the first success, while mode:'consensus' compares all outputs and returns agreement/disagreement plus worker session_ids for follow_up.",
     inputSchema: {
       prompt: z.string().describe("The task prompt sent identically to every worker."),
       levels: z
