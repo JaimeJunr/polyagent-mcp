@@ -4,18 +4,16 @@
  * token-expensive native tools, at the moment of the call (text alone in
  * CLAUDE.md loses to structural friction; a call-time reminder wins).
  *
- * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write" no PreToolUse
- * para os lembretes do loop principal e uma entrada SubagentStart separada
- * para injetar a preferência nos subagentes. Veja o README.
+ * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write" no PreToolUse,
+ * UserPromptSubmit para dicas por intenção, e entradas SessionStart/SubagentStart.
+ * Veja o README.
  *
  * Design constraints:
  *  - Cheap: only emits a nudge when it actually pays off (large whole-file
  *    Read, native web call, or the first exploration tool of a session).
  *    Never fires on small/surgical reads.
- *  - De-duplicated per session: each nudge fires at most once per session
- *    (keyed by session_id in a tmp file). A repeated nudge is worse than none —
- *    the agent learns to ignore it AND every fire costs tokens. This is what
- *    lets Grep/Glob into the matcher without the constant-noise cost.
+ *  - Dedup por sessão cobre nudge/redirect de PreToolUse, usando session_id no tmp.
+ *    UserPromptSubmit avalia cada prompt isoladamente e não usa dedup.
  *  - Preload once: the first qualifying nudge of a session also carries the
  *    one-time reminder to run ToolSearch, because these MCP tools are deferred
  *    and lose to the always-loaded native Read/Grep until their schemas load.
@@ -39,10 +37,12 @@ const BIG_BYTES = 2 * 1024 * 1024; // acima disto não conta linhas — já é "
 const SKIP_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|pdf|zip|gz|tar|wasm|mp4|mov|woff2?)$/i;
 
 const PRELOAD_TEXT =
-  "polyagent tools are DEFERRED — run ToolSearch(\"select:mcp__polyagent__read_slice," +
-  "mcp__polyagent__explore,mcp__polyagent__run_filtered,mcp__polyagent__web_lookup\") " +
-  "ONCE this session so their schemas load; otherwise the always-loaded native Read/Grep/Glob win by " +
-  "default. For pure reading/locating (no edit ahead), prefer explore/read_slice over Grep/Read.";
+  "Core polyagent tools, including fan_out, are marked alwaysLoad on Claude Code 2.1.121+; older " +
+  "hosts may defer them. If a required schema is missing, run ToolSearch(\"select:mcp__polyagent__delegate," +
+  "mcp__polyagent__fast_delegate,mcp__polyagent__explore,mcp__polyagent__read_slice," +
+  "mcp__polyagent__run_filtered,mcp__polyagent__web_lookup,mcp__polyagent__fan_out,mcp__polyagent__rate\"). " +
+  "Secondary tools (generate_image, follow_up, bridge_stats, decide) may be deferred; load one with " +
+  "ToolSearch when needed. For pure reading/locating (no edit ahead), prefer explore/read_slice over Grep/Read.";
 
 const WEB_TEXT =
   "polyagent available: prefer web_lookup(query) over native web tools — the Cursor agent reads the " +
@@ -71,6 +71,43 @@ const EDIT_DELEGATE_TEXT =
   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
   "Keep editing inline only for a quick one-off you're already positioned for.";
 
+const PROMPT_ROUTE_HINTS = {
+  fan_out:
+    "This request asks for independent opinions or a comparison — polyagent fan_out runs them in parallel and can reconcile them (mode consensus); skip it if the task turns out simple.",
+  web_lookup:
+    "This request asks for current library or model information — polyagent web_lookup can check recent docs, releases, versions, or pricing.",
+  run_filtered:
+    "This request asks to run checks and report only failures — polyagent run_filtered can execute tests or a build and filter output to errors.",
+  explore:
+    "This request asks where code is defined — polyagent explore can locate the relevant file or symbol; use read_slice for a specific section.",
+};
+
+const FAN_OUT_PROMPT_RE =
+  /\b(?:independent\s+(?:second\s+)?opinions?|second\s+(?:independent\s+)?opinions?|segunda\s+opini[aã]o|opini[oõ]es\s+independentes)\b|\bcompar\w*\b.{0,70}\b(?:approaches?|options?|alternatives?|designs?|abordagens?|op[cç][oõ]es|alternativas?|propostas?)\b|\bqual\s+(?:é|e|seria)\s+(?:(?:o|a)\s+)?melhor\b|\b(?:pr[oó]s?\s+e\s+contr[ao]s?|pros?\s+and\s+cons?|trade[- ]?offs?|veredito\s+confi[aá]vel|reliable\s+verdict|cross[- ]?check(?:ing)?|crosscheck(?:ing)?)\b/i;
+
+const WEB_LOOKUP_PROMPT_RE =
+  /\b(?:latest|newest|most\s+recent|current)\s+(?:version|release)\b|\b(?:version|vers[aã]o)\s+(?:is\s+)?(?:latest|newest|most\s+recent|mais\s+recente|mais\s+nova|ultima)\b|\b(?:mais\s+recente|mais\s+nova|ultima)\s+vers[aã]o\b|\bchangelog\b|\brelease\s+notes\b|\bnotas?\s+de\s+vers[aã]o\b|\b(?:docs?|documentation|documenta[cç][aã]o)\s+(?:for|of|about|da|do|de|sobre)\b|\b[a-z0-9@/_-]+\s+(?:docs?|documentation)\b|\b(?:pricing|prices?|pre[cç]os?|custo|cost)\b.{0,80}\b(?:model|modelo|api)\b|\b(?:model|modelo|api)\b.{0,80}\b(?:pricing|prices?|pre[cç]os?|custo|cost)\b/i;
+
+const RUN_CHECK_PROMPT_RE =
+  /\b(?:run|execute|start|rod(?:ar|a|e)|execut(?:ar|a|e))\b.{0,140}\b(?:tests?|testes|suite|su[ií]te|build)\b/i;
+const REPORT_FAILURES_PROMPT_RE =
+  /\b(?:report|show|return|list|include|print|output|tell|mostre|mostra|retorne|reporte|liste|apresente|imprima|diga|diz|dizer|fale|fala)\b.{0,80}\b(?:only|just|apenas|somente|s[oó])(?![\p{L}]).{0,50}\b(?:failures?|failed|errors?|falhas?|falh(?:ou|aram|ando)|erros?)|\b(?:only|just|apenas|somente|s[oó])(?![\p{L}]).{0,50}\b(?:failures?|failed|errors?|falhas?|falh(?:ou|aram|ando)|erros?).{0,80}\b(?:report|show|return|list|include|print|output|tell|mostre|mostra|retorne|reporte|liste|apresente|imprima|diga|diz|dizer|fale|fala)\b/iu;
+
+const EXPLORE_PROMPT_RE =
+  /\bonde\s+(?:fica|est[aá]|[eé]\s+definid[oa]|o\s+projeto)\b|\bem\s+que\s+(?:arquivo|ficheiro)\b|\bwhere\s+(?:is|are|does|do)\b|\bwhich\s+(?:files?|paths?|modules?|directories)\b/i;
+
+/** Roteia prompts que pedem um tipo claro de trabalho; não mantém estado por sessão. */
+export function promptRouteContext(prompt) {
+  if (typeof prompt !== "string" || prompt.trim() === "") return null;
+  if (FAN_OUT_PROMPT_RE.test(prompt)) return PROMPT_ROUTE_HINTS.fan_out;
+  if (WEB_LOOKUP_PROMPT_RE.test(prompt)) return PROMPT_ROUTE_HINTS.web_lookup;
+  if (RUN_CHECK_PROMPT_RE.test(prompt) && REPORT_FAILURES_PROMPT_RE.test(prompt)) {
+    return PROMPT_ROUTE_HINTS.run_filtered;
+  }
+  if (EXPLORE_PROMPT_RE.test(prompt)) return PROMPT_ROUTE_HINTS.explore;
+  return null;
+}
+
 /**
  * Texto injetado no SessionStart. O preload de carona no PreToolUse só dispara quando
  * o modelo usa a tool Grep/Read/etc — mas nas sessões reais ele "vai de Bash grep",
@@ -81,12 +118,14 @@ const EDIT_DELEGATE_TEXT =
  */
 export function sessionStartContext() {
   return (
-    "polyagent MCP (cheap/fast Cursor worker) is available but its tools are DEFERRED — they are NOT " +
-    "in your prompt and fail if called raw. Run " +
-    'ToolSearch("select:mcp__polyagent__read_slice,mcp__polyagent__explore,' +
-    'mcp__polyagent__run_filtered,mcp__polyagent__web_lookup,mcp__polyagent__delegate") ' +
-    "ONCE now so their schemas load; otherwise the always-loaded native Read/Grep/Bash/Edit/Write win by " +
-    "default and you burn expensive tokens on cheap work. For PURE reading/locating/web with no edit ahead, " +
+    "polyagent MCP (fleet of cheap/fast coding-agent workers) is available. Core tools are marked alwaysLoad on Claude " +
+    "Code 2.1.121+; older hosts may defer them, so use " +
+    'ToolSearch("select:mcp__polyagent__delegate,mcp__polyagent__fast_delegate,mcp__polyagent__explore,' +
+    'mcp__polyagent__read_slice,mcp__polyagent__run_filtered,mcp__polyagent__web_lookup,' +
+    'mcp__polyagent__fan_out,mcp__polyagent__rate") if a required schema is missing. ' +
+    "Secondary tools may be deferred; load generate_image, follow_up, bridge_stats, or decide with " +
+    'ToolSearch("select:mcp__polyagent__generate_image,mcp__polyagent__follow_up,' +
+    'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. For PURE reading/locating/web with no edit ahead, ' +
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
     "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
@@ -114,10 +153,11 @@ const AGENT_PREF_BODY =
   "reading/locating/web where you will NOT edit the file, prefer it over native Read/Grep/Glob/" +
   "WebSearch/WebFetch: explore(question,files?) to map or answer, read_slice(files,want) for one " +
   "section of a large file, run_filtered(command,want) to strip noisy build/test output, " +
-  "web_lookup(query) for docs/errors/versions. These tools are DEFERRED — run " +
-  'ToolSearch("select:mcp__polyagent__read_slice,mcp__polyagent__explore,' +
-  'mcp__polyagent__run_filtered,mcp__polyagent__web_lookup") ONCE before exploring so their ' +
-  "schemas load. If you WILL edit a file, native Read is correct. This complements the context-mode " +
+  "web_lookup(query) for docs/errors/versions. Core tools, including fan_out, are marked alwaysLoad " +
+  "on Claude Code 2.1.121+; if a required schema is missing on an older host, use ToolSearch with its " +
+  "mcp__polyagent__ name. Secondary tools (generate_image, follow_up, bridge_stats, decide) may be " +
+  'deferred; load one with ToolSearch("select:mcp__polyagent__generate_image,mcp__polyagent__follow_up,' +
+  'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. If you WILL edit a file, native Read is correct. This complements the context-mode ' +
   "routing above — both keep raw output out of your context; when both fit, either is fine. " +
   "Prefer fast_delegate to delegate for simple/urgent work where speed matters more than picking a level.";
 
@@ -285,6 +325,22 @@ async function main() {
       );
     } catch {
       // Fail-open: uma falha no contexto nunca impede o início do subagente.
+    }
+    process.exit(0);
+  }
+  if (data?.hook_event_name === "UserPromptSubmit") {
+    try {
+      // Cada prompt é avaliado por conta própria; esse evento não usa o dedup da sessão.
+      const additionalContext = promptRouteContext(data?.prompt);
+      if (additionalContext) {
+        process.stdout.write(
+          JSON.stringify({
+            hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext },
+          }),
+        );
+      }
+    } catch {
+      // Fail-open: falha no roteamento nunca impede o envio do prompt.
     }
     process.exit(0);
   }

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 // @ts-expect-error — hook is plain .mjs sem types; só a lógica pura importa aqui.
-import { decide, sessionStartContext, subagentStartContext } from "../hooks/prefer-polyagent.mjs";
+import { decide, promptRouteContext, sessionStartContext, subagentStartContext } from "../hooks/prefer-polyagent.mjs";
 
 const hookPath = fileURLToPath(new URL("../hooks/prefer-polyagent.mjs", import.meta.url));
 
@@ -96,11 +96,20 @@ describe("decide — Read (threshold 300, dedup por arquivo)", () => {
 });
 
 describe("sessionStartContext — preload injetado no início da sessão", () => {
-  it("instrui rodar ToolSearch com os nomes das tools deferidas", () => {
+  it("inclui as ferramentas core no fallback ToolSearch e lista as secundárias", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/ToolSearch/);
-    expect(text).toMatch(/mcp__polyagent__read_slice/);
-    expect(text).toMatch(/mcp__polyagent__explore/);
+    expect(text).toMatch(/mcp__polyagent__generate_image/);
+    expect(text).toMatch(/mcp__polyagent__decide/);
+    expect(text).toMatch(/mcp__polyagent__fan_out/);
+    expect(text).toMatch(/read_slice/);
+  });
+
+  it("explica que as tools core, inclusive fan_out, estão alwaysLoad", () => {
+    const text = sessionStartContext();
+    expect(text).toMatch(/alwaysLoad/);
+    expect(text).toMatch(/fan_out/);
+    expect(text).toMatch(/when needed/i);
   });
 
   it("menciona fast_delegate (não regressar a adoção silenciosa)", () => {
@@ -214,6 +223,54 @@ describe("subagentStartContext — contexto injetado no subagente", () => {
   });
 });
 
+describe("promptRouteContext — roteamento por intenção", () => {
+  it.each([
+    ["PT fan_out", "Compare duas abordagens e traga prós e contras.", "fan_out"],
+    ["EN fan_out", "Get a second opinion and cross-check the trade-offs.", "fan_out"],
+    ["PT web_lookup", "Qual é a versão mais recente da biblioteca e as notas de versão?", "web_lookup"],
+    ["EN web_lookup", "Check the latest version and release notes for this library.", "web_lookup"],
+    ["PT run_filtered", "Rode a suíte de testes e reporte apenas as falhas.", "run_filtered"],
+    ["EN run_filtered", "Run the test suite and report only errors.", "run_filtered"],
+    // português coloquial: "me diga só quais falharam" (verbo "dizer", "só", verbo "falhar")
+    ["PT coloquial run_filtered", "Roda os testes e me diz só quais falharam.", "run_filtered"],
+    ["PT coloquial run_filtered 2", "Rode o build e me diga só os erros.", "run_filtered"],
+    ["PT explore", "Onde fica definido o fluxo de login e em que arquivo?", "explore"],
+    ["EN explore", "Where is the login flow defined, and which file contains it?", "explore"],
+  ])("matches %s", (_label, prompt, tool) => {
+    expect(promptRouteContext(prompt)).toContain(tool);
+  });
+
+  it("prioritizes fan_out over a web lookup cue", () => {
+    expect(promptRouteContext("Compare these approaches and check the latest version of the package."))
+      .toContain("fan_out");
+  });
+
+  it.each([
+    "quantos arquivos .ts existem em src?",
+    "corrige o typo no README",
+  ])("leaves simple prompt without routing hint: %s", (prompt) => {
+    expect(promptRouteContext(prompt)).toBeNull();
+  });
+
+  it.each(["", "   ", undefined, null, 42])("returns null for empty or non-string input: %s", (prompt) => {
+    expect(promptRouteContext(prompt)).toBeNull();
+  });
+
+  it("keeps every hint short and calm", () => {
+    const hints = [
+      promptRouteContext("Compare two approaches"),
+      promptRouteContext("Find the latest version"),
+      promptRouteContext("Run tests and report only failures"),
+      promptRouteContext("Which file defines login?"),
+    ];
+    for (const hint of hints) {
+      expect(hint).not.toBeNull();
+      expect(hint!.length).toBeLessThanOrEqual(220);
+      expect(hint).not.toMatch(/\b(?:MUST|CRITICAL)\b/);
+    }
+  });
+});
+
 describe("HOOK_MODE=off — no-op total (subprocess)", () => {
   const offEnv = { ...process.env, POLYAGENT_HOOK_MODE: "off" };
 
@@ -230,6 +287,11 @@ describe("HOOK_MODE=off — no-op total (subprocess)", () => {
     expect(out).toBe("");
   });
 
+  it("UserPromptSubmit com off → stdout vazio", () => {
+    const out = runHook({ hook_event_name: "UserPromptSubmit", prompt: "Compare two approaches" }, offEnv);
+    expect(out).toBe("");
+  });
+
   it("SessionStart sem off (default/redirect) → stdout não-vazio", () => {
     // Isola dedup por session_id único; não depende de ~/.claude.
     const env = { ...process.env };
@@ -240,5 +302,24 @@ describe("HOOK_MODE=off — no-op total (subprocess)", () => {
     );
     expect(out.length).toBeGreaterThan(0);
     expect(out).toMatch(/polyagent|SessionStart|additionalContext/);
+  });
+});
+
+describe("UserPromptSubmit — contexto de rota (subprocess)", () => {
+  it("emite additionalContext sem deduplicar prompts", () => {
+    const evt = { hook_event_name: "UserPromptSubmit", prompt: "Compare two approaches" };
+    const first = runHook(evt);
+    const second = runHook(evt);
+    expect(JSON.parse(first)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "UserPromptSubmit",
+        additionalContext: promptRouteContext(evt.prompt),
+      },
+    });
+    expect(second).toBe(first);
+  });
+
+  it("não emite saída para prompt simples", () => {
+    expect(runHook({ hook_event_name: "UserPromptSubmit", prompt: "corrige o typo no README" })).toBe("");
   });
 });
