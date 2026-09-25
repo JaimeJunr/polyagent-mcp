@@ -12,6 +12,26 @@ import {
   type UsageEntry,
 } from "../src/usage.js";
 import { HEALTH_THRESHOLD, resolveFastTier, type Engine } from "../src/cli.js";
+import { estimateCostPerTask } from "../src/costs.js";
+
+describe("estimateCostPerTask", () => {
+  it("looks up a published AA cost by engine, model, and effort", () => {
+    expect(estimateCostPerTask("codex", "gpt-6-sol", "high")).toBe(0.37);
+    expect(estimateCostPerTask("claude", "claude-opus-5-5", "max")).toBe(5.98);
+  });
+
+  it("uses the published extended-thinking cost for Haiku at any effort", () => {
+    expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "low")).toBe(0.21);
+    expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "high")).toBe(0.21);
+    expect(estimateCostPerTask("claude", "haiku", "low")).toBe(0.21);
+  });
+
+  it("does not guess unknown models or missing efforts", () => {
+    expect(estimateCostPerTask("codex", "gpt-6-sol", undefined)).toBeUndefined();
+    expect(estimateCostPerTask("codex", "gpt-6-sol", "ultra")).toBeUndefined();
+    expect(estimateCostPerTask("grok", "gpt-6-sol", "high")).toBeUndefined();
+  });
+});
 
 describe("aggregate", () => {
   it("sums calls and returned chars per tool", () => {
@@ -147,12 +167,28 @@ describe("ratings", () => {
       unknown: { ratings: 1, avgScore: 1, calls: 0, successRate: null, p50DurationMs: null },
       "codex|gpt-6-luna|low|delegate": { ratings: 2, avgScore: 4.5, calls: 4, successRate: 0.75, p50DurationMs: 200 },
     });
-    expect(rendered).toContain("| group | ratings | avg score | calls | success rate | p50 durationMs |");
+    expect(rendered).toContain("| group | est $/task (AA) | ratings | avg score | calls | success rate | p50 durationMs |");
     expect(rendered.indexOf("codex\\|gpt-6-luna\\|low\\|delegate")).toBeLessThan(rendered.indexOf("unknown"));
     expect(rendered).toContain("| 75.0% |");
     // sem nenhuma execução com outcome, a taxa é desconhecida — "0.0%" leria como "sempre falha".
-    expect(rendered).toContain("| unknown | 1 | 1.0 | 0 | - | - |");
+    expect(rendered).toContain("| codex\\|gpt-6-luna\\|low\\|delegate | $0.0045 | 2 | 4.5 | 4 | 75.0% | 200 |");
+    expect(rendered).toContain("| unknown | - | 1 | 1.0 | 0 | - | - |");
     expect(rendered).toContain("| - |");
+  });
+
+  it("renders known and unknown costs from rated usage groups", () => {
+    const entries: UsageEntry[] = [
+      { ts: 1, tool: "delegate", outChars: 1, sessionId: "known", engine: "codex", model: "gpt-6-sol", effort: "high" },
+      { ts: 2, tool: "delegate", outChars: 1, sessionId: "missing-effort", engine: "codex", model: "gpt-6-sol" },
+      { ts: 3, tool: "delegate", outChars: 1, sessionId: "unknown", engine: "grok", model: "grok-4.5", effort: "low" },
+      { ts: 4, tool: "rate", outChars: 0, ratedSessionId: "known", score: 5 },
+      { ts: 5, tool: "rate", outChars: 0, ratedSessionId: "missing-effort", score: 4 },
+      { ts: 6, tool: "rate", outChars: 0, ratedSessionId: "unknown", score: 3 },
+    ];
+    const rendered = renderRatingStats(ratingStats(entries));
+    expect(rendered).toContain("| codex\\|gpt-6-sol\\|high\\|delegate | $0.37 |");
+    expect(rendered).toContain("| codex\\|gpt-6-sol\\|-\\|delegate | - |");
+    expect(rendered).toContain("| grok\\|grok-4.5\\|low\\|delegate | - |");
   });
 });
 
