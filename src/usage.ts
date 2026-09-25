@@ -3,6 +3,18 @@ import { appendFileSync, readFileSync } from "node:fs";
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
 export const USAGE_LOG = process.env.POLYAGENT_LOG;
 
+export interface DecisionRecord {
+  name: string;
+  candidates: string[];
+  choice: string | null;
+  confidence: number | null;
+  accepted: boolean;
+  fallback: boolean;
+  latencyMs: number;
+  cost?: number | null;
+  actual?: string;
+}
+
 export interface UsageEntry {
   ts: number;
   tool: string;
@@ -34,6 +46,7 @@ export interface UsageEntry {
   score?: number;
   /** Observação opcional de uma avaliação. */
   note?: string;
+  decision?: DecisionRecord;
 }
 
 export interface ToolStats {
@@ -84,6 +97,27 @@ export function logUsage(tool: string, outChars: number, tier?: TierReceipt, run
     appendFileSync(USAGE_LOG, JSON.stringify(entry) + "\n");
   } catch {
     // logging é best-effort; nunca derruba a chamada real.
+  }
+}
+
+export function buildDecisionEntry(decision: DecisionRecord, now: number): UsageEntry {
+  return {
+    ts: now,
+    tool: "decide",
+    engine: "jev",
+    outChars: 0,
+    outcome: decision.choice === null ? "failure" : "success",
+    durationMs: decision.latencyMs,
+    decision,
+  };
+}
+
+export function logDecision(decision: DecisionRecord): void {
+  if (!USAGE_LOG) return;
+  try {
+    appendFileSync(USAGE_LOG, JSON.stringify(buildDecisionEntry(decision, Date.now())) + "\n");
+  } catch {
+    // O registro é best-effort; uma falha de disco não altera a decisão.
   }
 }
 
@@ -290,7 +324,7 @@ export function computeEngineHealth(
   const quotaWindow = Number.isFinite(quotaWindowMs) && quotaWindowMs > 0 ? quotaWindowMs : QUOTA_WINDOW_MS;
   const byEngine: Record<string, { weight: number; weightedScore: number }> = {};
   for (const r of records) {
-    if (!r.engine) continue;
+    if (!r.engine || r.tool === "decide") continue;
     // Cota pontua 0 (não 1, não ignorada). O `continue` antigo existia para impedir que cota
     // INFLASSE o health: sem ele, cairia no ramo "não é failure/timeout" e pontuaria 1, exatamente
     // da engine que não pode mais ser usada. Pontuar 0 é a mesma intenção levada até o fim —

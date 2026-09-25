@@ -20,12 +20,16 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  USAGE_LOG, logRating, logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
+  USAGE_LOG, logDecision, logRating, logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
   ratingStats, renderRatingStats,
   type TierReceipt, type UsageRun,
 } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
-import { askJev, JEV_MODEL, resolveOpenRouterKey } from "./jev.js";
+import {
+  askJev, JEV_MODEL, JEV_FANOUT_ENABLED, JEV_FANOUT_THRESHOLD, JEV_SHADOW_ENABLED,
+  resolveOpenRouterKey, type AskJevParams,
+} from "./jev.js";
+import { fanOutAgreementText, runFanOutConsensusGate, withDelegateShadow } from "./jevDecisions.js";
 
 const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
@@ -37,6 +41,11 @@ const server = new McpServer(
 
 const PROCESS_ENV = process.env;
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+function askInternalJev(params: AskJevParams) {
+  const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"));
+  return askJev(params, { fetch: (url, init) => globalThis.fetch(url, init), key });
+}
 
 // Params de roteamento compartilhados.
 const routing = {
@@ -201,7 +210,7 @@ server.registerTool(
     // Resolve o agent no host (fora do sandbox): a persona vira string injetada por engine. O `model`
     // do frontmatter é advisory — o `model` explícito e o do tier vencem.
     const resolved = agent ? resolveAgent(agent, cwd ?? process.cwd()) : undefined;
-    return formatRun(
+    const work = () => formatRun(
       "delegate",
       tier.engine,
       async () => {
@@ -221,6 +230,9 @@ server.registerTool(
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
       { model: tier.model, effort: tier.effort },
     );
+    return JEV_SHADOW_ENABLED
+      ? withDelegateShadow(work, prompt, level, { ask: askInternalJev, log: logDecision })
+      : work();
   },
 );
 
@@ -457,40 +469,65 @@ server.registerTool(
         ? { engine: s.value.tier.engine, level: s.value.level, sessionId: s.value.res.sessionId, text: s.value.res.text }
         : { engine: tiers[i].tier.engine, level: tiers[i].level, text: String(s.reason), error: true },
     );
-    const arbiterStarted = Date.now();
-    let arbiter: CliResult;
-    try {
-      arbiter = await runCursor({
-        prompt: fanOutArbiterPrompt(outputs),
-        cwd,
-        engine: "codex",
-        model: EXPLORE_MODEL,
-        mode: "ask",
-        agentPrompt: withTerseStyle(),
-        tool: "fan_out",
-      });
-    } catch (err) {
-      logUsage("fan_out", 0, undefined, {
-        engine: "codex",
-        model: EXPLORE_MODEL,
-        outcome: classifyOutcome(err),
-        durationMs: Date.now() - arbiterStarted,
-      });
-      throw err;
-    }
     const footer = outputs
       .map((o) => `- ${o.engine} (level ${o.level})${o.sessionId ? `: ${formatSessionHandle(o.engine as Engine, o.sessionId)}` : o.error ? ": FAILED" : ": no session_id"}`)
       .join("\n");
-    return format(
-      "fan_out",
-      { ...arbiter, text: `${arbiter.text}\n\nWorker sessions (pass to follow_up):\n${footer}` },
-      undefined,
-      {
-        engine: arbiter.engine ?? "codex",
-        model: EXPLORE_MODEL,
-        outcome: "success",
-        durationMs: Date.now() - arbiterStarted,
+    const successful = settled.flatMap((entry) => entry.status === "fulfilled" ? [entry.value] : []);
+    const gateStarted = Date.now();
+    return runFanOutConsensusGate(
+      successful.map((worker) => worker.res.text),
+      JEV_FANOUT_ENABLED,
+      JEV_FANOUT_THRESHOLD,
+      (verdict) => {
+        const first = successful[0];
+        return format(
+          "fan_out",
+          { ...first.res, text: fanOutAgreementText(first.res.text, footer, verdict.probability) },
+          undefined,
+          {
+            engine: first.res.engine ?? first.tier.engine,
+            model: first.tier.model,
+            effort: first.tier.effort,
+            outcome: "success",
+            durationMs: Date.now() - gateStarted,
+          },
+        );
       },
+      async () => {
+        const arbiterStarted = Date.now();
+        let arbiter: CliResult;
+        try {
+          arbiter = await runCursor({
+            prompt: fanOutArbiterPrompt(outputs),
+            cwd,
+            engine: "codex",
+            model: EXPLORE_MODEL,
+            mode: "ask",
+            agentPrompt: withTerseStyle(),
+            tool: "fan_out",
+          });
+        } catch (err) {
+          logUsage("fan_out", 0, undefined, {
+            engine: "codex",
+            model: EXPLORE_MODEL,
+            outcome: classifyOutcome(err),
+            durationMs: Date.now() - arbiterStarted,
+          });
+          throw err;
+        }
+        return format(
+          "fan_out",
+          { ...arbiter, text: `${arbiter.text}\n\nWorker sessions (pass to follow_up):\n${footer}` },
+          undefined,
+          {
+            engine: arbiter.engine ?? "codex",
+            model: EXPLORE_MODEL,
+            outcome: "success",
+            durationMs: Date.now() - arbiterStarted,
+          },
+        );
+      },
+      { ask: askInternalJev, log: logDecision },
     );
   },
 );
@@ -682,11 +719,7 @@ server.registerTool(
   async ({ state, questions, model }) => {
     const started = Date.now();
     try {
-      const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"));
-      const result = await askJev(
-        { state, questions, model },
-        { fetch: (url, init) => globalThis.fetch(url, init), key },
-      );
+      const result = await askInternalJev({ state, questions, model });
       const latencyMs = Date.now() - started;
       const text = JSON.stringify({
         answers: result.answers,

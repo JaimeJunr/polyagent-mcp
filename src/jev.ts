@@ -3,6 +3,14 @@ import { join } from "node:path";
 
 export const JEV_MODEL = process.env.POLYAGENT_JEV_MODEL || "typesafe/jev-1.13";
 export const JEV_URL = process.env.POLYAGENT_JEV_URL || "https://openrouter.ai/api/v1/systemone";
+const jevEnabled = (value: string | undefined): boolean => /^(1|true|on)$/i.test(value ?? "");
+const fanOutThresholdEnv = process.env.POLYAGENT_JEV_FANOUT_THRESHOLD;
+const fanOutThreshold = Number(fanOutThresholdEnv);
+export const JEV_FANOUT_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_FANOUT);
+export const JEV_SHADOW_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_SHADOW);
+export const JEV_FANOUT_THRESHOLD = fanOutThresholdEnv?.trim()
+  && Number.isFinite(fanOutThreshold) && fanOutThreshold >= 0 && fanOutThreshold <= 1
+  ? fanOutThreshold : 0.85;
 
 export type JevState = string | Record<string, unknown>;
 

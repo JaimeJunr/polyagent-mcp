@@ -56,6 +56,18 @@ describe("tool surface (US-003)", () => {
     }
   });
 
+  it("wires the optional Jev gate after fan_out workers settle and the shadow around delegate work", () => {
+    const fanOut = registeredToolBlock("fan_out");
+    expect(fanOut.indexOf("const settled = await Promise.allSettled(runs);")).toBeLessThan(
+      fanOut.indexOf("runFanOutConsensusGate("),
+    );
+    expect(fanOut).toContain("JEV_FANOUT_ENABLED");
+    expect(fanOut).toContain("fanOutAgreementText(first.res.text, footer");
+    const delegate = registeredToolBlock("delegate");
+    expect(delegate).toContain("JEV_SHADOW_ENABLED");
+    expect(delegate).toContain("withDelegateShadow(work, prompt, level");
+  });
+
   it("alwaysLoad inclui as cinco core, fast_delegate, fan_out e rate", () => {
     // A lista EXIGE fast_delegate e fan_out — se alguém tirar qualquer um daqui o teste falha.
     const alwaysLoad = [

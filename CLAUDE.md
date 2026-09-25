@@ -26,7 +26,7 @@ There is no linter configured. `npm run build` (tsc, `strict: true`) is the type
 
 ## Architecture
 
-Seven small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
+Eight small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
 the **pure logic is testable without spawning a worker process**:
 
 - `index.ts` — MCP server + tool registrations (twelve tools: `delegate`, `fast_delegate`, `explore`,
@@ -43,6 +43,8 @@ the **pure logic is testable without spawning a worker process**:
   `fast_delegate` and `fan_out` were deferred and never got called — the same adoption bug that
   motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
+  `fan_out` consensus can use the optional Jev agreement gate before its Codex arbiter; a Jev
+  failure or low agreement keeps the existing arbiter path.
   `follow_up` feeds that id back as `RunOpts.resume` so a prior worker session continues without
   resending its context — the footer and `follow_up` are two ends of the same loop.
   `follow_up` takes an optional `mode` — without it, a resumed session regains full tool access, so
@@ -169,6 +171,22 @@ The HTTP boundary lives in `src/jev.ts`, separate from `cli.ts` and its process-
 Jev is not an engine and is not part of `TIERS` or `FAST_CANDIDATES`. Key resolution checks
 `OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`. It is a
 pay-per-token OpenRouter call. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
+Two internal uses are off by default. `POLYAGENT_JEV_FANOUT=1` asks Jev whether at least two
+successful `fan_out` consensus workers substantially agree; probability at or above
+`POLYAGENT_JEV_FANOUT_THRESHOLD` (default 0.85) returns the first successful output and worker
+session handles without the Codex arbiter. A low probability, malformed answer, missing key, or
+Jev error or a 5-second timeout runs the existing arbiter. `POLYAGENT_JEV_SHADOW=1` asks Jev for a `delegate` level in
+parallel after starting the worker; it records the suggestion but never changes the requested
+level, and waits at most 5 seconds after the worker finishes. For `fan_out` agreement, each scrubbed
+worker output keeps roughly one-quarter head and three-quarters tail within its character budget,
+including an elision marker, because verdicts live at the end and head-only clipping caused 24/24
+false skips in the benchmark. Both paths redact credential-shaped
+strings and use bounded task/output
+text and `logDecision` in `src/usage.ts`: JSONL entries have `tool:"decide"`, `engine:"jev"`,
+zero returned chars, and a `decision` object with candidates, choice, confidence, acceptance,
+fallback, latency, optional cost, and the requested level for shadow. Jev calls cost OpenRouter
+tokens; enable these flags deliberately. `src/jevDecisions.ts` keeps request/verdict logic pure
+and injects Jev/log dependencies for orchestration tests.
 
 ### The sandbox (default-on, mandatory for ALL engines, in `cli.ts`)
 

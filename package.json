@@ -18,7 +18,8 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "prepublishOnly": "npm run build",
-    "bench": "npm run build && node bench/aux-bench.mjs"
+    "bench": "npm run build && node bench/aux-bench.mjs",
+    "bench:jev": "node bench/jev-bench.mjs"
   },
   "keywords": [
     "mcp",

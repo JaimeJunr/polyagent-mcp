@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-09-24 | [Decisões com Jev: consenso em `fan_out` e shadow do `delegate`](2026-09-24-jev-decisions-bench.md) | Benchmark sintético do gate de consenso e da sugestão shadow de nível; flags seguem opt-in |
 | 2026-09-23 | [Escada de níveis pela fronteira de Pareto](2026-09-23-tier-pareto.md) | Matriz `TIERS` do `delegate` (Luna max · Sol high · Sol max · Astra max · Opus 5.5 max) |
 | 2026-09-23 | [Bench das tools auxiliares e do fast_delegate](2026-09-23-aux-tools-bench.md) | **Aplicada:** Luna medium explícito nas auxiliares; cascata Luna medium → Haiku → mercury-2 → Grok |
 | 2026-09-23 | [Como fazer o agente usar mais o polyagent](2026-09-23-tool-adoption-steering.md) | **Medido:** 3 mudanças (fan_out alwaysLoad, dica por prompt, cross-check pós-veredito). Com Opus 5.5: acertos 7 → 9 em 19 pares, 2 melhoras × 0 pioras, ainda não significativo |
