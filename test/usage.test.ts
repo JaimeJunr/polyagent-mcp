@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   aggregate,
+  buildDecisionEntry,
   buildRatingEntry,
   buildUsageEntry,
   classifyOutcome,
@@ -10,6 +11,7 @@ import {
   ratingStats,
   renderRatingStats,
   type UsageEntry,
+  type DecisionRecord,
 } from "../src/usage.js";
 import { HEALTH_THRESHOLD, resolveFastTier, type Engine } from "../src/cli.js";
 import { estimateCostPerTask } from "../src/costs.js";
@@ -47,6 +49,32 @@ describe("aggregate", () => {
 
   it("returns empty object for no entries", () => {
     expect(aggregate([])).toEqual({});
+  });
+});
+
+describe("decision usage", () => {
+  const decision: DecisionRecord = {
+    name: "fan_out_agreement", candidates: ["agree", "disagree"], choice: "agree",
+    confidence: 0.93, accepted: true, fallback: false, latencyMs: 12, cost: 0.004,
+  };
+
+  it("builds a successful Jev decision entry with zero returned chars", () => {
+    expect(buildDecisionEntry(decision, 123)).toEqual({
+      ts: 123, tool: "decide", engine: "jev", outChars: 0, outcome: "success",
+      durationMs: 12, decision,
+    });
+  });
+
+  it("marks a failed decision and leaves real worker health and ratings unchanged", () => {
+    const failed = buildDecisionEntry({ ...decision, choice: null, confidence: null, accepted: false, fallback: true }, 123);
+    const worker: UsageEntry = { ts: 123, tool: "delegate", engine: "codex", outChars: 5, outcome: "success", sessionId: "codex:a" };
+    const rating: UsageEntry = { ts: 124, tool: "rate", outChars: 0, ratedSessionId: "codex:a", score: 5 };
+    expect(failed.outcome).toBe("failure");
+    expect(aggregate([failed, worker]).decide).toEqual({ calls: 1, totalOutChars: 0, avgOutChars: 0 });
+    expect(ratingStats([failed, worker, rating])["codex|-|-|delegate"].calls).toBe(1);
+    expect(computeEngineHealth([failed], 123)).toEqual({});
+    expect(computeEngineHealth([{ ...failed, engine: "codex" }], 123)).toEqual({});
+    expect(computeEngineHealth([failed, worker], 123)).toEqual({ codex: 1 });
   });
 });
 

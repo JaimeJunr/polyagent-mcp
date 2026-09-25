@@ -22,7 +22,7 @@ The server exposes twelve tools:
 | `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. |
 | `decide` | Ask TypeSafe's Jev model for calibrated probabilities or a typed choice label. Pay-per-token through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
-| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. |
+| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. With the optional Jev consensus gate, high agreement skips the Codex arbiter; uncertainty or Jev failure keeps it. |
 | `follow_up` | Continue a prior session by `session_id`. |
 | `bridge_stats` | Report calls and chars returned to context per tool, plus ratings; optional `export: true` writes `research/bench/<YYYY-MM-DD>-ratings.md` (needs `POLYAGENT_LOG`). |
 | `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
@@ -113,9 +113,15 @@ have their own approval settings — consult the host.
 | `POLYAGENT_SANDBOX` | `bwrap` | Isolates every engine in a bubblewrap sandbox with an empty `$HOME`, preventing global config, MCP servers, hooks, and skills from loading. Only auth, required engine state, and toolchains are bound in. Set `off`/`0` to disable explicitly — with the sandbox off, the read-only tools (`explore`, `read_slice`, `web_lookup`) accept only the codex engine. A missing `bwrap` is a startup error, never a silent downgrade. |
 | `POLYAGENT_FORCE` | _(off)_ | If `1`/`true`, force-enable non-interactive approval for Cursor, Claude, and OpenCode runs. |
 | `POLYAGENT_TIMEOUT_MS` | `1800000` (30 min) | Per-call safety-net timeout (not a work budget). Execution tools (`delegate`/`fast_delegate`) also get a prompt note so the worker returns partial results before being killed. |
-| `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, every call logs `{tool, outChars}` for `bridge_stats`. |
+| `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, calls log `{tool, outChars}` for `bridge_stats`. Internal Jev attempts also write `tool:"decide"`, `engine:"jev"`, zero returned chars, and a `decision` record with choice, confidence, acceptance, fallback, latency, cost, and requested level for shadow. |
+| `POLYAGENT_JEV_FANOUT` | _(off)_ | Set to `1`/`true`/`on` to ask Jev whether 2+ successful `fan_out` consensus outputs substantially agree. At or above the threshold, return the first worker and session handles without the Codex arbiter. On low confidence, invalid answer, missing key, Jev error, or a 5-second timeout, use the arbiter. Pay-per-token OpenRouter call. |
+| `POLYAGENT_JEV_FANOUT_THRESHOLD` | `0.85` | Minimum Jev agreement probability for skipping the arbiter; invalid values use 0.85. |
+| `POLYAGENT_JEV_SHADOW` | _(off)_ | Set to `1`/`true`/`on` to ask Jev for a `delegate` level in parallel with the worker. The suggestion never changes the requested level; a pending Jev call adds at most 5 seconds after the worker ends. Pay-per-token OpenRouter call. |
 | `POLYAGENT_HOOK_MODE` | `redirect` | Hook behavior: `off` (no-op), `nudge` (non-blocking `additionalContext` only), or `redirect` (deny once + name bridge tool for WebSearch/WebFetch and whole-file large Read; fail-open on retry). Grep/Glob/Bash/Edit/Write stay nudge-only. |
 | `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
+
+Both Jev flags are off by default and pass truncated worker output or task text through the credential scrubber before sending it to OpenRouter.
+They use the same `OPENROUTER_API_KEY` or OpenCode auth-file key as `decide`.
 
 ### Breaking change: env var rename
 
