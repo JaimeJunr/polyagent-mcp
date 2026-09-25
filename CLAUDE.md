@@ -164,6 +164,8 @@ scale is 5 = correct and complete, no fixes needed; 4 = correct, small gaps; 3 =
 fixes; 2 = mostly wrong or incomplete; 1 = wrong, harmful, or hollow evidence (claimed checks that
 proved nothing). `bridge_stats(export:
 true)` writes the table to `research/bench/<YYYY-MM-DD>-ratings.md`.
+The `est $/task (AA)` column uses model/effort costs from `src/costs.ts`, sourced from
+`research/2026-09-24-custo-por-tarefa.md`; it estimates subscription quota use, not a per-call bill.
 
 ### Jev (`decide`)
 

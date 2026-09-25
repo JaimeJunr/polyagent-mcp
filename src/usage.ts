@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { estimateCostPerTask } from "./costs.js";
 
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
 export const USAGE_LOG = process.env.POLYAGENT_LOG;
@@ -235,13 +236,15 @@ export function renderRatingStats(stats: RatingStats): string {
   const rows = Object.entries(stats)
     .sort(([aKey, a], [bKey, b]) => b.ratings - a.ratings || aKey.localeCompare(bKey))
     .map(([key, stat]) => {
+      const [engine, model, effort] = key.split("|");
+      const cost = estimateCostPerTask(engine, model, effort);
       const success = stat.successRate === null ? "-" : `${(stat.successRate * 100).toFixed(1)}%`;
       const p50 = stat.p50DurationMs === null ? "-" : String(stat.p50DurationMs);
-      return `| ${key.replaceAll("|", "\\|")} | ${stat.ratings} | ${stat.avgScore.toFixed(1)} | ${stat.calls} | ${success} | ${p50} |`;
+      return `| ${key.replaceAll("|", "\\|")} | ${cost === undefined ? "-" : `$${cost}`} | ${stat.ratings} | ${stat.avgScore.toFixed(1)} | ${stat.calls} | ${success} | ${p50} |`;
     });
   return [
-    "| group | ratings | avg score | calls | success rate | p50 durationMs |",
-    "|---|---:|---:|---:|---:|---:|",
+    "| group | est $/task (AA) | ratings | avg score | calls | success rate | p50 durationMs |",
+    "|---|---:|---:|---:|---:|---:|---:|",
     ...rows,
   ].join("\n");
 }
