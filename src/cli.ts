@@ -331,7 +331,10 @@ export type AuxTool = "explore" | "read_slice" | "run_filtered" | "web_lookup";
 
 /** O que cada engine garante no nível do CLI — base das recusas por capacidade. */
 export interface EngineCapability {
-  /** Busca web nativa. Só o codex lê RunOpts.web (-c tools.web_search=true); os outros ignoram o campo. */
+  /**
+   * Busca web nativa. O codex liga via RunOpts.web (-c tools.web_search=true); o claude -p já traz o
+   * WebSearch ligado. Os outros ignoram o campo.
+   */
   webSearch: boolean;
   /** Read-only próprio do engine, independente do sandbox. Só o codex (-s read-only). */
   engineReadOnly: boolean;
@@ -362,7 +365,9 @@ export const ENGINE_CAPABILITIES: Record<Engine, EngineCapability> = {
     modeAtEngineLevel: "mode ignorado — sempre --always-approve (buildGrokArgs)",
   },
   claude: {
-    webSearch: false,
+    // WebSearch nativo do claude -p, liberado pelo --dangerously-skip-permissions do mode.
+    // Confirmado ao vivo no bwrap em 2026-09-25 (haiku low, 14s, resposta citou WebSearch e fontes).
+    webSearch: true,
     engineReadOnly: false,
     sandboxReadOnly: true,
     modeAtEngineLevel: "mode emite --dangerously-skip-permissions (buildClaudeArgs)",
@@ -400,6 +405,14 @@ export const AUX_TOOL_REQUIREMENTS: Record<AuxTool, { readOnly: boolean; webSear
   run_filtered: { readOnly: false, webSearch: false },
   web_lookup: { readOnly: true, webSearch: true },
 };
+
+/** A engine atende o que a tool exige? Mesma regra das recusas de resolveAuxTool, sem lançar. */
+function meetsAuxRequirements(tool: AuxTool, engine: Engine, sandboxOn: boolean): boolean {
+  const req = AUX_TOOL_REQUIREMENTS[tool];
+  const cap = ENGINE_CAPABILITIES[engine];
+  if (req.webSearch && !cap.webSearch) return false;
+  return !(req.readOnly && !cap.engineReadOnly && !sandboxOn);
+}
 
 /** Prefixo do par de env de cada tool: <prefixo>_ENGINE e <prefixo>_MODEL. */
 export const AUX_TOOL_ENV: Record<AuxTool, string> = {
@@ -448,8 +461,8 @@ export function resolveAuxTool(
   if (req.readOnly) assertReadOnlyEngine(tool, engine, sandboxOn);
   if (req.webSearch && !ENGINE_CAPABILITIES[engine].webSearch) {
     throw new Error(
-      `${tool} exige web search e a engine '${engine}' não tem: só o codex lê o campo web ` +
-      "(-c tools.web_search=true); as demais o ignoram silenciosamente. Use engine 'codex'.",
+      `${tool} exige web search e a engine '${engine}' não tem: só codex (-c tools.web_search=true) ` +
+      "e claude (WebSearch nativo) buscam; as demais ignoram o campo web. Use engine 'codex' ou 'claude'.",
     );
   }
 
@@ -506,6 +519,57 @@ export function resolveRunFiltered(
     model: params.model ?? env[`${prefix}_MODEL`] ?? tier.model,
     effort: params.effort ?? tier.effort,
   };
+}
+
+/** As três tools de leitura, que resolvem pela cascata de resolveReadTool. */
+export type ReadTool = "explore" | "read_slice" | "web_lookup";
+
+/**
+ * Resolve (engine, modelo, effort) de `explore`/`read_slice`/`web_lookup` pelo mesmo caminho do
+ * `run_filtered`: a cascata FAST_CANDIDATES, pulando engine ausente, unhealthy (cota/falha recente)
+ * ou que não atende a tool (read-only sem sandbox; web search no web_lookup). Antes elas ficavam
+ * presas no codex e, com a cota dele esgotada, só falhavam.
+ *
+ * Quando a cascata escolhe o codex, o modelo/effort continuam os de leitura (POLYAGENT_EXPLORE_MODEL
+ * e POLYAGENT_EXPLORE_EFFORT, ou gpt-6-luna medium) — e a env `<TOOL>_MODEL` só vale nele, porque é
+ * id de codex e quebraria em claude/opencode. Engine explícita (param ou env) usa resolveAuxTool e
+ * não passa pela cascata. Função pura: `env`/`has`/`cursorEnabled`/`health`/`sandboxOn` injetados.
+ */
+export function resolveReadTool(
+  tool: ReadTool,
+  params: { engine?: string; model?: string; effort?: string } = {},
+  env: NodeJS.ProcessEnv = process.env,
+  has: (e: Engine) => boolean = hasEngine,
+  cursorEnabled: boolean = CURSOR_ENABLED,
+  health?: Record<string, number>,
+  sandboxOn = SANDBOX_ON,
+): { engine: Engine; model: string | undefined; effort?: string } {
+  const prefix = AUX_TOOL_ENV[tool];
+  if (params.engine || env[`${prefix}_ENGINE`]) return resolveAuxTool(tool, params, env, sandboxOn);
+
+  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
+  const cascade: Tier[] = cursorEnabled
+    ? [...FAST_CANDIDATES, { engine: "cursor", model: DEFAULT_MODEL }]
+    : FAST_CANDIDATES;
+  const tier = cascade.find((c) =>
+    meetsAuxRequirements(tool, c.engine, sandboxOn) && has(c.engine) && healthy(c.engine));
+  if (!tier) {
+    const req = AUX_TOOL_REQUIREMENTS[tool];
+    const need = [req.webSearch ? "web search" : "", req.readOnly && !sandboxOn ? "read-only sem sandbox" : ""]
+      .filter(Boolean).join(" + ") || "nenhum requisito extra";
+    throw new Error(
+      `${tool} não achou engine disponível: exige ${need}, e as que atendem estão ausentes ou ` +
+      "unhealthy (cota/falha recente). Tente mais tarde ou passe engine explícita.",
+    );
+  }
+  if (tier.engine === "codex") {
+    return {
+      engine: "codex",
+      model: params.model ?? env[`${prefix}_MODEL`] ?? env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK,
+      effort: params.effort ?? env.POLYAGENT_EXPLORE_EFFORT ?? EXPLORE_EFFORT_FALLBACK,
+    };
+  }
+  return { engine: tier.engine, model: params.model ?? tier.model, effort: params.effort ?? tier.effort };
 }
 
 /** Cota do plano acabou (trocar de engine resolve) versus throttle transitório (só esperar resolve). */
@@ -744,10 +808,10 @@ export function quotaCandidates(
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
   sandboxOn: boolean = SANDBOX_ON,
+  health?: Record<string, number>,
 ): Engine[] {
-  const req = tool === undefined
-    ? undefined
-    : (AUX_TOOL_REQUIREMENTS as Partial<Record<BridgeTool, { readOnly: boolean; webSearch: boolean }>>)[tool];
+  const isAux = tool !== undefined && tool in AUX_TOOL_REQUIREMENTS;
+  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
   const canToolSelect = (engine: Engine): boolean => {
     if (tool === "follow_up") return false;
     if (tool === "fast_delegate") {
@@ -761,14 +825,12 @@ export function quotaCandidates(
   return ENGINES.filter((engine) => {
     if (engine === exhausted || !has(engine)) return false;
     if (engine === "cursor" && !cursorEnabled) return false;
+    // Sugerir engine que também está fora (cota/falha recente) só manda o chamador errar de novo.
+    if (!healthy(engine)) return false;
     if (!canToolSelect(engine)) return false;
     // generate_image roda só nas engines com tool de imagem keyless própria (image_gen/grok-build).
     if (tool === "generate_image") return IMAGE_ENGINES.includes(engine);
-    if (!req) return true;
-    const cap = ENGINE_CAPABILITIES[engine];
-    if (req.webSearch && !cap.webSearch) return false;
-    if (req.readOnly && !cap.engineReadOnly && !sandboxOn) return false;
-    return true;
+    return isAux ? meetsAuxRequirements(tool as AuxTool, engine, sandboxOn) : true;
   });
 }
 
@@ -893,7 +955,10 @@ export interface RunOpts {
   resume?: string;
   /** read-only mode para discovery/analyze: "plan" | "ask". No codex vira `-s read-only`. */
   mode?: "plan" | "ask";
-  /** Habilita a busca web da engine (codex: `-c tools.web_search=true`). Usado por web_lookup. */
+  /**
+   * Habilita a busca web da engine (codex: `-c tools.web_search=true`). Usado por web_lookup.
+   * O claude não precisa de flag: o WebSearch nativo do `claude -p` já vem ligado.
+   */
   web?: boolean;
   /** Auto-aprova as tools deste run (--force), independente do env global. web_lookup precisa. */
   force?: boolean;
@@ -914,6 +979,11 @@ export interface RunOpts {
    * (parâmetro `engine` nas auxiliares, `level` no delegate, nenhuma onde a tool escolhe sozinha).
    */
   tool?: BridgeTool;
+  /**
+   * Saúde das engines no momento da chamada. Também não muda a execução: só tira do erro de cota
+   * as engines unhealthy, pra não sugerir trocar por outra que também está fora.
+   */
+  health?: Record<string, number>;
 }
 
 /**
@@ -1740,7 +1810,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
       failedEngine,
     );
     if (!kind) return err;
-    const candidates = quotaCandidates(opts.tool, failedEngine);
+    const candidates = quotaCandidates(opts.tool, failedEngine, hasEngine, CURSOR_ENABLED, SANDBOX_ON, opts.health);
     return new QuotaError(kind, failedEngine, quotaErrorMessage(kind, failedEngine, opts.tool, candidates));
   };
 

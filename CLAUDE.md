@@ -53,7 +53,7 @@ the **pure logic is testable without spawning a worker process**:
 - `cli.ts` — the only module that touches the child process. `runCursor()` spawns the engine's CLI;
   `buildCursorArgs()`/`buildGrokArgs()`/`buildCodexArgs()`/`buildClaudeArgs()`/`buildOpencodeArgs()`/`buildKimiArgs()`/`buildMuseArgs()` (+ `buildArgs`
   dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()`/`parseOpencodeJsonl()`/`parseKimiJsonl()`/`parseMuseJsonl()` (+ `parseOutput` dispatcher),
-  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `resolveRunFiltered()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
+  `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `resolveReadTool()`, `resolveRunFiltered()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
@@ -335,25 +335,32 @@ points, all in `cli.ts`:
   Claude Code e é um custo aceito. O pago (opencode) só entra quando codex e claude estão ausentes,
   sem cota ou unhealthy. A ordem e os números do bench de 2026-09-23 estão em
   `research/2026-09-23-aux-tools-bench.md`; medium manteve a velocidade do low e teve nota maior.
-- **`explore`/`read_slice`/`web_lookup` resolvem engine, modelo e effort por `resolveAuxTool`, com
-  default codex + `EXPLORE_MODEL=gpt-6-luna` + `EXPLORE_EFFORT=medium` explícito.** O effort
-  usa `POLYAGENT_EXPLORE_EFFORT` quando configurado, só é injetado se a engine resolvida é codex,
-  e um `effort` explícito do chamador sempre vence; engine não-codex sem override fica com effort
-  `undefined`. `run_filtered` é a exceção: o default dele é a
-  cascata do `fast_delegate` (`resolveRunFiltered` → `resolveFastTier`), pelos mesmos motivos de
-  velocidade — e para não falhar quando a cota do codex está esgotada, caindo no próximo engine
-  saudável. **Custo novo dessa tool:** a cascata pode cair no claude (assinatura) e depois no
-  opencode (pay-per-token); o `run_filtered` só pode gastar dinheiro quando codex e claude não
-  estiverem disponíveis. Não há mais
+- **As quatro auxiliares seguem o mesmo caminho: a cascata `FAST_CANDIDATES`, pulando engine
+  ausente ou unhealthy.** `explore`/`read_slice`/`web_lookup` resolvem por `resolveReadTool`
+  (2026-09-25: antes ficavam presas no codex e, com a cota dele esgotada, só falhavam); o
+  `run_filtered` por `resolveRunFiltered` → `resolveFastTier`. Nas três de leitura a cascata
+  também filtra pelo requisito da tool (`meetsAuxRequirements`): sem sandbox só o codex serve, e
+  no `web_lookup` só codex e claude (os dois com web search) — então a fila dele é codex → claude
+  e para aí. Quando a cascata escolhe o codex, as três de leitura mantêm
+  `EXPLORE_MODEL=gpt-6-luna` + `EXPLORE_EFFORT=medium` (envs `POLYAGENT_EXPLORE_MODEL`/`_EFFORT`),
+  e a env `<TOOL>_MODEL` só vale no codex (é id de codex); fora dele valem o modelo/effort da
+  cascata, e um `model`/`effort` explícito do chamador sempre vence. **Custo:** a cascata pode
+  cair no claude (assinatura) e depois no opencode (pay-per-token); essas tools só gastam dinheiro
+  quando codex e claude não estão disponíveis. A proteção é por aprendizado (health): a primeira
+  chamada depois da cota estourar ainda falha — cota nunca retenta sozinha —, as seguintes já
+  pulam a engine. O erro de cota também usa o health (`RunOpts.health` → `quotaCandidates`): não
+  sugere engine unhealthy, então com codex, grok e claude fora ele aponta direto o opencode.
+  O claude conta como web search pelo WebSearch nativo do `claude -p`, sem flag: confirmado ao
+  vivo no bwrap em 2026-09-25 (haiku low, 14s, resposta citou WebSearch e fontes). Não há mais
   `engine: "codex"` hardcoded no handler: cada uma lê `POLYAGENT_<TOOL>_ENGINE`/`_MODEL` e aceita
   um parâmetro `engine` opcional no **próprio inputSchema** — nunca no objeto `routing`
   compartilhado, que é spread nas ferramentas de roteamento e daria `engine` também a
   `delegate`/`fan_out`/`follow_up`. Precedência (inalterada): parâmetro da chamada > env da tool >
-  default. Nas três de leitura a resolução é a função pura `resolveAuxTool(tool, params, env,
-  sandboxOn)` em `cli.ts`; no `run_filtered` é `resolveRunFiltered` (param/env explícitos reusam
-  `resolveAuxTool`; só o default muda). Ela recusa, nomeando o motivo, um engine que não atenda o
+  default. Engine explícita (param ou env) não passa pela cascata: `resolveReadTool` e
+  `resolveRunFiltered` delegam à função pura `resolveAuxTool(tool, params, env, sandboxOn)` em
+  `cli.ts`. Ela recusa, nomeando o motivo, um engine que não atenda o
   requisito declarado em `AUX_TOOL_REQUIREMENTS` — read-only para as três de leitura, web search
-  (só codex) para `web_lookup` — e nunca degrada para acesso total em silêncio; `run_filtered`
+  (codex ou claude) para `web_lookup` — e nunca degrada para acesso total em silêncio; `run_filtered`
   aceita qualquer engine porque roda com `force: true` por desenho, e a cascata não esbarra em
   `assertReadOnlyEngine` (essa guard vale só para as três de leitura). Com engine não-codex e
   nenhum modelo definido, o modelo fica `undefined` de propósito: `gpt-6-luna` é id de codex e

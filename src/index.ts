@@ -9,7 +9,7 @@ import {
   runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle,
-  raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveAuxTool, resolveRunFiltered,
+  raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
   type CliResult, type Engine,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
@@ -304,18 +304,21 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); explore is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku, then OpenRouter mercury-2); explore is read-only: a non-codex engine needs the sandbox on."),
       ...routing,
     },
   },
   async ({ question, files, breadth, cwd, model, effort, engine: engineParam }) => {
     const { prompt, mode } = explorePrompt(question, files, breadth);
     // read-only (mode) com modelo+effort explícitos no codex por default. O worker localiza/mapeia sem editar.
-    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("explore", { engine: engineParam, model, effort });
+    const health = currentEngineHealth();
+    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+      "explore", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
+    );
     return formatRun(
       "explore",
       engine,
-      () => runCursor({ prompt, cwd, engine, model: auxModel, effort: auxEffort, mode, agentPrompt: withTerseStyle(), tool: "explore" }),
+      () => runCursor({ prompt, cwd, engine, model: auxModel, effort: auxEffort, mode, agentPrompt: withTerseStyle(), tool: "explore", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
     );
@@ -333,7 +336,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); read_slice is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku, then OpenRouter mercury-2); read_slice is read-only: a non-codex engine needs the sandbox on."),
       want: z.string().describe("What to extract, e.g. 'the login handler and its imports'."),
       ...routing,
     },
@@ -350,11 +353,14 @@ server.registerTool(
         ].join(" "),
       });
     }
-    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("read_slice", { engine: engineParam, model, effort });
+    const health = currentEngineHealth();
+    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+      "read_slice", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
+    );
     return formatRun(
       "read_slice",
       engine,
-      () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice" }),
+      () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
     );
@@ -381,17 +387,18 @@ server.registerTool(
     // sem mode → bypass total: rodar o comando (que pode escrever) É o propósito do tool.
     // force mantém a paridade quando o fallback é cursor. O worker filtra o output por relevância.
     // Default = cascata do fast_delegate (resolveFastTier); param/env ainda vencem.
+    const health = currentEngineHealth();
     const { engine, model: auxModel, effort: auxEffort } = resolveRunFiltered(
       { engine: engineParam, model, effort },
       process.env,
       hasEngine,
       CURSOR_ENABLED,
-      currentEngineHealth(),
+      health,
     );
     return formatRun(
       "run_filtered",
       engine,
-      () => runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered" }),
+      () => runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
     );
@@ -403,24 +410,27 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
+      `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT; Claude Haiku when codex is out): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
     inputSchema: {
       query: z.string().describe("What to look up on the web."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' (default), 'grok', 'claude' or 'cursor'. Beats POLYAGENT_WEB_LOOKUP_ENGINE. Codex defaults to POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT (medium); web_lookup requires web search, which only codex has."),
+        .describe("Engine override for this call: 'codex' or 'claude' (the engines with web search). Beats POLYAGENT_WEB_LOOKUP_ENGINE. When omitted, uses codex (POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT) and falls back to Claude Haiku when codex is unhealthy or quota-exhausted."),
       ...routing,
     },
   },
   async ({ query, cwd, model, effort, engine: engineParam }) => {
     // read-only (mode:'ask' → filesystem intocado) + web:true liga a busca web do codex
     // (-c tools.web_search=true). approval_policy=never evita pendurar em headless.
-    const { engine, model: auxModel, effort: auxEffort } = resolveAuxTool("web_lookup", { engine: engineParam, model, effort });
+    const health = currentEngineHealth();
+    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+      "web_lookup", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
+    );
     return formatRun(
       "web_lookup",
       engine,
-      () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup" }),
+      () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
     );

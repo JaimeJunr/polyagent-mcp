@@ -15,9 +15,10 @@ const NON_CODEX_ENGINES = (Object.keys(ENGINE_CAPABILITIES) as Engine[])
   .filter((engine) => engine !== "codex");
 
 describe("matriz de capacidade por engine (US-004)", () => {
-  it("declara web search só no codex", () => {
+  it("declara web search só no codex e no claude (WebSearch nativo do claude -p)", () => {
     expect(ENGINE_CAPABILITIES.codex.webSearch).toBe(true);
-    for (const engine of NON_CODEX_ENGINES) {
+    expect(ENGINE_CAPABILITIES.claude.webSearch).toBe(true);
+    for (const engine of NON_CODEX_ENGINES.filter((e) => e !== "claude")) {
       expect(ENGINE_CAPABILITIES[engine].webSearch).toBe(false);
     }
   });
@@ -130,7 +131,8 @@ describe("resolveAuxTool — recusas (US-004)", () => {
 
   it("recusa engine sem web search no web_lookup, mesmo com sandbox ligado", () => {
     expect(() => resolveAuxTool("web_lookup", { engine: "grok" }, {}, true)).toThrow(/web search/i);
-    expect(() => resolveAuxTool("web_lookup", { engine: "claude" }, {}, true)).toThrow(/codex/);
+    expect(() => resolveAuxTool("web_lookup", { engine: "grok" }, {}, true)).toThrow(/codex.*claude/);
+    expect(resolveAuxTool("web_lookup", { engine: "claude" }, {}, true).engine).toBe("claude");
   });
 
   it("recusa engine não-codex nas tools read-only quando o sandbox está desligado", () => {
@@ -166,10 +168,10 @@ describe("superfície das tools auxiliares (US-004)", () => {
     }
   });
 
-  it("as três de leitura resolvem por resolveAuxTool; run_filtered por resolveRunFiltered", () => {
-    const auxCalls = indexSrc.match(/resolveAuxTool\(/g) ?? [];
+  it("as três de leitura resolvem por resolveReadTool; run_filtered por resolveRunFiltered", () => {
+    const readCalls = indexSrc.match(/resolveReadTool\(/g) ?? [];
     const runCalls = indexSrc.match(/resolveRunFiltered\(/g) ?? [];
-    expect(auxCalls).toHaveLength(3);
+    expect(readCalls).toHaveLength(3);
     expect(runCalls).toHaveLength(1);
   });
 });

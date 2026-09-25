@@ -162,9 +162,9 @@ describe("quotaCandidates — lista de engines sugeríveis (US-006)", () => {
     expect(quotaCandidates("delegate", "codex", () => true, true, true)).toContain("cursor");
   });
 
-  it("intersecta com a matriz de capacidade: web_lookup só aceita codex", () => {
-    expect(quotaCandidates("web_lookup", "codex", () => true, true, true)).toEqual([]);
-    expect(quotaCandidates("web_lookup", "grok", () => true, true, true)).toEqual(["codex"]);
+  it("intersecta com a matriz de capacidade: web_lookup só aceita codex e claude", () => {
+    expect(quotaCandidates("web_lookup", "codex", () => true, true, true)).toEqual(["claude"]);
+    expect(quotaCandidates("web_lookup", "grok", () => true, true, true)).toEqual(["codex", "claude"]);
   });
 
   it("com o sandbox desligado, tool read-only só aceita codex", () => {
