@@ -43,8 +43,12 @@ Decisão de lugar é do dono: apresente a escada proposta (nota, custo/tarefa, s
 1. Atualize primeiro os testes que fixam valores (`test/cli.test.ts`, `test/aux-engine.test.ts`,
    `test/hook.test.ts`, `test/quota.test.ts`, `test/health-latency-tdr.test.ts`) e veja falhar.
 2. Mude `src/cli.ts`, depois as descrições (`src/index.ts`, hook, `README.md`, `CLAUDE.md`).
-3. `AGENTS.md` (no `.gitignore`) é **gerado** do `CLAUDE.md` para o codex — regenere com a skill
-   `ivt-core:claude-codex-sync` em vez de editar à mão; ele já ficou para trás antes.
+3. `AGENTS.md` (no `.gitignore`) é uma cópia do `CLAUDE.md` para o codex — regenere trocando só
+   o título e a 1ª frase: `sed -e '1s/^# CLAUDE.md$/# AGENTS.md/' -e '3s|This file provides guidance
+   to Claude Code (claude.ai/code)|This file provides guidance to Codex|' CLAUDE.md > AGENTS.md`.
+   Não troque "Claude" por "Codex" no corpo: estraga o texto da engine claude. A skill
+   `ivt-core:claude-codex-sync` NÃO faz isso (ela sincroniza sessões). Em 2026-09-26 ele estava
+   com 343 linhas contra 529 do `CLAUDE.md`.
 4. Testes que fixam **regra** (não valor) podem ter virado falsos: "modelo distinto por nível",
    sugestão de `level` no erro de cota, engine do nível no teste de health. Ajuste a regra, com
    comentário do porquê, em vez de forçar o valor antigo.

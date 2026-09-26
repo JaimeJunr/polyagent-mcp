@@ -120,14 +120,19 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
 using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
-cost-benefit ladder where each step costs ~3× the previous one (see
-`research/2026-09-23-tier-pareto.md`): 1=GPT-6 Luna max
-(codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex),
+cost-benefit ladder: $0.07 → $0.37 (~5×) → $1.06 (~3×) → $1.82 (~1.7×) → $5.98 (~3.3×)
+(AA quota proxies; see `research/2026-09-24-custo-por-tarefa.md`): 1=GPT-6 Luna max
+(codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=Claude Opus 5.5 high (claude),
 5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
-2026-09-14; `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23. O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`. **Custo:** os níveis 4 e 5 são caros — o 4 muito caro e o 5 muitíssimo mais, com
-folga o mais caro da matriz. São último recurso, não default: níveis 1-3 dão conta da maior parte do
-trabalho, implementação inclusa. Escalar para 4/5 só quando um nível barato já falhou ou a tarefa
-exige raciocínio de fronteira de verdade. Como codex ocupa 4 dos 5 níveis, cota estourada nele derruba os níveis 1 a 4 de uma vez.
+2026-09-14 (histórico); `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23 (Opus com max).
+Opus 5.5 com effort high foi confirmado ao vivo em 2026-09-26 (`modelUsage` = `claude-opus-5-5`).
+O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`.
+**Custo:** os níveis 4 e 5 são caros — o 4 ficou 44% mais barato que antes, mas agora gasta a
+assinatura Claude do host Claude Code; o 5 custa ~3,3× o 4. São último recurso, não default:
+níveis 1-3 dão conta da maior parte do trabalho, implementação inclusa. Escalar para 4/5 só quando
+um nível barato já falhou ou a tarefa exige raciocínio de fronteira de verdade. Codex ocupa 3 dos
+5 níveis: cota estourada nele derruba 1-3. Claude ocupa 4-5 e compartilha a assinatura do host;
+cota estourada nele derruba 4, 5 e o host juntos, enquanto codex 1-3 continuam disponíveis.
 Consequência aceita: Grok 4.6 saiu da matriz em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo)
 e a assinatura Google já estava de fora — ver `research/2026-09-18-agy-google-cli.md`. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
 is missing, it falls back to the equivalent Cursor model only when `cursorEnabled` is true;

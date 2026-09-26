@@ -683,11 +683,11 @@ describe("resolveTier", () => {
     expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
     expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "high" });
     expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "max" });
-    expect(resolveTier(4, all)).toEqual({ engine: "codex", model: "gpt-6-astra", effort: "max" });
+    expect(resolveTier(4, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
     expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "max" });
   });
 
-  // Sol aparece nos níveis 2 (high) e 3 (max): o que não pode repetir é o par modelo+esforço.
+  // Sol (2/3) e Opus 5.5 (4/5) repetem modelo com esforços diferentes: a distinção é do par.
   it("usa um par modelo+esforço DISTINTO em cada nível (sem repetição)", () => {
     const pairs = [1, 2, 3, 4, 5].map((l) => { const t = resolveTier(l, all); return `${t.model}:${t.effort}`; });
     expect(new Set(pairs).size).toBe(5);
@@ -696,7 +696,7 @@ describe("resolveTier", () => {
   it("cai para o cursor-agent equivalente só quando CURSOR habilitado e a engine preferida falta", () => {
     expect(resolveTier(1, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-luna-max-fast" });
     expect(resolveTier(2, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
-    expect(resolveTier(4, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
+    expect(resolveTier(4, (e) => e !== "claude", true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
     expect(resolveTier(5, (e) => e !== "claude", true)).toEqual({
       engine: "cursor",
       model: "claude-fable-max-fast",
@@ -810,7 +810,7 @@ describe("isDefaultTierEngine (tier-integrity receipt)", () => {
     expect(isDefaultTierEngine(1, "codex")).toBe(true);
     expect(isDefaultTierEngine(2, "codex")).toBe(true);
     expect(isDefaultTierEngine(3, "codex")).toBe(true);
-    expect(isDefaultTierEngine(4, "codex")).toBe(true);
+    expect(isDefaultTierEngine(4, "claude")).toBe(true);
     expect(isDefaultTierEngine(5, "claude")).toBe(true);
   });
 

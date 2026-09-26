@@ -1424,26 +1424,30 @@ interface TierEntry {
 }
 
 /**
- * Matriz do `delegate`: escada de custo-benefício só com pontos da fronteira de Pareto (nota vs.
- * custo/tarefa, Artificial Analysis 2026-09-23), cada degrau ~3× mais caro que o anterior — ver
- * research/2026-09-23-tier-pareto.md. Tudo por assinatura
- * (codex/claude): pay-per-token (MiMo, DeepSeek) fica fora de propósito. Níveis 1-4 usam GPT-6
- * Luna max / Sol high / Sol max / Astra max, e 5 usa Claude Opus 5.5 max. Grok 4.6 saiu (mesma nota
- * do Sol xhigh a 3,5× o custo) e o Astra ficou apesar de dominado na nota geral: em código (Coding
- * Agent Index 62) é o topo medido. Custo aceito: codex tem 4 de 5 níveis, então cota estourada nele
- * derruba 1-4 de uma vez. O cursor saiu do caminho padrão (assinatura cancelada) — vira fallback só
- * sob CURSOR_ENABLED. Leitura barata (explore/read_slice) reaproveita o modelo do nível 1.
+ * Matriz do `delegate`: decisão do dono com dados Artificial Analysis de 2026-09-24/25 — ver
+ * research/2026-09-24-custo-por-tarefa.md (substitui o nível 4 de 2026-09-23-tier-pareto.md).
+ * Escada $0,07 → $0,37 (~5×) → $1,06 (~3×) → $1,82 (~1,7×) → $5,98 (~3,3×),
+ * como proxy de cota. Tudo por assinatura (codex/claude): pay-per-token fica fora de propósito.
+ * Em 2026-09-24, Opus 5.5 high substitui Astra max: índice geral 54 vs. 53, custo 44% menor.
+ * O motivo de 2026-09-23 para manter Astra (topo medido em código) caducou: Opus 5.5 max
+ * tem 66 vs. 62. Ainda NÃO há índice de código de Opus high; reavaliar com AA e rate.
+ * Grok 4.6 saiu em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo).
+ * Cota aceita: codex concentra 3 de 5 níveis (1-3); claude concentra 4-5 e compartilha a
+ * assinatura do host Claude Code — esgotá-la derruba os dois níveis e o host juntos.
+ * O cursor saiu do caminho padrão (assinatura cancelada) — fallback só sob CURSOR_ENABLED.
+ * Leitura barata (explore/read_slice) reaproveita o modelo do nível 1.
  */
 const TIERS: Record<number, TierEntry> = {
   1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
   2: { primary: { engine: "codex", model: "gpt-6-sol", effort: "high" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
   3: { primary: { engine: "codex", model: "gpt-6-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
   // IDs primários confirmados em execução real: gpt-6-luna, gpt-6-sol e claude-opus-5-5
-  // (2026-09-23); gpt-6-astra (2026-09-14). O alias `opus` ainda resolve para o claude-opus-5
-  // antigo — use sempre o id completo claude-opus-5-5.
+  // (2026-09-23, Opus com max); gpt-6-astra (2026-09-14, histórico). Opus com effort high
+  // confirmado em 2026-09-26 (modelUsage = claude-opus-5-5). O alias `opus` ainda resolve
+  // para o claude-opus-5 antigo — use sempre o id completo claude-opus-5-5.
   // Os cursorModel NÃO acompanham o refresh: o cursor é legado (assinatura cancelada) e os ids
   // dele ficaram como estavam — deduzidos do padrão dos vizinhos, nunca verificados.
-  4: { primary: { engine: "codex", model: "gpt-6-astra", effort: "max" }, cursorModel: "gpt-6-astra-max-fast" },
+  4: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" }, cursorModel: "gpt-6-astra-max-fast" },
   5: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "max" }, cursorModel: "claude-fable-max-fast" },
 };
 

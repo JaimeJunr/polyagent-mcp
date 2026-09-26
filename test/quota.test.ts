@@ -207,11 +207,11 @@ describe("quotaErrorMessage — erro acionável por tool (US-006)", () => {
     // grok estourou: fora da matriz desde 2026-09-23; o menor restante é 1 (codex).
     expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["codex", "claude"]))
       .toContain("retry with level:1");
-    // codex estourou: ele tem os níveis 1-4, então só sobra o 5 (claude) — grok não tem nível.
+    // Codex ocupa 1-3; Claude ocupa 4-5, então a sugestão deve ser o menor restante: 4.
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["grok", "claude"]))
-      .toContain("retry with level:5");
+      .toContain("retry with level:4");
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["claude"]))
-      .toContain("retry with level:5");
+      .toContain("retry with level:4");
   });
 
   it("em fast_delegate/fan_out/generate_image informa a cota sem sugerir parâmetro", () => {
