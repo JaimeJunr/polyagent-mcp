@@ -26,7 +26,7 @@ There is no linter configured. `npm run build` (tsc, `strict: true`) is the type
 
 ## Architecture
 
-Eight small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
+Small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
 the **pure logic is testable without spawning a worker process**:
 
 - `index.ts` — MCP server + tool registrations (twelve tools: `delegate`, `fast_delegate`, `explore`,
@@ -59,6 +59,18 @@ the **pure logic is testable without spawning a worker process**:
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
   collisions pick the newest match by mtime. An inline `{prompt}` skips lookup. Only the markdown
   body crosses into the worker, and names containing `/` or `..` are rejected.
+- `claudeMd.ts` — managed routing block in the user's global `~/.claude/CLAUDE.md` (override path
+  with `POLYAGENT_CLAUDE_MD_PATH`), delimited by `<!-- polyagent-mcp:begin v=<version> -->` …
+  `<!-- polyagent-mcp:end -->`. `renderPolyagentBlock` generates it from `TIERS` (levels never
+  drift) and carries the `fan_out` triggers: 27 real `fan_out` calls against 744 `delegate` in the
+  usage log (2026-07-03 → 2026-09-26) motivated it — the host judged alone instead of fanning out.
+  `npm run install-claude-md` (`src/installClaudeMd.ts`, `--dry-run` to preview) is the explicit
+  first install: it removes the old hand-written `<polyagent_preference>` section, writes
+  `CLAUDE.md.polyagent.bak`, and appends the block. After that, `index.ts` refreshes the block on
+  every boot — **only when the markers already exist**, never creating one, never throwing, never
+  writing to stdout (the MCP channel). `POLYAGENT_CLAUDE_MD=off` disables the boot refresh. A
+  broken marker pair (begin without end, or two blocks) is skipped on boot and raises on install.
+  `writeFileSync` follows a symlinked `CLAUDE.md` (dotfiles), so the link survives.
 
 ### Engines & tiers (multi-CLI)
 

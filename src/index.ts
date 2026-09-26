@@ -30,12 +30,15 @@ import {
   resolveOpenRouterKey, type AskJevParams,
 } from "./jev.js";
 import { fanOutAgreementText, footerSession, runFanOutConsensusGate, withDelegateShadow } from "./jevDecisions.js";
+import {
+  CLAUDE_MD_BOOT_SYNC, CLAUDE_MD_PATH, nodeClaudeMdFs, PACKAGE_VERSION, renderPolyagentBlock, syncClaudeMd,
+} from "./claudeMd.js";
 
 const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5). Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
   },
 );
 
@@ -756,6 +759,15 @@ server.registerTool(
 
 // Falha cedo se o sandbox obrigatório não puder ser montado — melhor não subir do que subir degradado.
 sandboxPreflight();
+
+// Só atualiza um bloco que `npm run install-claude-md` já instalou; nunca escreve no stdout (canal MCP).
+if (CLAUDE_MD_BOOT_SYNC) {
+  try {
+    syncClaudeMd(CLAUDE_MD_PATH, "boot", renderPolyagentBlock(PACKAGE_VERSION), nodeClaudeMdFs);
+  } catch {
+    // Erro de disco no CLAUDE.md não pode impedir o server de subir.
+  }
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
