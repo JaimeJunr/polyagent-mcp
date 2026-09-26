@@ -78,3 +78,14 @@ Depois de habilitar `POLYAGENT_JEV_FANOUT`/`POLYAGENT_JEV_SHADOW` em uso real, l
 `decision` em `POLYAGENT_LOG`: evidência de false skip (reexecuções do usuário) e escolha shadow
 contra nível efetivo e avaliação (`rate`). Só então considerar deixar Jev escolher o nível. Repetir
 o benchmark quando sair uma nova versão do Jev.
+
+**Uso real, medido em 2026-09-26:** 12 registros `delegate_level_shadow`; o Jev coincidiu com o
+nível pedido em só 5/12 (42%, contra 96% no bench), quase sempre um nível acima (`2→3`, `3→4`).
+Zero registros de `fan_out_agreement`: o host ainda não chama `fan_out`.
+
+**Clareza do prompt (adicionado em 2026-09-26):** a mesma chamada do shadow pergunta três critérios
+noul (`names_target`, `defines_done`, `single_task`) e grava `delegate_prompt_clarity_shadow`
+com `decision.session` para cruzar com `rate`. Smoke no Jev real: prompt vago 0,04/0,09/0,32
+(unclear), três tarefas misturadas 0,53/0,21/0,11 (unclear), prompt com arquivo e teste
+0,99/0,98/0,97 (clear); ~0,5 s e US$ 0,00002 por chamada. Reavaliar: prompts `unclear` têm nota
+`rate` menor? Só com essa correlação considerar avisar ou bloquear antes do worker.

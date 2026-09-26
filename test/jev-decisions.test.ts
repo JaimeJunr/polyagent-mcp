@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { askJev, type AskJevParams, type JevFetchInit, type JevHttpResponse } from "../src/jev.js";
 import {
-  askFanOutAgreement, delegateShadowRequest, fanOutAgreementRequest, fanOutAgreementText, resolveFanOutGate,
-  runFanOutConsensusGate, shadowDecision, withDelegateShadow,
+  askFanOutAgreement, CLARITY_CRITERIA, clarityDecision, delegateShadowRequest, fanOutAgreementRequest,
+  fanOutAgreementText, footerSession, resolveFanOutGate, runFanOutConsensusGate, shadowDecision, withDelegateShadow,
 } from "../src/jevDecisions.js";
 import type { DecisionRecord } from "../src/usage.js";
+
+const noul = (value: number) => ({ type: "noul" as const, noul: value });
+const toolResult = (text: string) => ({ content: [{ type: "text" as const, text }] });
 
 class FakeJevFetch {
   readonly calls: { url: string; init: JevFetchInit }[] = [];
@@ -211,7 +214,9 @@ describe("delegate Jev shadow", () => {
 
   it("starts the worker before askJev, then logs the shadow result", async () => {
     const events: string[] = [];
-    const fake = new FakeJevFetch(response({ level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 } }));
+    const fake = new FakeJevFetch(response({ level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 },
+      names_target: noul(0.9), defines_done: noul(0.9), single_task: noul(0.9),
+    }));
     const decisions: DecisionRecord[] = [];
     const result = await withDelegateShadow(
       async () => { events.push("worker"); return "worker result"; },
@@ -220,7 +225,7 @@ describe("delegate Jev shadow", () => {
     );
     expect(events).toEqual(["worker", "jev"]);
     expect(result).toBe("worker result");
-    expect(decisions).toMatchObject([{ choice: "2", actual: "4", accepted: false, fallback: false }]);
+    expect(decisions).toMatchObject([{ choice: "2", actual: "4", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: "clear" }]);
   });
 
   it("preserves a worker error when Jev fails", async () => {
@@ -231,7 +236,60 @@ describe("delegate Jev shadow", () => {
       async () => { throw workerError; }, "task", 3,
       { ask: askWith(fake), log: (decision) => decisions.push(decision) },
     )).rejects.toBe(workerError);
-    expect(decisions).toMatchObject([{ choice: null, actual: "3" }]);
+    expect(decisions).toMatchObject([{ choice: null, actual: "3" }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
+  });
+
+  it("asks the three clarity criteria in the same request as the level", () => {
+    const request = delegateShadowRequest("task");
+    expect(Object.keys(request.questions)).toEqual(["level", ...CLARITY_CRITERIA]);
+    for (const key of CLARITY_CRITERIA) expect(request.questions[key]).toMatchObject({ type: "noul" });
+  });
+
+  it("marks a prompt clear only when every criterion is at least 0.5", () => {
+    const clear = clarityDecision({
+      answers: { names_target: noul(0.9), defines_done: noul(0.5), single_task: noul(0.7) },
+      usage: { cost: 0.001 },
+    }, 30, "codex:abc");
+    expect(clear).toMatchObject({
+      name: "delegate_prompt_clarity_shadow", candidates: ["clear", "unclear"], choice: "clear", confidence: 0.5,
+      accepted: false, fallback: false, latencyMs: 30, cost: 0.001, session: "codex:abc",
+      probabilities: { names_target: 0.9, defines_done: 0.5, single_task: 0.7 },
+    });
+    const unclear = clarityDecision({
+      answers: { names_target: noul(0.2), defines_done: noul(0.9), single_task: noul(0.8) },
+    }, 30);
+    expect(unclear).toMatchObject({ choice: "unclear", confidence: 0.8, probabilities: { names_target: 0.2 } });
+  });
+
+  it("records null clarity on failure or a missing criterion", () => {
+    expect(clarityDecision(new Error("timeout"), 5000)).toMatchObject({ choice: null, confidence: null, cost: null });
+    expect(clarityDecision({ answers: { names_target: noul(0.9), defines_done: noul(0.9) } }, 2).choice).toBeNull();
+    expect(clarityDecision({ answers: { names_target: noul(1.4), defines_done: noul(0.9), single_task: noul(0.9) } }, 2).choice).toBeNull();
+  });
+
+  it("logs level and clarity from one Jev call, tagged with the worker session", async () => {
+    const fake = new FakeJevFetch(response({
+      level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 },
+      names_target: noul(0.9), defines_done: noul(0.3), single_task: noul(0.9),
+    }));
+    const decisions: DecisionRecord[] = [];
+    await withDelegateShadow(
+      async () => toolResult("done\n\n---\nsession_id: codex:t-1 (pass to follow_up to continue; grade it with rate(session_id, score 1-5))"),
+      "task", 3,
+      { ask: askWith(fake), log: (decision) => decisions.push(decision), sessionOf: footerSession },
+    );
+    expect(fake.calls).toHaveLength(1);
+    expect(decisions).toMatchObject([
+      { name: "delegate_level_shadow", choice: "2", session: "codex:t-1" },
+      { name: "delegate_prompt_clarity_shadow", choice: "unclear", session: "codex:t-1" },
+    ]);
+  });
+
+  it("reads the session handle from the tool footer, or nothing", () => {
+    expect(footerSession(toolResult("x\n---\nsession_id: claude:9f (pass to follow_up)"))).toBe("claude:9f");
+    expect(footerSession(toolResult("no footer"))).toBeUndefined();
+    expect(footerSession("plain")).toBeUndefined();
+    expect(footerSession(null)).toBeUndefined();
   });
 
   it("caps a pending Jev request after worker completion", async () => {
@@ -242,6 +300,6 @@ describe("delegate Jev shadow", () => {
       { ask: askWith(fake), log: (decision) => decisions.push(decision), timeoutMs: 5 },
     );
     expect(result).toBe("worker result");
-    expect(decisions).toMatchObject([{ choice: null, actual: "1", accepted: false, fallback: false }]);
+    expect(decisions).toMatchObject([{ choice: null, actual: "1", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
   });
 });

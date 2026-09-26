@@ -14,6 +14,14 @@ export interface DecisionRecord {
   latencyMs: number;
   cost?: number | null;
   actual?: string;
+  /** Probabilidade por critério, quando a decisão combina várias perguntas noul. */
+  probabilities?: Record<string, number>;
+  /**
+   * Handle do worker observado, para cruzar com `rate`. Fica dentro de `decision`, não no
+   * `sessionId` do topo: `ratingStats` pega a última entrada com aquele `sessionId`, e a decisão
+   * é gravada depois do run — no topo, ela roubaria o join da entrada real do worker.
+   */
+  session?: string;
 }
 
 export interface UsageEntry {
