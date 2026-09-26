@@ -129,14 +129,14 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/grunt|commits\b/i);
   });
 
-  it("enquadra delegate como executor E juiz (levels 4 and 5 = Astra/Opus), Task só pra subagent especializado", () => {
+  it("enquadra delegate como executor E juiz (levels 4 and 5 = Opus high/max), Task só pra subagent especializado", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/delegate\(prompt, level\)/);
     expect(text).toMatch(/DEFAULT/);
-    // delegate cobre julgamento também, via os tiers altos (GPT-6 Astra e Claude Opus 5.5)
+    // Opus 5.5 high/max preserva o julgamento nos níveis altos, agora com cota do host.
     expect(text).toMatch(/judgment/i);
     expect(text).toMatch(/levels 4 and 5/i);
-    expect(text).toMatch(/Astra max.*Opus 5\.5 max/i);
+    expect(text).toMatch(/Opus 5\.5 high.*Opus 5\.5 max/i);
     // Task fica só pra subagent com toolset próprio, não pra julgamento genérico
     expect(text).toMatch(/specialized|toolset/i);
   });

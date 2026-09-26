@@ -89,7 +89,7 @@ de Haiku com raciocínio publicada; não é medição específica de `low`.
 
 ## Observações
 
-1. Níveis atuais do `delegate` no índice geral: L1 Luna max **$0,07**; L2 Sol high **$0,37**;
+1. Níveis antes da decisão de nível 4 abaixo, no índice geral: L1 Luna max **$0,07**; L2 Sol high **$0,37**;
    L3 Sol max **$1,06**; L4 Astra max **$3,26**; L5 Opus 5.5 max **$5,98**. São proxies de cota.
 2. Opus 5.5 max agora tem índice de código medido: **66 a $13,04/tarefa de código**, acima de
    Astra max (**62 a $7,47**) e Fable 5.1 max (**62 a $12,39**). O estudo de 2026-09-23 dizia que
@@ -129,3 +129,41 @@ Quando a AA atualizar índice ou preço, especialmente Sonnet 5, rever a tabela 
 `AA_COST_PER_TASK` em `src/costs.ts`. Se surgirem custos de código para outros esforços ou medição
 local de cota consumida, comparar separadamente com o proxy. A matriz de níveis só muda se o novo
 ponto alterar a fronteira de qualidade e custo em código ou o consumo real de cota da frota.
+
+
+## Decisão: nível 4 → Opus 5.5 high
+
+Decisão do dono em 2026-09-24, com os dados AA de 2026-09-24/25 registrados acima: trocar
+`codex|gpt-6-astra|max` por `claude|claude-opus-5-5|high` no nível 4. Opus high tem Intelligence
+Index **54 a $1,82/tarefa**, contra **53 a $3,26** de Astra max: **−44% de custo e +1 ponto**.
+Os níveis 1, 2, 3 e 5 e todos os `cursorModel` ficam iguais. Nova escada:
+**$0,07 → $0,37 (~5×) → $1,06 (~3×) → $1,82 (~1,7×) → $5,98 (~3,3×)**, proxies de cota.
+
+O motivo de 2026-09-23 para manter Astra no nível 4 (topo medido em código) não vale mais:
+Opus 5.5 **max** tem Coding Agent Index **66 a $13,04**, contra Astra max **62 a $7,47**.
+**A AA ainda não publicou índice de código para Opus 5.5 high.** A decisão de high usa o índice
+geral; não extrapola a nota de max para high. É uma exceção por ausência de medição de código à
+regra de priorizar código sobre o índice geral, não uma escolha contra um resultado de código.
+
+Codex passa de quatro para **três níveis (1–3)**; Claude passa a **4–5**, na **mesma assinatura
+que o orquestrador host Claude Code**. Segundo o relato do dono, em **2026-09-24**, durante esta
+própria mudança, a tentativa no host chegou à Anthropic, mas a assinatura Claude atingiu o
+**limite de sessão** (reset informado: 00:40). É evidência concreta do compromisso de cota:
+quando Claude esgota, níveis 4 e 5 e o host ficam indisponíveis juntos; codex 1–3 continuam
+disponíveis. O nível 4 fica mais barato, mas passa a consumir cota do host. Ambos os níveis
+altos continuam reservados a tarefas que os níveis baratos não resolvem.
+
+O id `claude-opus-5-5` foi confirmado em execução real em **2026-09-23 com effort max**.
+O effort high foi **confirmado ao vivo em 2026-09-26**: `claude -p --model claude-opus-5-5
+--effort high` respondeu com `modelUsage` = `claude-opus-5-5`. Em 2026-09-24 a verificação tinha
+sido bloqueada pelo limite de sessão da assinatura Claude. O `Not logged in` da tentativa no ambiente do
+agente foi atribuído pelo dono à ausência de auth nesse ambiente, não à rejeição do id ou effort.
+
+### Reavaliar
+
+- Publicação do Coding Agent Index AA para **Opus 5.5 high**; confrontar qualidade e custo de código.
+- Scores locais de `rate` para `claude|claude-opus-5-5|high|delegate` contra o histórico
+  `codex|gpt-6-astra|max|delegate`, informando o número de avaliações de cada grupo.
+- Pressão de cota no host Claude Code e indisponibilidade conjunta de host/níveis 4–5.
+- Completar o teste ao vivo de `--model claude-opus-5-5 --effort high` quando a sessão liberar,
+  lendo a chave de `modelUsage`; a aceitação ainda não foi confirmada por esta mudança.

@@ -129,12 +129,12 @@ export function sessionStartContext() {
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
     "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
-    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (GPT-6 Astra max, " +
-    "Claude Opus 5.5 max) are EXPENSIVE — 5 by far the most — and are a last resort for real " +
+    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (Claude Opus 5.5 high, " +
+    "Claude Opus 5.5 max) are EXPENSIVE — 5 costs ~3.3x level 4. Both spend the Claude Code host subscription; level 4 is 44% cheaper than before but now shares host quota. Both are a last resort for real " +
     "reasoning — code review with a verdict, cross-file impact analysis, hard debugging. The Cursor worker " +
     "runs with full read/edit/shell access in cwd. The win of delegating execution AND judgment is context " +
     "economy: the worker's file reading and raw output never enter your context, whatever the tier. Hand " +
-    "execution (level 1, GPT-6 Luna max) and judgment (levels 4 and 5, Astra max/Opus 5.5 max) to delegate, then review the result; edit " +
+    "execution (level 1, GPT-6 Luna max) and judgment (levels 4 and 5, Opus 5.5 high/Opus 5.5 max) to delegate, then review the result; edit " +
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +

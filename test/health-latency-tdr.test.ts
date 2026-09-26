@@ -12,6 +12,17 @@ function rec(durationMs: number): UsageEntry[] {
 }
 
 describe("regressão: latência sozinha nunca derruba uma engine abaixo do threshold", () => {
+  // O nível 4 agora compartilha Claude com o 5; health do codex não deve derrubá-lo.
+  it("nível 4 usa health do Claude e preserva sucesso lento", () => {
+    const records: UsageEntry[] = [
+      { ts: NOW - 1000, tool: "delegate", outChars: 10, engine: "claude", outcome: "success", durationMs: 22 * 60_000 },
+      { ts: NOW - 1000, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota", durationMs: 1000 },
+    ];
+    const health = computeEngineHealth(records, NOW, WINDOW, TIMEOUT);
+    expect(resolveTier(4, all, false, health)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
+    expect(() => resolveTier(4, all, false, { codex: 1, claude: 0 })).toThrow(/claude.*unhealthy/);
+  });
+
   it("sucesso de 22min (topo da faixa real observada) continua saudável", () => {
     const health = computeEngineHealth(rec(22 * 60_000), NOW, WINDOW, TIMEOUT);
     expect(health.grok).toBeGreaterThanOrEqual(0.3);

@@ -14,7 +14,7 @@ The server exposes twelve tools:
 
 | Tool | Purpose |
 |------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-6 Luna max (codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=GPT-6 Astra max (codex), 5=Claude Opus 5.5 max (claude). **Levels 4 and 5 are expensive — 5 by far the most; last resort only.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
+| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-6 Luna max (codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). **Levels 4 and 5 are expensive — 5 costs ~3.3× level 4; last resort only. Both share the Claude Code host subscription.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
 | `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. First two candidates are subscriptions (GPT-6 Luna medium on codex, then Claude Haiku low); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, only after codex and claude are missing, quota-exhausted or unhealthy. The accepted Claude-subscription cost is the same one used by a Claude Code host orchestrator. Optionally accepts an `agent` persona. |
 | `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
@@ -321,14 +321,19 @@ own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent route
 ```
 You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
 `level` picks a distinct tier: 1=GPT-6 Luna max (codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol
-max (codex), 4=GPT-6 Astra max (codex), 5=Claude Opus 5.5 max (claude). Levels 4 and 5 are expensive
-(5 the most by far) — reserve them for what cheaper levels cannot do. The worker has full read/edit/shell access
+max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Levels 4 and 5 are expensive
+(5 costs ~3.3× level 4) — reserve them for what cheaper levels cannot do. Both use the Claude Code
+host subscription: level 4 is 44% cheaper than before but now spends host quota. Codex holds levels
+1–3; Claude holds 4–5, so exhausted Claude quota takes down both levels and that host together. The worker has full read/edit/shell access
 in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
 your context. Delegate it, then review the result; edit inline only for a quick one-off you're
 already positioned for. Use fast_delegate(prompt) when the work is self-contained and you just want
 the fastest healthy worker. Pass agent:"name" or agent:{prompt:"..."} when the worker
 needs a specialized persona.
 ```
+
+The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.37 (~5×) → $1.06 (~3×)
+→ $1.82 (~1.7×) → $5.98 (~3.3×). See the [level 4 decision](research/2026-09-24-custo-por-tarefa.md).
 
 ## Develop
 

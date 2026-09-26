@@ -1,3 +1,4 @@
+> Nível 4 superado pela [decisão de Opus 5.5 high](2026-09-24-custo-por-tarefa.md#decisão-nível-4--opus-55-high); demais níveis preservados.
 # Spike — escada de níveis do `delegate` pela fronteira de Pareto (2026-09-23)
 
 Decisão: refazer a matriz `TIERS` (`src/cli.ts`) depois do lançamento de GPT-6 Sol, GPT-6 Luna e
