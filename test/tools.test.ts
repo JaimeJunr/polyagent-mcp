@@ -27,6 +27,19 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).toMatch(/Worker tools return a session_id for follow_up; decide returns structured JSON\. Results can be graded with rate\./);
   });
 
+  it("as instructions do server roteiam comparação e veredito arriscado para fan_out", () => {
+    expect(indexSrc).toMatch(/comparing 2\+ approaches or cross-checking a risky verdict → fan_out \(mode consensus\)/);
+  });
+
+  it("sincroniza o bloco do CLAUDE.md no boot, antes de conectar, sem quebrar o startup", () => {
+    const sync = indexSrc.indexOf('syncClaudeMd(CLAUDE_MD_PATH, "boot"');
+    expect(sync).toBeGreaterThan(-1);
+    expect(indexSrc.slice(sync - 200, sync)).toMatch(/if \(CLAUDE_MD_BOOT_SYNC\)/);
+    expect(sync).toBeLessThan(indexSrc.indexOf("await server.connect(transport)"));
+    const pkg = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+    expect(pkg.scripts["install-claude-md"]).toBe("node dist/installClaudeMd.js");
+  });
+
   it("prompts.ts não exporta mais planPrompt/buildPrompt, mas mantém ExploreMode", async () => {
     const mod = await import("../src/prompts.js");
     expect("planPrompt" in mod).toBe(false);

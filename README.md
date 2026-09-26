@@ -116,6 +116,8 @@ have their own approval settings — consult the host.
 | `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, calls log `{tool, outChars}` for `bridge_stats`. Internal Jev attempts also write `tool:"decide"`, `engine:"jev"`, zero returned chars, and a `decision` record with choice, confidence, acceptance, fallback, latency, cost, and requested level for shadow. |
 | `POLYAGENT_JEV_FANOUT` | _(off)_ | Set to `1`/`true`/`on` to ask Jev whether 2+ successful `fan_out` consensus outputs substantially agree. At or above the threshold, return the first worker and session handles without the Codex arbiter. On low confidence, invalid answer, missing key, Jev error, or a 5-second timeout, use the arbiter. Pay-per-token OpenRouter call. |
 | `POLYAGENT_JEV_FANOUT_THRESHOLD` | `0.85` | Minimum Jev agreement probability for skipping the arbiter; invalid values use 0.85. |
+| `POLYAGENT_CLAUDE_MD` | _(on)_ | Set to `off`/`0`/`false`/`no` to stop the server from refreshing an installed `CLAUDE.md` block on start. |
+| `POLYAGENT_CLAUDE_MD_PATH` | `~/.claude/CLAUDE.md` | File that holds the managed block. |
 | `POLYAGENT_JEV_SHADOW` | _(off)_ | Set to `1`/`true`/`on` to ask Jev for a `delegate` level and a prompt-clarity check (target named, done defined, single task) in one parallel call with the worker. The suggestion never changes the requested level; a pending Jev call adds at most 5 seconds after the worker ends. Pay-per-token OpenRouter call. |
 | `POLYAGENT_HOOK_MODE` | `redirect` | Hook behavior: `off` (no-op), `nudge` (non-blocking `additionalContext` only), or `redirect` (deny once + name bridge tool for WebSearch/WebFetch and whole-file large Read; fail-open on retry). Grep/Glob/Bash/Edit/Write stay nudge-only. |
 | `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
@@ -159,6 +161,13 @@ setting one has zero effect (no fallback, no warning). Update your host config (
 > directories.
 
 ## Make the agent actually use it
+
+**Managed `CLAUDE.md` block.** Run `npm run install-claude-md -- --dry-run` to preview, then
+`npm run install-claude-md` (or `npx -p polyagent-mcp polyagent-mcp-install-claude-md`). It appends a
+routing block to `~/.claude/CLAUDE.md` between `<!-- polyagent-mcp:begin … -->` and
+`<!-- polyagent-mcp:end -->`, replaces an old hand-written `<polyagent_preference>` section, and saves
+`CLAUDE.md.polyagent.bak`. From then on the server refreshes the block on each start (only when the
+markers exist). Set `POLYAGENT_CLAUDE_MD=off` to stop that, or delete both markers.
 
 Registering the tools is not enough. Two structural forces push the agent back to
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP

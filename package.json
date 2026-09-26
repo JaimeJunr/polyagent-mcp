@@ -4,7 +4,8 @@
   "description": "MCP server that lets any agent delegate to headless Codex, Grok, and Claude Code CLIs — cheap/fast delegation, exploration, surgical reads, filtered command output, and web lookup with model and effort control, with Cursor available as an opt-in fallback.",
   "type": "module",
   "bin": {
-    "polyagent-mcp": "dist/index.js"
+    "polyagent-mcp": "dist/index.js",
+    "polyagent-mcp-install-claude-md": "dist/installClaudeMd.js"
   },
   "files": [
     "dist"
@@ -19,7 +20,8 @@
     "test": "vitest run",
     "prepublishOnly": "npm run build",
     "bench": "npm run build && node bench/aux-bench.mjs",
-    "bench:jev": "node bench/jev-bench.mjs"
+    "bench:jev": "node bench/jev-bench.mjs",
+    "install-claude-md": "node dist/installClaudeMd.js"
   },
   "keywords": [
     "mcp",

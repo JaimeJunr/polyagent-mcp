@@ -1507,7 +1507,7 @@ interface TierEntry {
  * O cursor saiu do caminho padrão (assinatura cancelada) — fallback só sob CURSOR_ENABLED.
  * Leitura barata (explore/read_slice) reaproveita o modelo do nível 1.
  */
-const TIERS: Record<number, TierEntry> = {
+export const TIERS: Record<number, TierEntry> = {
   1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
   2: { primary: { engine: "codex", model: "gpt-6-sol", effort: "high" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
   3: { primary: { engine: "codex", model: "gpt-6-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
