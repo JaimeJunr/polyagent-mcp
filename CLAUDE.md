@@ -184,7 +184,13 @@ successful `fan_out` consensus workers substantially agree; probability at or ab
 session handles without the Codex arbiter. A low probability, malformed answer, missing key, or
 Jev error or a 5-second timeout runs the existing arbiter. `POLYAGENT_JEV_SHADOW=1` asks Jev for a `delegate` level in
 parallel after starting the worker; it records the suggestion but never changes the requested
-level, and waits at most 5 seconds after the worker finishes. For `fan_out` agreement, each scrubbed
+level, and waits at most 5 seconds after the worker finishes. The same Jev call also carries three
+noul prompt-clarity criteria (`names_target`, `defines_done`, `single_task`, from the Jev prompt-gate
+idea): a second record, `delegate_prompt_clarity_shadow`, is `clear` only when every criterion is
+≥ 0.5 and stores per-criterion `probabilities`. Both shadow records carry the worker handle in
+`decision.session` (read from the `format()` footer) — never in the top-level `sessionId`, which
+would steal the `ratingStats` join from the worker's own entry. `askJev` rejects a response missing
+any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. For `fan_out` agreement, each scrubbed
 worker output keeps roughly one-quarter head and three-quarters tail within its character budget,
 including an elision marker, because verdicts live at the end and head-only clipping caused 24/24
 false skips in the benchmark. Both paths redact credential-shaped

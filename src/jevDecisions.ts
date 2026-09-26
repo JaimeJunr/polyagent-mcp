@@ -95,8 +95,67 @@ export function delegateShadowRequest(prompt: string): AskJevParams {
           "5": "Frontier reasoning that cheaper levels cannot handle; Claude Opus 5.5 max, last resort.",
         },
       },
+      ...CLARITY_QUESTIONS,
     },
   };
+}
+
+// Critérios do gate de prompt do vídeo do Jev (Crivo), restritos ao que falta a um worker que não
+// vê o contexto do orquestrador. Shadow: só registra; o limiar de 0,5 é do código, não do Jev.
+const CLARITY_QUESTIONS = {
+  names_target: {
+    type: "noul",
+    instructions: "Does the task say where to work — which files, module, function, screen or component to change or inspect?",
+  },
+  defines_done: {
+    type: "noul",
+    instructions: "Does the task state how to know it is finished — an expected behavior, a test to pass, or an observable outcome?",
+  },
+  single_task: {
+    type: "noul",
+    instructions: "Is this one focused task, rather than several unrelated tasks mixed into one request?",
+  },
+} as const satisfies AskJevParams["questions"];
+
+export const CLARITY_CRITERIA = Object.keys(CLARITY_QUESTIONS) as (keyof typeof CLARITY_QUESTIONS)[];
+const CLARITY_MISSING_BELOW = 0.5;
+
+export function clarityDecision(result: JevResult | Error, latencyMs: number, session?: string): DecisionRecord {
+  const answers = result instanceof Error ? undefined : result.answers;
+  const probabilities: Record<string, number> = {};
+  for (const key of CLARITY_CRITERIA) {
+    const answer = answers?.[key];
+    if (answer?.type !== "noul" || !Number.isFinite(answer.noul) || answer.noul < 0 || answer.noul > 1) break;
+    probabilities[key] = answer.noul;
+  }
+  const valid = Object.keys(probabilities).length === CLARITY_CRITERIA.length;
+  const weakest = valid ? Math.min(...Object.values(probabilities)) : null;
+  return {
+    name: "delegate_prompt_clarity_shadow",
+    candidates: ["clear", "unclear"],
+    choice: weakest === null ? null : weakest >= CLARITY_MISSING_BELOW ? "clear" : "unclear",
+    // Confiança no veredito: o critério mais fraco decide "clear"; em "unclear", quão ausente ele está.
+    confidence: weakest === null ? null : weakest >= CLARITY_MISSING_BELOW ? weakest : 1 - weakest,
+    accepted: false,
+    fallback: false,
+    latencyMs,
+    cost: result instanceof Error ? null : result.usage?.cost ?? null,
+    ...(valid ? { probabilities } : {}),
+    ...(session ? { session } : {}),
+  };
+}
+
+/** Lê o handle `session_id:` do footer de `format()` num resultado de tool MCP. */
+export function footerSession(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const content = (value as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  for (const part of content) {
+    const text = (part as { text?: unknown } | null)?.text;
+    const match = typeof text === "string" ? /session_id: (\S+)/.exec(text) : null;
+    if (match) return match[1];
+  }
+  return undefined;
 }
 
 export function shadowDecision(result: JevResult | Error, requestedLevel: number, latencyMs: number): DecisionRecord {
@@ -121,6 +180,7 @@ interface DecisionDeps {
   log: (decision: DecisionRecord) => void;
   now?: () => number;
   timeoutMs?: number;
+  sessionOf?: (workerValue: unknown) => string | undefined;
 }
 
 function asError(reason: unknown): Error {
@@ -211,7 +271,10 @@ export async function withDelegateShadow<T>(
   ]);
   if (timer) clearTimeout(timer);
   try {
-    deps.log(shadowDecision(settled.result, requestedLevel, settled.latencyMs));
+    const session = workerOutcome.ok ? deps.sessionOf?.(workerOutcome.value) : undefined;
+    const level = shadowDecision(settled.result, requestedLevel, settled.latencyMs);
+    deps.log(session ? { ...level, session } : level);
+    deps.log(clarityDecision(settled.result, settled.latencyMs, session));
   } catch {
     // A observação shadow não pode alterar o resultado do worker.
   }

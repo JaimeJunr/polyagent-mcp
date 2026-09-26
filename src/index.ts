@@ -29,7 +29,7 @@ import {
   askJev, JEV_MODEL, JEV_FANOUT_ENABLED, JEV_FANOUT_THRESHOLD, JEV_SHADOW_ENABLED,
   resolveOpenRouterKey, type AskJevParams,
 } from "./jev.js";
-import { fanOutAgreementText, runFanOutConsensusGate, withDelegateShadow } from "./jevDecisions.js";
+import { fanOutAgreementText, footerSession, runFanOutConsensusGate, withDelegateShadow } from "./jevDecisions.js";
 
 const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
@@ -231,7 +231,7 @@ server.registerTool(
       { model: tier.model, effort: tier.effort },
     );
     return JEV_SHADOW_ENABLED
-      ? withDelegateShadow(work, prompt, level, { ask: askInternalJev, log: logDecision })
+      ? withDelegateShadow(work, prompt, level, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
       : work();
   },
 );
