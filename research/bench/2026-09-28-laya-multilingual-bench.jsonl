@@ -1,0 +1,183 @@
+{"suite":"fanout","kind":"jev","id":"review-null-guard","rep":1,"label":"agree","hard":false,"p":0.5379,"confidence":0.5379,"ms":636,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-transaction","rep":1,"label":"agree","hard":false,"p":0.1286,"confidence":0.8714,"ms":480,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-pagination","rep":1,"label":"agree","hard":false,"p":0.899,"confidence":0.899,"ms":443,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-cache","rep":1,"label":"agree","hard":false,"p":0.537,"confidence":0.537,"ms":403,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-zod","rep":1,"label":"agree","hard":false,"p":0.204,"confidence":0.796,"ms":397,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-timeout","rep":1,"label":"agree","hard":false,"p":0.9716,"confidence":0.9716,"ms":325,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-idempotency","rep":1,"label":"agree","hard":false,"p":0.2739,"confidence":0.7261,"ms":413,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-config","rep":1,"label":"agree","hard":false,"p":0.2939,"confidence":0.7061,"ms":348,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-node","rep":1,"label":"agree","hard":false,"p":0.7083,"confidence":0.7083,"ms":576,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-index","rep":1,"label":"agree","hard":false,"p":0.9217,"confidence":0.9217,"ms":392,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-stream","rep":1,"label":"agree","hard":false,"p":0.8748,"confidence":0.8748,"ms":342,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-utc","rep":1,"label":"agree","hard":false,"p":0.1635,"confidence":0.8365,"ms":365,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-auth","rep":1,"label":"disagree","hard":true,"p":0.7136,"confidence":0.7136,"ms":393,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-cache","rep":1,"label":"disagree","hard":true,"p":0.7627,"confidence":0.7627,"ms":407,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-race","rep":1,"label":"disagree","hard":true,"p":0.7235,"confidence":0.7235,"ms":388,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-react","rep":1,"label":"disagree","hard":true,"p":0.1329,"confidence":0.8671,"ms":389,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-migration","rep":1,"label":"disagree","hard":true,"p":0.2363,"confidence":0.7637,"ms":401,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-lock","rep":1,"label":"disagree","hard":true,"p":0.0654,"confidence":0.9346,"ms":329,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-token","rep":1,"label":"disagree","hard":true,"p":0.425,"confidence":0.575,"ms":372,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-typescript","rep":1,"label":"disagree","hard":true,"p":0.1385,"confidence":0.8614999999999999,"ms":414,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-sql","rep":1,"label":"disagree","hard":false,"p":0.5322,"confidence":0.5322,"ms":399,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-queue","rep":1,"label":"disagree","hard":false,"p":0.1061,"confidence":0.8939,"ms":398,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-encoding","rep":1,"label":"disagree","hard":false,"p":0.0761,"confidence":0.9238999999999999,"ms":355,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-vite","rep":1,"label":"disagree","hard":false,"p":0.0848,"confidence":0.9152,"ms":315,"cost":null,"err":null}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-timeout-cleanup","rep":1,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2615,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-tenant-cache-key","rep":1,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2619,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-cursor-export","rep":1,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2506,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-utc-date","rep":1,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2639,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-tenant-invoice","rep":1,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2465,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-migration-order","rep":1,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2595,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-duplicate-job","rep":1,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2828,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-stale-permission-cache","rep":1,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2242,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-image-processing","rep":1,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":3031,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-account-lock","rep":1,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2921,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-event-parser","rep":1,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2908,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-pagination","rep":1,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2965,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"shadow","kind":"jev","id":"rename-symbol","rep":1,"expected":1,"ok":[1,1],"choice":2,"confidence":0.1888,"ms":1249,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"fix-copy","rep":1,"expected":1,"ok":[1,1],"choice":1,"confidence":0.0806,"ms":1103,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"add-log-line","rep":1,"expected":1,"ok":[1,2],"choice":2,"confidence":0.0677,"ms":1168,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"update-doc-link","rep":1,"expected":1,"ok":[1,1],"choice":2,"confidence":0.143,"ms":1173,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"small-commit","rep":1,"expected":1,"ok":[1,1],"choice":1,"confidence":0.117,"ms":1406,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-endpoint","rep":1,"expected":2,"ok":[2,3],"choice":2,"confidence":0.0738,"ms":1160,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-form","rep":1,"expected":2,"ok":[2,3],"choice":2,"confidence":0.1181,"ms":1103,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-filter","rep":1,"expected":2,"ok":[1,2],"choice":1,"confidence":0.0453,"ms":1055,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-export","rep":1,"expected":2,"ok":[2,3],"choice":1,"confidence":0.092,"ms":961,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-metric","rep":1,"expected":2,"ok":[2,2],"choice":2,"confidence":0.1905,"ms":1071,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-migration","rep":1,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0669,"ms":1062,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-offline","rep":1,"expected":3,"ok":[3,4],"choice":1,"confidence":0.0277,"ms":1192,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-parser","rep":1,"expected":3,"ok":[2,3],"choice":2,"confidence":0.1008,"ms":1144,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-api","rep":1,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0849,"ms":949,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-cache","rep":1,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0532,"ms":949,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-deadlock","rep":1,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0426,"ms":1014,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-memory","rep":1,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0479,"ms":1027,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-auth","rep":1,"expected":4,"ok":[4,5],"choice":2,"confidence":0.1406,"ms":970,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-rollback","rep":1,"expected":4,"ok":[3,4],"choice":2,"confidence":0.119,"ms":935,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-perf","rep":1,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0688,"ms":1119,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-protocol","rep":1,"expected":5,"ok":[4,5],"choice":1,"confidence":0.0066,"ms":1263,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-compiler","rep":1,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0432,"ms":1081,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-crypto","rep":1,"expected":5,"ok":[5,5],"choice":3,"confidence":0.2191,"ms":1030,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-systems","rep":1,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0443,"ms":1116,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-research","rep":1,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0589,"ms":1039,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-null-guard","rep":2,"label":"agree","hard":false,"p":0.5379,"confidence":0.5379,"ms":279,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-transaction","rep":2,"label":"agree","hard":false,"p":0.1286,"confidence":0.8714,"ms":273,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-pagination","rep":2,"label":"agree","hard":false,"p":0.899,"confidence":0.899,"ms":277,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-cache","rep":2,"label":"agree","hard":false,"p":0.537,"confidence":0.537,"ms":284,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-zod","rep":2,"label":"agree","hard":false,"p":0.204,"confidence":0.796,"ms":315,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-timeout","rep":2,"label":"agree","hard":false,"p":0.9716,"confidence":0.9716,"ms":285,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-idempotency","rep":2,"label":"agree","hard":false,"p":0.2739,"confidence":0.7261,"ms":362,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-config","rep":2,"label":"agree","hard":false,"p":0.2939,"confidence":0.7061,"ms":256,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-node","rep":2,"label":"agree","hard":false,"p":0.7083,"confidence":0.7083,"ms":292,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-index","rep":2,"label":"agree","hard":false,"p":0.9217,"confidence":0.9217,"ms":291,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-stream","rep":2,"label":"agree","hard":false,"p":0.8748,"confidence":0.8748,"ms":292,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-utc","rep":2,"label":"agree","hard":false,"p":0.1635,"confidence":0.8365,"ms":288,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-auth","rep":2,"label":"disagree","hard":true,"p":0.7136,"confidence":0.7136,"ms":302,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-cache","rep":2,"label":"disagree","hard":true,"p":0.7627,"confidence":0.7627,"ms":325,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-race","rep":2,"label":"disagree","hard":true,"p":0.7235,"confidence":0.7235,"ms":356,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-react","rep":2,"label":"disagree","hard":true,"p":0.1329,"confidence":0.8671,"ms":316,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-migration","rep":2,"label":"disagree","hard":true,"p":0.2363,"confidence":0.7637,"ms":381,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-lock","rep":2,"label":"disagree","hard":true,"p":0.0654,"confidence":0.9346,"ms":334,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-token","rep":2,"label":"disagree","hard":true,"p":0.425,"confidence":0.575,"ms":366,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-typescript","rep":2,"label":"disagree","hard":true,"p":0.1385,"confidence":0.8614999999999999,"ms":488,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-sql","rep":2,"label":"disagree","hard":false,"p":0.5322,"confidence":0.5322,"ms":302,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-queue","rep":2,"label":"disagree","hard":false,"p":0.1061,"confidence":0.8939,"ms":397,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-encoding","rep":2,"label":"disagree","hard":false,"p":0.0761,"confidence":0.9238999999999999,"ms":323,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-vite","rep":2,"label":"disagree","hard":false,"p":0.0848,"confidence":0.9152,"ms":411,"cost":null,"err":null}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-timeout-cleanup","rep":2,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2734,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-tenant-cache-key","rep":2,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2507,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-cursor-export","rep":2,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2346,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-utc-date","rep":2,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2606,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-tenant-invoice","rep":2,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2438,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-migration-order","rep":2,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2438,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-duplicate-job","rep":2,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2962,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-stale-permission-cache","rep":2,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2666,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-image-processing","rep":2,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2840,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-account-lock","rep":2,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2695,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-event-parser","rep":2,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2347,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-pagination","rep":2,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2743,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"shadow","kind":"jev","id":"rename-symbol","rep":2,"expected":1,"ok":[1,1],"choice":2,"confidence":0.1888,"ms":1244,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"fix-copy","rep":2,"expected":1,"ok":[1,1],"choice":1,"confidence":0.0806,"ms":1168,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"add-log-line","rep":2,"expected":1,"ok":[1,2],"choice":2,"confidence":0.0677,"ms":1114,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"update-doc-link","rep":2,"expected":1,"ok":[1,1],"choice":2,"confidence":0.143,"ms":1073,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"small-commit","rep":2,"expected":1,"ok":[1,1],"choice":1,"confidence":0.117,"ms":1127,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-endpoint","rep":2,"expected":2,"ok":[2,3],"choice":2,"confidence":0.0738,"ms":1310,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-form","rep":2,"expected":2,"ok":[2,3],"choice":2,"confidence":0.1181,"ms":1347,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-filter","rep":2,"expected":2,"ok":[1,2],"choice":1,"confidence":0.0453,"ms":1413,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-export","rep":2,"expected":2,"ok":[2,3],"choice":1,"confidence":0.092,"ms":1268,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-metric","rep":2,"expected":2,"ok":[2,2],"choice":2,"confidence":0.1905,"ms":1449,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-migration","rep":2,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0669,"ms":1336,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-offline","rep":2,"expected":3,"ok":[3,4],"choice":1,"confidence":0.0277,"ms":1262,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-parser","rep":2,"expected":3,"ok":[2,3],"choice":2,"confidence":0.1008,"ms":1322,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-api","rep":2,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0849,"ms":1163,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-cache","rep":2,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0532,"ms":1133,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-deadlock","rep":2,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0426,"ms":1237,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-memory","rep":2,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0479,"ms":1188,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-auth","rep":2,"expected":4,"ok":[4,5],"choice":2,"confidence":0.1406,"ms":1129,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-rollback","rep":2,"expected":4,"ok":[3,4],"choice":2,"confidence":0.119,"ms":1096,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-perf","rep":2,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0688,"ms":1176,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-protocol","rep":2,"expected":5,"ok":[4,5],"choice":1,"confidence":0.0066,"ms":1328,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-compiler","rep":2,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0432,"ms":1601,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-crypto","rep":2,"expected":5,"ok":[5,5],"choice":3,"confidence":0.2191,"ms":1636,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-systems","rep":2,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0443,"ms":1756,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-research","rep":2,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0589,"ms":1541,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-null-guard","rep":3,"label":"agree","hard":false,"p":0.5379,"confidence":0.5379,"ms":604,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-transaction","rep":3,"label":"agree","hard":false,"p":0.1286,"confidence":0.8714,"ms":410,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-pagination","rep":3,"label":"agree","hard":false,"p":0.899,"confidence":0.899,"ms":600,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-cache","rep":3,"label":"agree","hard":false,"p":0.537,"confidence":0.537,"ms":398,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-zod","rep":3,"label":"agree","hard":false,"p":0.204,"confidence":0.796,"ms":440,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-timeout","rep":3,"label":"agree","hard":false,"p":0.9716,"confidence":0.9716,"ms":403,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-idempotency","rep":3,"label":"agree","hard":false,"p":0.2739,"confidence":0.7261,"ms":477,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-config","rep":3,"label":"agree","hard":false,"p":0.2939,"confidence":0.7061,"ms":375,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-node","rep":3,"label":"agree","hard":false,"p":0.7083,"confidence":0.7083,"ms":391,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-index","rep":3,"label":"agree","hard":false,"p":0.9217,"confidence":0.9217,"ms":363,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-stream","rep":3,"label":"agree","hard":false,"p":0.8748,"confidence":0.8748,"ms":348,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-utc","rep":3,"label":"agree","hard":false,"p":0.1635,"confidence":0.8365,"ms":383,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-auth","rep":3,"label":"disagree","hard":true,"p":0.7136,"confidence":0.7136,"ms":486,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-cache","rep":3,"label":"disagree","hard":true,"p":0.7627,"confidence":0.7627,"ms":479,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-race","rep":3,"label":"disagree","hard":true,"p":0.7235,"confidence":0.7235,"ms":423,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-react","rep":3,"label":"disagree","hard":true,"p":0.1329,"confidence":0.8671,"ms":408,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-review-migration","rep":3,"label":"disagree","hard":true,"p":0.2363,"confidence":0.7637,"ms":424,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-approach-lock","rep":3,"label":"disagree","hard":true,"p":0.0654,"confidence":0.9346,"ms":396,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-bug-token","rep":3,"label":"disagree","hard":true,"p":0.425,"confidence":0.575,"ms":410,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"hard-version-typescript","rep":3,"label":"disagree","hard":true,"p":0.1385,"confidence":0.8614999999999999,"ms":471,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"review-sql","rep":3,"label":"disagree","hard":false,"p":0.5322,"confidence":0.5322,"ms":424,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"approach-queue","rep":3,"label":"disagree","hard":false,"p":0.1061,"confidence":0.8939,"ms":430,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"bug-encoding","rep":3,"label":"disagree","hard":false,"p":0.0761,"confidence":0.9238999999999999,"ms":372,"cost":null,"err":null}
+{"suite":"fanout","kind":"jev","id":"version-vite","rep":3,"label":"disagree","hard":false,"p":0.0848,"confidence":0.9152,"ms":402,"cost":null,"err":null}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-timeout-cleanup","rep":3,"label":"agree","hard":false,"p":null,"confidence":null,"ms":3452,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-tenant-cache-key","rep":3,"label":"agree","hard":false,"p":null,"confidence":null,"ms":3024,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-cursor-export","rep":3,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2753,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-agree-utc-date","rep":3,"label":"agree","hard":false,"p":null,"confidence":null,"ms":2701,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-tenant-invoice","rep":3,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2787,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-migration-order","rep":3,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":3044,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-duplicate-job","rep":3,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2851,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-bug-stale-permission-cache","rep":3,"label":"disagree","hard":true,"p":null,"confidence":null,"ms":2912,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-image-processing","rep":3,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2659,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-account-lock","rep":3,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2615,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-review-event-parser","rep":3,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2388,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"fanout-long","kind":"jev","id":"long-approach-pagination","rep":3,"label":"disagree","hard":false,"p":null,"confidence":null,"ms":2805,"cost":null,"err":"Jev request failed (422): {\"detail\":{\"error_type\":\"invalid_request_error\",\"message\":\"State and questions exceed the Laya context window. Shorten the state or use fewer/shorter criteria.\"}}"}
+{"suite":"shadow","kind":"jev","id":"rename-symbol","rep":3,"expected":1,"ok":[1,1],"choice":2,"confidence":0.1888,"ms":1057,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"fix-copy","rep":3,"expected":1,"ok":[1,1],"choice":1,"confidence":0.0806,"ms":1082,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"add-log-line","rep":3,"expected":1,"ok":[1,2],"choice":2,"confidence":0.0677,"ms":1041,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"update-doc-link","rep":3,"expected":1,"ok":[1,1],"choice":2,"confidence":0.143,"ms":1251,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"small-commit","rep":3,"expected":1,"ok":[1,1],"choice":1,"confidence":0.117,"ms":1101,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-endpoint","rep":3,"expected":2,"ok":[2,3],"choice":2,"confidence":0.0738,"ms":1203,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-form","rep":3,"expected":2,"ok":[2,3],"choice":2,"confidence":0.1181,"ms":1172,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-filter","rep":3,"expected":2,"ok":[1,2],"choice":1,"confidence":0.0453,"ms":1135,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-export","rep":3,"expected":2,"ok":[2,3],"choice":1,"confidence":0.092,"ms":1219,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"routine-metric","rep":3,"expected":2,"ok":[2,2],"choice":2,"confidence":0.1905,"ms":1150,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-migration","rep":3,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0669,"ms":1317,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-offline","rep":3,"expected":3,"ok":[3,4],"choice":1,"confidence":0.0277,"ms":1332,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-parser","rep":3,"expected":3,"ok":[2,3],"choice":2,"confidence":0.1008,"ms":1129,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-api","rep":3,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0849,"ms":1243,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"complex-cache","rep":3,"expected":3,"ok":[3,4],"choice":2,"confidence":0.0532,"ms":1125,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-deadlock","rep":3,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0426,"ms":1136,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-memory","rep":3,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0479,"ms":1111,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-auth","rep":3,"expected":4,"ok":[4,5],"choice":2,"confidence":0.1406,"ms":1177,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-rollback","rep":3,"expected":4,"ok":[3,4],"choice":2,"confidence":0.119,"ms":1152,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"hard-perf","rep":3,"expected":4,"ok":[3,4],"choice":2,"confidence":0.0688,"ms":1280,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-protocol","rep":3,"expected":5,"ok":[4,5],"choice":1,"confidence":0.0066,"ms":1161,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-compiler","rep":3,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0432,"ms":1132,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-crypto","rep":3,"expected":5,"ok":[5,5],"choice":3,"confidence":0.2191,"ms":1151,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-systems","rep":3,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0443,"ms":1276,"cost":null,"err":null}
+{"suite":"shadow","kind":"jev","id":"frontier-research","rep":3,"expected":5,"ok":[4,5],"choice":2,"confidence":0.0589,"ms":1284,"cost":null,"err":null}
