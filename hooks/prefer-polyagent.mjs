@@ -138,9 +138,13 @@ export function sessionStartContext() {
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
     'polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named "codex" failing to ' +
-    "connect says nothing about polyagent, so call the tool instead of guessing. Workers run sandboxed without " +
-    "your skills, subagents, MCP servers or a browser, but a task that needs them is not all-or-nothing: keep " +
-    "those steps yourself and delegate the rest (reading, implementation, tests, builds). " +
+    "connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or " +
+    "browser and do not load your subagents or global/plugin skills on their own, but you can hand them over " +
+    "through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), " +
+    "a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a " +
+    "skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own " +
+    ".claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP " +
+    "server or a browser stay with you; delegate the rest. " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +
     "native Explore subagent — the bridge runs on GPT-6 Luna (cheap) while a spawned " +
     "Explore would run on your expensive model."

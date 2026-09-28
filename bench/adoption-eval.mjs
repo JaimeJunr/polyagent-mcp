@@ -34,11 +34,24 @@ const PROMPTS = [
   { id: "h-design-choice", category: "fan-out", heldout: true, prompt: "Estou em dúvida entre guardar as notas do rate em SQLite ou continuar no JSONL. Me ajuda a decidir olhando por vários ângulos.", expect: ["fan_out", "delegate"] },
   { id: "h-docs", category: "web", heldout: true, prompt: "O SDK de MCP para TypeScript mudou alguma coisa na forma de registrar tools nas últimas versões?", expect: ["web_lookup"] },
   { id: "h-find", category: "code-reading", heldout: true, prompt: "Qual parte do código monta os argumentos do bwrap?", expect: ["explore", "read_slice"] },
+  // Handoff (2026-09-27): o host deve passar subagent/skill ao worker via `agent` em vez de largar a
+  // delegação. expectAgent exige o formato: "name" (subagent pelo nome) ou "inline" (SKILL.md colado).
+  { id: "handoff-agent", category: "handoff", prompt: "Use o agent ivt-core:code-reviewer para revisar o último commit deste repo (HEAD~1..HEAD). Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: "name" },
+  { id: "handoff-skill", category: "handoff", prompt: "Faça uma auditoria de segurança de src/cli.ts seguindo a skill ivt-quality:security-audit. Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: "inline" },
 ];
+
+// Formato do `agent` que o host passou ao worker: subagent por nome, persona/skill colada, ou nada.
+const AGENT_TOOLS = new Set(["mcp__polyagent__delegate", "mcp__polyagent__fast_delegate"]);
+function agentKind(agent) {
+  if (typeof agent === "string") return "name";
+  if (agent && typeof agent === "object") return "inline";
+  return "none";
+}
 
 function emptyParse() {
   return {
     toolNames: [],
+    agentArgs: [],
     usedToolSearchForPolyagent: false,
     result: { total_cost_usd: null, duration_ms: null, num_turns: null, is_error: null, models: [] },
   };
@@ -52,6 +65,7 @@ function parseLine(line, parsed) {
     for (const item of event.message.content) {
       if (item?.type !== "tool_use" || typeof item.name !== "string") continue;
       parsed.toolNames.push(item.name);
+      if (AGENT_TOOLS.has(item.name)) parsed.agentArgs.push(agentKind(item.input?.agent));
       const query = item.input?.query;
       if (item.name === "ToolSearch" && typeof query === "string" && /polyagent/i.test(query)) {
         parsed.usedToolSearchForPolyagent = true;
@@ -126,9 +140,10 @@ function makeRow(prompt, label, run) {
   const native = parsed.toolNames.filter((name) => NATIVE_TOOLS.has(name)).length;
   const other = parsed.toolNames.length - bridge - native;
   const violation = (prompt.forbid ?? []).some((name) => bridgeNames.includes(name));
-  const hit = prompt.expect.length === 0
+  const toolHit = prompt.expect.length === 0
     ? !violation
     : prompt.expect.some((name) => bridgeNames.includes(name));
+  const hit = toolHit && (!prompt.expectAgent || parsed.agentArgs.includes(prompt.expectAgent));
 
   return {
     date: DATE,
@@ -138,6 +153,7 @@ function makeRow(prompt, label, run) {
     heldout: Boolean(prompt.heldout),
     expect: prompt.expect,
     tools: parsed.toolNames.map(shortName),
+    agentArgs: parsed.agentArgs,
     bridge,
     native,
     other,

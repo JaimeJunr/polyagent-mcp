@@ -39,7 +39,10 @@ the **pure logic is testable without spawning a worker process**:
   matter for adoption. The same text also kills two false reasons a host gave (2026-09-27) for skipping
   polyagent: reading a failed `codex` MCP server as "polyagent has no codex" (the bridge spawns the CLI,
   unrelated to that server), and dropping delegation entirely because the task also needed skills,
-  subagents or a browser (keep those steps on the host, delegate the rest). `sessionStartContext` and
+  subagents or a browser (subagents and skills cross via `agent` — name or inline `{prompt}` with the
+  SKILL.md body; only MCP/browser steps stay on the host). Measured live 2026-09-27: an inline persona
+  is followed, the repo's `.claude/skills` is visible (inside cwd), `~/.claude/skills` and
+  `~/.claude/plugins` are not — a skill's bundled files outside cwd never reach the worker. `sessionStartContext` and
   the managed CLAUDE.md block carry the same two points. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
   `web_lookup`) plus `fast_delegate`, `fan_out`, and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas.
