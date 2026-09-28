@@ -31,6 +31,16 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).toMatch(/comparing 2\+ approaches or cross-checking a risky verdict → fan_out \(mode consensus\)/);
   });
 
+  it("as instructions separam o polyagent de um MCP server chamado codex", () => {
+    expect(indexSrc).toMatch(/MCP server named \\"codex\\"/);
+    expect(indexSrc).toMatch(/says nothing about polyagent/);
+  });
+
+  it("as instructions mandam delegar o resto quando a tarefa precisa de skills, subagents ou browser", () => {
+    expect(indexSrc).toMatch(/not all-or-nothing/);
+    expect(indexSrc).toMatch(/skills, subagents, MCP servers or a browser/);
+  });
+
   it("sincroniza o bloco do CLAUDE.md no boot, antes de conectar, sem quebrar o startup", () => {
     const sync = indexSrc.indexOf('syncClaudeMd(CLAUDE_MD_PATH, "boot"');
     expect(sync).toBeGreaterThan(-1);
