@@ -141,6 +141,18 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/specialized|toolset/i);
   });
 
+  it("separa o polyagent de um MCP server chamado codex fora do ar", () => {
+    const text = sessionStartContext();
+    expect(text).toMatch(/MCP server named "codex"/);
+    expect(text).toMatch(/says nothing about polyagent/);
+  });
+
+  it("tarefa com skills, subagents ou browser não é tudo-ou-nada", () => {
+    const text = sessionStartContext();
+    expect(text).toMatch(/not all-or-nothing/);
+    expect(text).toMatch(/skills, subagents, MCP servers or a browser/);
+  });
+
   it("empurra explore() direto em vez de spawnar o subagente Explore (caro)", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/explore\(/);

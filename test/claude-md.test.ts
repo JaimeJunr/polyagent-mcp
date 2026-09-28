@@ -37,6 +37,18 @@ describe("renderPolyagentBlock", () => {
   });
 });
 
+describe("renderPolyagentBlock — os dois motivos falsos para não usar o polyagent", () => {
+  it("diz que um MCP server chamado codex fora do ar não afeta o polyagent", () => {
+    expect(BLOCK).toMatch(/MCP server named `codex`/);
+    expect(BLOCK).toMatch(/says nothing about polyagent/);
+  });
+
+  it("diz que tarefa com skills, subagents ou browser não é tudo-ou-nada", () => {
+    expect(BLOCK).toMatch(/not all-or-nothing/);
+    expect(BLOCK).toMatch(/skills, subagents, MCP servers or a browser/);
+  });
+});
+
 describe("upsertManagedBlock", () => {
   it("appends the block at the end, separated by a blank line, when no markers exist", () => {
     const result = upsertManagedBlock("# mine\nkeep me\n", BLOCK);

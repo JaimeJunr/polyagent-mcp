@@ -137,6 +137,10 @@ export function sessionStartContext() {
     "execution (level 1, GPT-6 Luna max) and judgment (levels 4 and 5, Opus 5.5 high/Opus 5.5 max) to delegate, then review the result; edit " +
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
+    'polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named "codex" failing to ' +
+    "connect says nothing about polyagent, so call the tool instead of guessing. Workers run sandboxed without " +
+    "your skills, subagents, MCP servers or a browser, but a task that needs them is not all-or-nothing: keep " +
+    "those steps yourself and delegate the rest (reading, implementation, tests, builds). " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +
     "native Explore subagent — the bridge runs on GPT-6 Luna (cheap) while a spawned " +
     "Explore would run on your expensive model."

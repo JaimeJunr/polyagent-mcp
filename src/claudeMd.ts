@@ -59,6 +59,8 @@ export function renderPolyagentBlock(version: string): string {
 - Execution: \`delegate(prompt, level)\` for self-contained work (features, bugfixes, multi-file edits, builds, commits, PRs); \`fast_delegate\` when speed matters more than the level. Levels: ${tierLine()}. Pick the lowest level that can do it; 4-5 are expensive and share the Claude Code subscription.
 - Worker prompts must stand alone: say where to work, how to verify it is done, and ask for one task per call.
 - Grade worker results with \`rate(session_id, 1-5)\`.
+- polyagent spawns each engine CLI itself (\`codex exec\`, \`claude -p\`): an MCP server named \`codex\` failing to connect says nothing about polyagent. Call the tool; do not guess it is down.
+- Workers run sandboxed without your skills, subagents, MCP servers or a browser. A task that needs them is not all-or-nothing: keep those steps yourself and delegate the rest (reading, implementation, tests, builds).
 
 ### fan_out: call it instead of judging alone
 Use \`fan_out\` (not several \`delegate\` calls you compare yourself) when:
