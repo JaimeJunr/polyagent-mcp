@@ -1,4 +1,7 @@
-/** Custos por tarefa do índice geral da AA; fonte: research/2026-09-24-custo-por-tarefa.md. */
+/**
+ * Custos por tarefa do índice geral da AA; fonte: research/2026-09-24-custo-por-tarefa.md
+ * (Sonnet 5.5: research/2026-09-28-sonnet-5-5.md).
+ */
 export const AA_COST_PER_TASK: Record<string, number> = {
   "codex|gpt-6-luna|low": 0.0045,
   "codex|gpt-6-luna|medium": 0.02,
@@ -31,6 +34,11 @@ export const AA_COST_PER_TASK: Record<string, number> = {
   "claude|claude-opus-5|xhigh": 4.88,
   "claude|claude-opus-5|max": 5.86,
   "claude|claude-fable-5|max": 8.75,
+  "claude|claude-sonnet-5-5|low": 0.41,
+  "claude|claude-sonnet-5-5|medium": 0.59,
+  "claude|claude-sonnet-5-5|high": 1.08,
+  "claude|claude-sonnet-5-5|xhigh": 2.74,
+  "claude|claude-sonnet-5-5|max": 7.60,
   "claude|claude-sonnet-5|low": 0.51,
   "claude|claude-sonnet-5|medium": 1.00,
   "claude|claude-sonnet-5|high": 1.79,
