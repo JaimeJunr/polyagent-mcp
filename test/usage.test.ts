@@ -20,6 +20,8 @@ describe("estimateCostPerTask", () => {
   it("looks up a published AA cost by engine, model, and effort", () => {
     expect(estimateCostPerTask("codex", "gpt-6-sol", "high")).toBe(0.37);
     expect(estimateCostPerTask("claude", "claude-opus-5-5", "max")).toBe(5.98);
+    expect(estimateCostPerTask("claude", "claude-sonnet-5-5", "low")).toBe(0.41);
+    expect(estimateCostPerTask("claude", "claude-sonnet-5-5", "max")).toBe(7.60);
   });
 
   it("uses the published extended-thinking cost for Haiku at any effort", () => {
