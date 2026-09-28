@@ -45,7 +45,10 @@ describe("renderPolyagentBlock — os dois motivos falsos para não usar o polya
 
   it("diz que tarefa com skills, subagents ou browser não é tudo-ou-nada", () => {
     expect(BLOCK).toMatch(/not all-or-nothing/);
-    expect(BLOCK).toMatch(/skills, subagents, MCP servers or a browser/);
+    expect(BLOCK).toMatch(/inline `?\{prompt\}`?/);
+    expect(BLOCK).toMatch(/only steps that need an MCP server or a browser stay with you/i);
+    expect(BLOCK).toMatch(/files outside cwd/);
+    expect(BLOCK).toMatch(/agent:.{0,3}<name>/);
   });
 });
 

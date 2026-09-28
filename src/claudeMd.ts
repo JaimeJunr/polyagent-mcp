@@ -60,7 +60,10 @@ export function renderPolyagentBlock(version: string): string {
 - Worker prompts must stand alone: say where to work, how to verify it is done, and ask for one task per call.
 - Grade worker results with \`rate(session_id, 1-5)\`.
 - polyagent spawns each engine CLI itself (\`codex exec\`, \`claude -p\`): an MCP server named \`codex\` failing to connect says nothing about polyagent. Call the tool; do not guess it is down.
-- Workers run sandboxed without your skills, subagents, MCP servers or a browser. A task that needs them is not all-or-nothing: keep those steps yourself and delegate the rest (reading, implementation, tests, builds).
+- Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own. Hand them over through \`delegate\`'s \`agent\` param:
+  - subagent: \`agent: "<name>"\` (resolved from \`.claude/agents\` and plugins);
+  - skill: an inline \`{prompt}\` holding its SKILL.md body, \`agent: { prompt: "<SKILL.md body>" }\`. Only that text crosses: files outside cwd (a skill's \`scripts/\` or \`references/\`) stay invisible, so paste what the worker needs. Skills in the repo's own \`.claude/skills\` sit inside cwd and are readable.
+  - A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest.
 
 ### fan_out: call it instead of judging alone
 Use \`fan_out\` (not several \`delegate\` calls you compare yourself) when:

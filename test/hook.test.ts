@@ -150,7 +150,10 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
   it("tarefa com skills, subagents ou browser não é tudo-ou-nada", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/not all-or-nothing/);
-    expect(text).toMatch(/skills, subagents, MCP servers or a browser/);
+    expect(text).toMatch(/inline \{prompt\}/);
+    expect(text).toMatch(/only steps that need an MCP server or a browser stay with you/i);
+    expect(text).toMatch(/files outside cwd/);
+    expect(text).toMatch(/agent:.{0,3}<name>/);
   });
 
   it("empurra explore() direto em vez de spawnar o subagente Explore (caro)", () => {
