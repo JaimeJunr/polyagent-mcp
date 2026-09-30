@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-09-30 | [GPT-6.1 Sol nos níveis 2 e 3](2026-09-30-gpt-6-1-sol.md) | Índice e custo AA por esforço; níveis 2/3 passam a medium/max; escada $0,07 → $0,21 → $0,72 → $1,82 → $5,98; id confirmado via codex-cli 0.159.2 |
 | 2026-09-28 | [Laya local (Unsloth Studio) no lugar do Jev](2026-09-28-laya-local.md) | Mesmo bench do Jev contra `laya-multilingual` e `laya-typed-decisions` via `POLYAGENT_JEV_URL`; seguro no gate a 0,85 mas quase não pula, `fan_out` longo estoura a janela, shadow ruim; Jev continua |
 | 2026-09-28 | [Claude Sonnet 5.5 contra a frota](2026-09-28-sonnet-5-5.md) | Índice AA e $/tarefa por esforço; fora da fronteira de Pareto, `TIERS` não muda; custo entra em `src/costs.ts`; id ainda sem teste ao vivo |
 | 2026-09-24 | [Decisões com Jev: consenso em `fan_out` e shadow do `delegate`](2026-09-24-jev-decisions-bench.md) | Benchmark sintético do gate de consenso e da sugestão shadow de nível; flags seguem opt-in |

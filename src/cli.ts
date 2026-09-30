@@ -1494,9 +1494,10 @@ interface TierEntry {
 }
 
 /**
- * Matriz do `delegate`: decisão do dono com dados Artificial Analysis de 2026-09-24/25 — ver
- * research/2026-09-24-custo-por-tarefa.md (substitui o nível 4 de 2026-09-23-tier-pareto.md).
- * Escada $0,07 → $0,37 (~5×) → $1,06 (~3×) → $1,82 (~1,7×) → $5,98 (~3,3×),
+ * Matriz do `delegate`: decisão do dono com dados Artificial Analysis de 2026-09-30 — ver
+ * research/2026-09-30-gpt-6-1-sol.md (níveis 2/3) e
+ * research/2026-09-24-custo-por-tarefa.md (nível 4).
+ * Escada $0,07 → $0,21 (~3×) → $0,72 (~3,4×) → $1,82 (~2,5×) → $5,98 (~3,3×),
  * como proxy de cota. Tudo por assinatura (codex/claude): pay-per-token fica fora de propósito.
  * Em 2026-09-24, Opus 5.5 high substitui Astra max: índice geral 54 vs. 53, custo 44% menor.
  * O motivo de 2026-09-23 para manter Astra (topo medido em código) caducou: Opus 5.5 max
@@ -1509,10 +1510,12 @@ interface TierEntry {
  */
 export const TIERS: Record<number, TierEntry> = {
   1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
-  2: { primary: { engine: "codex", model: "gpt-6-sol", effort: "high" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  3: { primary: { engine: "codex", model: "gpt-6-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
-  // IDs primários confirmados em execução real: gpt-6-luna, gpt-6-sol e claude-opus-5-5
-  // (2026-09-23, Opus com max); gpt-6-astra (2026-09-14, histórico). Opus com effort high
+  2: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
+  3: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
+  // gpt-6.1-sol confirmado via codex exec em 2026-09-30 (low e max, codex-cli 0.159.2);
+  // decisão e custos: research/2026-09-30-gpt-6-1-sol.md. gpt-6-luna, gpt-6-sol e
+  // claude-opus-5-5 confirmados em 2026-09-23 (Sol histórico, Opus com max);
+  // gpt-6-astra em 2026-09-14 (histórico). Opus com effort high
   // confirmado em 2026-09-26 (modelUsage = claude-opus-5-5). O alias `opus` ainda resolve
   // para o claude-opus-5 antigo — use sempre o id completo claude-opus-5-5.
   // Os cursorModel NÃO acompanham o refresh: o cursor é legado (assinatura cancelada) e os ids

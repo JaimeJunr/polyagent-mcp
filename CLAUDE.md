@@ -98,6 +98,9 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   `--dangerously-bypass-approvals-and-sandbox`, plus `--ignore-user-config`/`--ignore-rules` so it
   never loads `~/.codex/config.toml` (whose MCP servers hung the CLI, spawning runaway `mcp-server`
   procs). `parseCliJson` is tolerant of cursor AND grok single-object shapes; codex uses the JSONL parser.
+  **Armadilha de versão:** um id novo de modelo pode falhar com `failed to refresh available models`
+  quando o codex-cli instalado é antigo. Em 2026-09-30, `gpt-6.1-sol` falhou na versão 0.155.1
+  e funcionou na 0.159.2; atualizar com `npm i -g @openai/codex`.
   Session id: codex emits it as **`thread_id`** in the `thread.started` event (NOT `session_id`) —
   `parseCodexJsonl` reads `thread_id` (with `session_id` as fallback), else `follow_up` on a Codex
   delegate loses the session. Resume is a **subcommand**, not a flag: `buildCodexArgs` emits
@@ -139,11 +142,13 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
 using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
-cost-benefit ladder: $0.07 → $0.37 (~5×) → $1.06 (~3×) → $1.82 (~1.7×) → $5.98 (~3.3×)
-(AA quota proxies; see `research/2026-09-24-custo-por-tarefa.md`): 1=GPT-6 Luna max
-(codex), 2=GPT-6 Sol high (codex), 3=GPT-6 Sol max (codex), 4=Claude Opus 5.5 high (claude),
+cost-benefit ladder: $0.07 → $0.21 (~3×) → $0.72 (~3.4×) → $1.82 (~2.5×) → $5.98 (~3.3×)
+(AA quota proxies; see `research/2026-09-30-gpt-6-1-sol.md`): 1=GPT-6 Luna max
+(codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol max (codex), 4=Claude Opus 5.5 high (claude),
 5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
 2026-09-14 (histórico); `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23 (Opus com max).
+`gpt-6.1-sol` foi confirmado em 2026-09-30 via `codex exec` com effort low e max
+(codex-cli 0.159.2; `gpt-6-sol` permanece como registro histórico e modelo de imagem).
 Opus 5.5 com effort high foi confirmado ao vivo em 2026-09-26 (`modelUsage` = `claude-opus-5-5`).
 O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`.
 **Custo:** os níveis 4 e 5 são caros — o 4 ficou 44% mais barato que antes, mas agora gasta a

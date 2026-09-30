@@ -681,13 +681,13 @@ describe("resolveTier", () => {
 
   it("mapeia cada nível para a engine+modelo preferido (escada de Pareto codex + claude)", () => {
     expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
-    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "high" });
-    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6-sol", effort: "max" });
+    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "medium" });
+    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "max" });
     expect(resolveTier(4, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
     expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "max" });
   });
 
-  // Sol (2/3) e Opus 5.5 (4/5) repetem modelo com esforços diferentes: a distinção é do par.
+  // GPT-6.1 Sol (2/3) e Opus 5.5 (4/5) repetem modelo com esforços diferentes: a distinção é do par.
   it("usa um par modelo+esforço DISTINTO em cada nível (sem repetição)", () => {
     const pairs = [1, 2, 3, 4, 5].map((l) => { const t = resolveTier(l, all); return `${t.model}:${t.effort}`; });
     expect(new Set(pairs).size).toBe(5);
