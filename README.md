@@ -119,7 +119,7 @@ have their own approval settings — consult the host.
 | `POLYAGENT_CLAUDE_MD` | _(on)_ | Set to `off`/`0`/`false`/`no` to stop the server from refreshing an installed `CLAUDE.md` block on start. |
 | `POLYAGENT_CLAUDE_MD_PATH` | `~/.claude/CLAUDE.md` | File that holds the managed block. |
 | `POLYAGENT_JEV_SHADOW` | _(off)_ | Set to `1`/`true`/`on` to ask Jev for a `delegate` level and a prompt-clarity check (target named, done defined, single task) in one parallel call with the worker. The suggestion never changes the requested level; a pending Jev call adds at most 5 seconds after the worker ends. Pay-per-token OpenRouter call. |
-| `POLYAGENT_HOOK_MODE` | `redirect` | Hook behavior: `off` (no-op), `nudge` (non-blocking `additionalContext` only), or `redirect` (deny once + name bridge tool for WebSearch/WebFetch and whole-file large Read; fail-open on retry). Grep/Glob/Bash/Edit/Write stay nudge-only. |
+| `POLYAGENT_HOOK_MODE` | `redirect` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task/Skill emitem apenas nudge. |
 | `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
 
 Both Jev flags are off by default and pass truncated worker output or task text through the credential scrubber before sending it to OpenRouter.
@@ -185,9 +185,9 @@ the bridge at the moment it reaches for a native tool — text in a config file 
 pressure, a call-time reminder does not. This repo ships one at
 [`hooks/prefer-polyagent.mjs`](hooks/prefer-polyagent.mjs): it runs on `node`
 (already required) and only fires where it pays. Default mode is **`redirect`**
-(`POLYAGENT_HOOK_MODE=redirect`): for the two safe-to-block cases it returns
-`permissionDecision: "deny"` once and names the bridge tool; other cases stay non-blocking
-nudges. Wire it into your host's settings (Claude Code `settings.json`):
+(`POLYAGENT_HOOK_MODE=redirect`): para WebSearch/WebFetch, Read grande e Bash de busca de código,
+retorna `permissionDecision: "deny"` uma vez e indica a ferramenta do bridge. Os demais casos
+emitem nudges sem bloqueio. Configure no `settings.json` do host Claude Code:
 
 > **Breaking change (US-007):** The hook file was renamed from
 > `hooks/prefer-cursor-bridge.mjs` to `hooks/prefer-polyagent.mjs`. Update any host
@@ -205,7 +205,7 @@ nudges. Wire it into your host's settings (Claude Code `settings.json`):
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit",
+        "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill",
         "hooks": [
           { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
         ]
@@ -230,10 +230,16 @@ redirect is one-shot and fail-open (a second identical call is allowed through).
 > - **`Grep`/`Glob`** → emits the one-time **preload** reminder to run the `ToolSearch` for any
 >   still-deferred bridge tools (nudge only — never redirected). The dedup collapses them to a
 >   single fire.
-> - **`Bash`** whose command writes an artifact (`git commit`/`push`, `git worktree add`,
->   `gh pr create`, `gh issue create`, `bkt pr create`) → suggests offloading that grunt-work to
->   `delegate` (once, nudge only). Read-only Bash (status/diff/log/checkout) is left alone — the
->   orchestrator needs that state, and a mechanical filter (e.g. rtk) already trims the noise.
+> - **`Bash`** com busca de código no primeiro segmento da pipeline (`grep`/`rg`/`egrep`/`fgrep`/
+>   `ag`/`ack`/`find` ou `git grep`, após `rtk` ou atribuições de ambiente) → redirect uma vez para
+>   `explore`/`read_slice`; em `nudge`, apenas `additionalContext`. Cada `&&` inicia nova pipeline.
+>   `npm test | grep FAIL` e `ps aux | grep x` não disparam. Comandos que também gravam artefatos
+>   não são redirecionados. O nudge existente de `git commit`/`push`, `git worktree add`,
+>   `gh pr create`, `gh issue create`, `bkt pr create` tem prioridade.
+> - **`Agent`/`Task` e `Skill`** → nudge uma vez por sessão para `delegate`/`fast_delegate` com
+>   `agent: "<subagent name>"` ou `agent: { prompt: "<SKILL.md body>" }`. A ferramenta nativa fica
+>   para etapas que exigem MCP servers ou browser. Helpers `claude-code-guide` e
+>   `statusline-setup` são isentos.
 > - **`Edit`/`Write`/`MultiEdit`** → once per session, reminds that a *self-contained* task
 >   (feature, bugfix, mechanical multi-file change, build fix) can go **whole** to `delegate(prompt, level)`
 >   — the selected worker edits with full access — instead of the orchestrator implementing
@@ -252,11 +258,8 @@ e.g. `/tmp` on Linux, not necessarily `$TMPDIR`).
 
 ### Preloading at session start (`SessionStart`)
 
-The PreToolUse preload above only fires when the agent uses the **`Grep`/`Read`** tool. But
-under pressure agents often reach for **`Bash grep`** instead, which matches no PreToolUse
-matcher — so the preload reminder never arrives. Wire the same hook for `SessionStart` to
-close that hole: the preload reminder then lands in context **before the first tool decision**,
-regardless of how the agent searches.
+O `PreToolUse` cobre buscas via `Bash`, mas o hook de `SessionStart` injeta o preload
+**antes da primeira decisão de ferramenta**, independentemente de como o agente busca.
 
 ```json
 {

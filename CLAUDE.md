@@ -477,35 +477,40 @@ points, all in `cli.ts`:
 
 ## The hook (`hooks/prefer-polyagent.mjs`)
 
-Ships separately from the server: a hook the host wires (in its `settings.json`) as a `PreToolUse`
-matcher for `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write` (main-loop nudges), plus
-`UserPromptSubmit`, `SessionStart`, and `SubagentStart` entries — each pointing at
-`hooks/prefer-polyagent.mjs`. It steers the agent toward the `polyagent` alias and no longer
-references the removed `plan`/`build` tools. Renaming from the old path is a breaking change for
-host `settings.json` entries that still point at it. Env
-`POLYAGENT_HOOK_MODE` = `off` | `nudge` | `redirect` (default **`redirect`**): `off` does
-nothing; `nudge` is the old non-blocking `additionalContext` behavior; `redirect` returns
-`permissionDecision: "deny"` (via `denyRedirect()`) for the two safe-to-block cases. On `Bash` it
-only fires for artifact-writing commands (`git commit`/`push`, `git worktree add`, `gh pr create`,
-`bkt pr create`) — nudging that grunt-work to `delegate`; read-only Bash is left alone (rtk already
-trims it). Design constraints, all tested in `test/hook.test.ts`:
+Distribuído separadamente do servidor: o host configura o hook no `settings.json` com matcher
+`PreToolUse` `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill`, além de
+entradas `UserPromptSubmit`, `SessionStart` e `SubagentStart`, todas apontando para
+`hooks/prefer-polyagent.mjs`. O hook orienta o agente para o alias `polyagent` e não menciona
+as tools removidas `plan`/`build`. A renomeação do arquivo exige atualizar caminhos antigos
+em `settings.json`. A variável
+`POLYAGENT_HOOK_MODE` = `off` | `nudge` | `redirect` (padrão **`redirect`**): `off` não emite nada;
+`nudge` usa `additionalContext` sem bloqueio; `redirect` retorna `permissionDecision: "deny"`
+via `denyRedirect()` para WebSearch/WebFetch, Read grande e Bash de busca de código. Em Bash,
+buscas read-only com `grep`/`rg`/`egrep`/`fgrep`/`ag`/`ack`/`find` ou `git grep` redirecionam
+uma vez para `explore` ou `read_slice`. A busca deve iniciar o **primeiro segmento da pipeline**;
+após `&&`, uma nova pipeline pode iniciar com busca. `npm test | grep FAIL` e `ps aux | grep x`
+são filtros de saída e não disparam. Comando que também grava artefatos não é redirecionado;
+o nudge existente para `git commit`/`push`, `git worktree add`, `gh pr create` e `bkt pr create`
+tem prioridade. `Agent`/`Task` e `Skill` recebem apenas nudge, uma vez por sessão, explicando
+`delegate`/`fast_delegate` com `agent` para transportar persona ou corpo de `SKILL.md`;
+os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restrições testadas em
+`test/hook.test.ts`:
 
 - Pure decision in `decide(input, deps)` with injectable fs — that's what the tests exercise.
   `decide()` returns `{ keys, text, redirect }`. The I/O wrapper (`main`) only runs when invoked as
   a script.
-- **Redirect mode (default):** for WebSearch/WebFetch → `web_lookup` and whole-file large Read
-  (no offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, the hook **denies** the native
-  call once and names the bridge tool in the reason. It is **one-shot + fail-open**: per-session
-  dedup keys are saved **before** emitting, so the second identical call is allowed through; the
-  deny reason (`FAILOPEN_SUFFIX`) explicitly tells the model it may retry — critical under headless
-  `-p` so it never hard-stalls. It **never** redirects Grep/Glob/Bash/Edit/Write (those stay
-  nudge-only; blocking edits or git would break the host).
+- **Modo redirect (padrão):** WebSearch/WebFetch → `web_lookup`, Read integral grande
+  (sem offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, e Bash de busca de código →
+  `explore`/`read_slice` recebem **deny** uma vez. As chaves de dedup da sessão são salvas
+  **antes** da emissão; a segunda chamada passa. O motivo termina em `FAILOPEN_SUFFIX` e informa
+  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit/Agent/Task/Skill nunca recebem
+  deny; Bash que grava artefatos mantém o nudge anterior.
 - **PreToolUse dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`):
   every PreToolUse nudge/redirect fires at most once. A repeated fire is worse than none. This is why
   `Grep`/`Glob` can sit in the matcher — they collapse to a single preload reminder.
 - The first qualifying nudge of a session also carries the one-time preload reminder.
-- **`SessionStart` closes the Bash-grep hole:** the PreToolUse preload only fires on the `Grep`/`Read`
-  tool, but agents often use `Bash grep` (matches no matcher), so the preload never arrived.
+- **`SessionStart` injeta o preload antes da primeira chamada:** o hook também cobre Bash de busca
+  via `PreToolUse`, mas o lembrete no início da sessão chega antes da escolha da ferramenta.
   `sessionStartContext()` injects it as `additionalContext` before the first tool decision and
   pre-marks `preload` in the dedup file so the PreToolUse piggyback never repeats it.
   `sessionStartContext()` and `AGENT_PREF_BODY` also name `fast_delegate`: prefer it over

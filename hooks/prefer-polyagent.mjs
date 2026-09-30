@@ -4,21 +4,24 @@
  * token-expensive native tools, at the moment of the call (text alone in
  * CLAUDE.md loses to structural friction; a call-time reminder wins).
  *
- * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write" no PreToolUse,
+ * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill" no PreToolUse,
  * UserPromptSubmit para dicas por intenção, e entradas SessionStart/SubagentStart.
  * Veja o README.
  *
  * Design constraints:
  *  - Cheap: only emits a nudge when it actually pays off (large whole-file
  *    Read, native web call, or the first exploration tool of a session).
- *    Never fires on small/surgical reads.
+ *    Never fires on small/surgical reads. Desde 2026-09-30 também: busca de
+ *    código via Bash (grep/rg/find no início da pipeline) e Agent/Task/Skill —
+ *    as duas fugas medidas no eval de adoção (research/2026-09-30-adoption-handoff.md).
  *  - Dedup por sessão cobre nudge/redirect de PreToolUse, usando session_id no tmp.
  *    UserPromptSubmit avalia cada prompt isoladamente e não usa dedup.
  *  - Preload once: the first qualifying nudge of a session also carries the
  *    one-time reminder to run ToolSearch, because these MCP tools are deferred
  *    and lose to the always-loaded native Read/Grep until their schemas load.
- *  - Fail-open: web e Read grande podem ser bloqueados só uma vez; os demais
- *    casos apenas injetam `additionalContext`.
+ *  - Fail-open: web, Read grande e Bash de busca podem ser bloqueados só uma vez; os demais
+ *    casos apenas injetam `additionalContext`. Agent/Task/Skill nunca são bloqueados:
+ *    o worker não tem MCP nem browser, então a tool nativa às vezes é a certa.
  *  - Never breaks the tool: any error → print nothing, exit 0.
  *
  * Env:
@@ -59,6 +62,86 @@ const BASH_MUTATE_TEXT =
   "polyagent available: writing commits/PRs/tickets/branches is cheap grunt-work — hand it to " +
   "delegate(prompt) (the Cursor worker runs git/gh/bkt with full tool access) instead of spending " +
   "expensive orchestrator tokens. You stay the orchestrator; Cursor does the mechanical work.";
+
+const BASH_SEARCH_TEXT =
+  "polyagent available: for read-only code search, use explore(question) to map or locate code, " +
+  "or read_slice(files, want) when you know the file and need a specific section.";
+
+/**
+ * Separa operadores de shell fora de aspas para distinguir busca de filtro de saída.
+ * Cada entrada é o primeiro segmento de uma pipeline; `&&` inicia outra pipeline.
+ */
+function firstPipelineSegments(command) {
+  const first = [];
+  let segment = "";
+  let quote = null;
+  let escaped = false;
+  let firstInPipeline = true;
+  let writes = false;
+  const flush = () => {
+    if (firstInPipeline) first.push(segment.trim());
+    segment = "";
+  };
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (escaped) { segment += ch; escaped = false; continue; }
+    if (ch === "\\" && quote !== "'") { segment += ch; escaped = true; continue; }
+    if (quote) {
+      segment += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") { quote = ch; segment += ch; continue; }
+    if (ch === ">") writes = true;
+    if (ch === "|" || ch === ";" || ch === "\n" || (ch === "&" && command[i + 1] === "&")) {
+      flush();
+      if (ch === "|" && command[i + 1] !== "|") {
+        firstInPipeline = false;
+      } else {
+        firstInPipeline = true;
+      }
+      if (command[i + 1] === ch && (ch === "&" || ch === "|")) i++;
+      continue;
+    }
+    segment += ch;
+  }
+  flush();
+  return { first, writes };
+}
+
+/** Detecta busca de código no início de alguma pipeline de uma cadeia read-only. */
+export function isBashCodeSearch(command) {
+  if (typeof command !== "string" || !command.trim()) return false;
+  // `2>/dev/null` e `2>&1` são o jeito comum de calar o grep; não gravam arquivo.
+  command = command.replace(/\d*>>?\s*(?:\/dev\/null|&\d)/g, "");
+  const { first, writes } = firstPipelineSegments(command);
+  // Redirecionamento de saída, tee e comandos que gravam arquivos deixam o Bash seguir.
+  if (writes || /(?:^|[|;&\n])\s*tee(?:\s|$)/.test(command) ||
+      /(?:^|[|;&\n])\s*(?:rm|mv|cp|touch|mkdir|rmdir|install|npm\s+(?:run\s+)?build)(?:\s|$)/.test(command)) return false;
+  const prefix = /^(?:(?:rtk|[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|[^\s]+))\s+)*/;
+  return first.some((part) => {
+    const word = part.replace(prefix, "");
+    return /^(?:(?:grep|rg|egrep|fgrep|ag|ack|find)(?:\s|$)|git\s+grep(?:\s|$))/.test(word);
+  });
+}
+
+/** Monta o handoff de Agent/Task/Skill sem I/O. */
+export function agentSkillNudge(tool, toolInput) {
+  const ti = toolInput ?? {};
+  const boundary = "Keep the native tool only when this step needs MCP servers or a browser; workers have neither.";
+  if (tool === "Agent" || tool === "Task") {
+    const name = typeof ti.subagent_type === "string" ? ti.subagent_type.slice(0, 120) : "";
+    if (/claude-code-guide|statusline-setup/i.test(name)) return null;
+    return "polyagent workers can take this subagent" + (name ? ` (${name})` : "") +
+      ": delegate or fast_delegate accepts agent: \"<subagent name>\" to carry its persona. " + boundary;
+  }
+  if (tool === "Skill") {
+    const skill = typeof ti.skill === "string" ? ti.skill.slice(0, 120) : "";
+    return "polyagent workers can take this skill" + (skill ? ` (${skill})` : "") +
+      ": delegate or fast_delegate accepts agent: { prompt: \"<SKILL.md body>\" } to carry its instructions. " + boundary;
+  }
+  return null;
+}
 
 // Edit/Write → o agente está prestes a IMPLEMENTAR ele mesmo. 1×/sessão, lembra que uma
 // tarefa self-contained pode ir INTEIRA pro delegate(prompt, level) em vez de gastar tokens
@@ -219,11 +302,22 @@ function baseDecision(input, { stat, read, minLines }, seen) {
     return seen.has("web") ? null : { key: "web", text: WEB_TEXT, redirect: true };
   }
 
-  // Bash de MUTAÇÃO (commit/PR/ticket/branch) → offload pro delegate, 1× por sessão.
+  // Bash de MUTAÇÃO tem prioridade sobre busca: nunca bloqueia escrita de artefatos.
   if (tool === "Bash") {
     const cmd = typeof ti.command === "string" ? ti.command : "";
-    if (!BASH_MUTATE_RE.test(cmd)) return null;
-    return seen.has("bash-mutate") ? null : { key: "bash-mutate", text: BASH_MUTATE_TEXT };
+    if (BASH_MUTATE_RE.test(cmd)) {
+      return seen.has("bash-mutate") ? null : { key: "bash-mutate", text: BASH_MUTATE_TEXT };
+    }
+    if (!isBashCodeSearch(cmd)) return null;
+    return seen.has("bash-search") ? null : { key: "bash-search", text: BASH_SEARCH_TEXT, redirect: true };
+  }
+
+  // Handoff de persona/skill: só nudge, nunca bloqueia a ferramenta nativa.
+  if (tool === "Agent" || tool === "Task" || tool === "Skill") {
+    const key = tool === "Skill" ? "skill-handoff" : "agent-handoff";
+    if (seen.has(key)) return null;
+    const text = agentSkillNudge(tool, ti);
+    return text ? { key, text } : null;
   }
 
   // Edit/Write/MultiEdit → o agente vai implementar ele mesmo. 1×/sessão: reposiciona
