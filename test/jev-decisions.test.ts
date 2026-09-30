@@ -188,6 +188,8 @@ describe("delegate Jev shadow", () => {
     const request = delegateShadowRequest("x".repeat(20_000));
     expect(request.questions.level).toMatchObject({ type: "choice" });
     expect(Object.keys(request.questions.level.criteria ?? {})).toEqual(["1", "2", "3", "4", "5"]);
+    expect(request.questions.level.criteria?.["2"]).toContain("GPT-6.1 Sol medium");
+    expect(request.questions.level.criteria?.["3"]).toContain("GPT-6.1 Sol max");
     expect((request.state as string).length).toBeLessThanOrEqual(12_000);
   });
 

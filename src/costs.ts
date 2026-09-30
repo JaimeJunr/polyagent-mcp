@@ -1,6 +1,7 @@
 /**
  * Custos por tarefa do índice geral da AA; fonte: research/2026-09-24-custo-por-tarefa.md
- * (Sonnet 5.5: research/2026-09-28-sonnet-5-5.md).
+ * (Sonnet 5.5: research/2026-09-28-sonnet-5-5.md;
+ * GPT-6.1 Sol: research/2026-09-30-gpt-6-1-sol.md).
  */
 export const AA_COST_PER_TASK: Record<string, number> = {
   "codex|gpt-6-luna|low": 0.0045,
@@ -13,6 +14,11 @@ export const AA_COST_PER_TASK: Record<string, number> = {
   "codex|gpt-6-sol|high": 0.37,
   "codex|gpt-6-sol|xhigh": 0.53,
   "codex|gpt-6-sol|max": 1.06,
+  "codex|gpt-6.1-sol|low": 0.13,
+  "codex|gpt-6.1-sol|medium": 0.21,
+  "codex|gpt-6.1-sol|high": 0.32,
+  "codex|gpt-6.1-sol|xhigh": 0.39,
+  "codex|gpt-6.1-sol|max": 0.72,
   "codex|gpt-6-astra|low": 0.82,
   "codex|gpt-6-astra|medium": 1.54,
   "codex|gpt-6-astra|high": 1.73,

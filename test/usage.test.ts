@@ -24,6 +24,10 @@ describe("estimateCostPerTask", () => {
     expect(estimateCostPerTask("claude", "claude-sonnet-5-5", "max")).toBe(7.60);
   });
 
+  it("uses the published GPT-6.1 Sol medium cost for level 2", () => {
+    expect(estimateCostPerTask("codex", "gpt-6.1-sol", "medium")).toBe(0.21);
+  });
+
   it("uses the published extended-thinking cost for Haiku at any effort", () => {
     expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "low")).toBe(0.21);
     expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "high")).toBe(0.21);
