@@ -34,6 +34,13 @@ const PROMPTS = [
   { id: "h-design-choice", category: "fan-out", heldout: true, prompt: "Estou em dúvida entre guardar as notas do rate em SQLite ou continuar no JSONL. Me ajuda a decidir olhando por vários ângulos.", expect: ["fan_out", "delegate"] },
   { id: "h-docs", category: "web", heldout: true, prompt: "O SDK de MCP para TypeScript mudou alguma coisa na forma de registrar tools nas últimas versões?", expect: ["web_lookup"] },
   { id: "h-find", category: "code-reading", heldout: true, prompt: "Qual parte do código monta os argumentos do bwrap?", expect: ["explore", "read_slice"] },
+  // Implementação (2026-09-30): o dono viu o host delegar pouco, e o eval não tinha nenhum prompt
+  // de "faça a mudança" — só leitura, web, fan-out e handoff. Estes editam arquivos de verdade:
+  // rode sempre numa worktree limpa (ADOPTION_REPO + ADOPTION_OUT).
+  { id: "impl-test", category: "implementation", prompt: "Adicione um teste em test/usage.test.ts cobrindo estimateCostPerTask quando o engine vem vazio. Rode os testes no final.", expect: ["delegate", "fast_delegate"] },
+  { id: "impl-feature", category: "implementation", prompt: "Faça a tabela de notas do bridge_stats ficar ordenada pela nota média, da maior para a menor, com teste cobrindo a ordem.", expect: ["delegate", "fast_delegate"] },
+  { id: "impl-rename", category: "implementation", prompt: "Renomeie a constante DEFAULT_TIMEOUT_MS para WORKER_TIMEOUT_MS no projeto todo e garanta que build e testes continuam passando.", expect: ["delegate", "fast_delegate"] },
+  { id: "h-impl-flag", category: "implementation", heldout: true, prompt: "Coloca uma opção --json no bench/aux-bench.mjs que imprime o resumo final em JSON em vez de texto.", expect: ["delegate", "fast_delegate"] },
   // Handoff (2026-09-27): o host deve passar subagent/skill ao worker via `agent` em vez de largar a
   // delegação. expectAgent exige o formato: "name" (subagent pelo nome) ou "inline" (SKILL.md colado).
   { id: "handoff-agent", category: "handoff", prompt: "Use o agent ivt-core:code-reviewer para revisar o último commit deste repo (HEAD~1..HEAD). Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: "name" },

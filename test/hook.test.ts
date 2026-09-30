@@ -189,6 +189,105 @@ describe("decide — Bash de mutação (grunt-work → delegate)", () => {
   });
 });
 
+describe("decide — Bash code search", () => {
+  it.each(["grep needle src", "rg needle src", "egrep needle src", "fgrep needle src", "ag needle src", "ack needle src", "find src -name '*.ts'", "git grep needle", "rtk rg needle src", "FOO=bar rg needle src", "rtk FOO=bar rg needle src", "rg needle src | head -20", "git status && rg needle src", "grep -rn needle src 2>/dev/null", "find . -name '*.ts' 2>/dev/null | head", "rg needle src >/dev/null"])(
+    "redirects read-only search: %s", (command) => {
+      const res = decide({ tool_name: "Bash", tool_input: { command }, seen: new Set(["preload"]) });
+      expect(res?.keys).toEqual(["bash-search"]);
+      expect(res?.redirect).toBe(true);
+      expect(res?.text).toMatch(/explore/);
+      expect(res?.text).toMatch(/read_slice/);
+    },
+  );
+
+  it.each(["npm test | grep FAIL", "ps aux | grep x", "git status --short", "echo 'rg needle'", "rg needle src > result.txt", "rg needle src | tee result.txt"])(
+    "leaves filtering, non-search, or artifact-writing command alone: %s", (command) => {
+      expect(decide({ tool_name: "Bash", tool_input: { command }, seen: new Set(["preload"]) })).toBeNull();
+    },
+  );
+
+  it("artifact nudge wins over a search in the same command", () => {
+    const res = decide({ tool_name: "Bash", tool_input: { command: "rg needle src && git commit -m x" }, seen: new Set(["preload"]) });
+    expect(res?.keys).toEqual(["bash-mutate"]);
+    expect(res?.redirect).toBe(false);
+  });
+
+  it("redirects once per session, then allows another search", () => {
+    const seen = new Set<string>();
+    const first = decide({ tool_name: "Bash", tool_input: { command: "rg needle src" }, seen });
+    expect(first?.keys).toEqual(["bash-search", "preload"]);
+    for (const key of first!.keys) seen.add(key);
+    expect(decide({ tool_name: "Bash", tool_input: { command: "find src -name '*.ts'" }, seen })).toBeNull();
+  });
+});
+
+describe("decide — Agent/Task/Skill handoff", () => {
+  it.each(["Agent", "Task"])("nudges %s with subagent_type and named persona", (tool_name) => {
+    const res = decide({ tool_name, tool_input: { subagent_type: "pit:issue-investigator" }, seen: new Set(["preload"]) });
+    expect(res?.keys).toEqual(["agent-handoff"]);
+    expect(res?.redirect).toBe(false);
+    expect(res?.text).toContain("pit:issue-investigator");
+    expect(res?.text).toMatch(/delegate|fast_delegate/);
+    expect(res?.text).toMatch(/agent: "<subagent name>"/);
+    expect(res?.text).toMatch(/MCP servers or a browser/);
+  });
+
+  it("nudges Skill with skill name and inline SKILL.md body", () => {
+    const res = decide({ tool_name: "Skill", tool_input: { skill: "ivt-core:api-design" }, seen: new Set(["preload"]) });
+    expect(res?.keys).toEqual(["skill-handoff"]);
+    expect(res?.redirect).toBe(false);
+    expect(res?.text).toContain("ivt-core:api-design");
+    expect(res?.text).toMatch(/agent: \{ prompt: "<SKILL\.md body>" \}/);
+    expect(res?.text).toMatch(/MCP servers or a browser/);
+  });
+
+  it.each(["claude-code-guide", "my-claude-code-guide-helper", "statusline-setup"])(
+    "exempts harness helper %s", (subagent_type) => {
+      expect(decide({ tool_name: "Agent", tool_input: { subagent_type }, seen: new Set(["preload"]) })).toBeNull();
+    },
+  );
+
+  it("dedups Agent and Skill independently across a session", () => {
+    const seen = new Set(["agent-handoff", "preload"]);
+    expect(decide({ tool_name: "Task", tool_input: {}, seen })).toBeNull();
+    expect(decide({ tool_name: "Skill", tool_input: { skill: "test" }, seen })?.keys).toEqual(["skill-handoff"]);
+    seen.add("skill-handoff");
+    expect(decide({ tool_name: "Skill", tool_input: { skill: "other" }, seen })).toBeNull();
+  });
+});
+
+describe("PreToolUse hook modes — Bash search and Agent/Skill", () => {
+  it("redirect mode denies first Bash search with fail-open reason, then passes", () => {
+    const session_id = `test-bash-redirect-${process.pid}-${Date.now()}`;
+    const evt = { hook_event_name: "PreToolUse", session_id, tool_name: "Bash", tool_input: { command: "rg needle src" } };
+    const env = { ...process.env, POLYAGENT_HOOK_MODE: "redirect" };
+    const first = JSON.parse(runHook(evt, env)).hookSpecificOutput;
+    expect(first.permissionDecision).toBe("deny");
+    expect(first.permissionDecisionReason).toMatch(/explore.*read_slice/s);
+    expect(first.permissionDecisionReason).toMatch(/call it again and it will be allowed.*once\)\.$/);
+    expect(runHook(evt, env)).toBe("");
+  });
+
+  it("nudge mode emits additionalContext for Bash search without denying", () => {
+    const evt = { hook_event_name: "PreToolUse", session_id: `test-bash-nudge-${process.pid}-${Date.now()}`, tool_name: "Bash", tool_input: { command: "rg needle src" } };
+    const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "nudge" })).hookSpecificOutput;
+    expect(out.additionalContext).toMatch(/explore.*read_slice/s);
+    expect(out.permissionDecision).toBeUndefined();
+  });
+
+  it.each(["Agent", "Skill"])("redirect mode only nudges %s", (tool_name) => {
+    const evt = { hook_event_name: "PreToolUse", session_id: `test-${tool_name}-${process.pid}-${Date.now()}`, tool_name, tool_input: { subagent_type: "Explore", skill: "api-design" } };
+    const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "redirect" })).hookSpecificOutput;
+    expect(out.additionalContext).toMatch(/agent:/);
+    expect(out.permissionDecision).toBeUndefined();
+  });
+
+  it.each(["Bash", "Agent", "Skill"])("off mode emits nothing for %s", (tool_name) => {
+    const evt = { hook_event_name: "PreToolUse", session_id: `test-off-${tool_name}-${process.pid}-${Date.now()}`, tool_name, tool_input: { command: "rg needle src", subagent_type: "Explore", skill: "api-design" } };
+    expect(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "off" })).toBe("");
+  });
+});
+
 describe("decide — Edit/Write (execução self-contained → delegate)", () => {
   it("primeira Edit → nudge delegate(level) (com preload de carona)", () => {
     const res = decide({ tool_name: "Edit", tool_input: { file_path: "/x/a.ts" }, seen: new Set() });
