@@ -28,10 +28,21 @@ describe("estimateCostPerTask", () => {
     expect(estimateCostPerTask("codex", "gpt-6.1-sol", "medium")).toBe(0.21);
   });
 
-  it("uses the published extended-thinking cost for Haiku at any effort", () => {
+  it("uses the published GPT-6.1 Sol xhigh cost for level 3", () => {
+    expect(estimateCostPerTask("codex", "gpt-6.1-sol", "xhigh")).toBe(0.39);
+  });
+
+  it("uses the published extended-thinking cost for Haiku 4.5 at any effort", () => {
     expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "low")).toBe(0.21);
     expect(estimateCostPerTask("claude", "claude-haiku-4-5-20251001", "high")).toBe(0.21);
-    expect(estimateCostPerTask("claude", "haiku", "low")).toBe(0.21);
+  });
+
+  it("uses the per-effort Haiku 5.5 cost, also for the `haiku` alias", () => {
+    expect(estimateCostPerTask("claude", "claude-haiku-5-5", "low")).toBe(0.02);
+    expect(estimateCostPerTask("claude", "claude-haiku-5-5", "medium")).toBe(0.05);
+    expect(estimateCostPerTask("claude", "claude-haiku-5-5", "max")).toBe(0.21);
+    expect(estimateCostPerTask("claude", "haiku", "low")).toBe(0.02);
+    expect(estimateCostPerTask("claude", "haiku", "high")).toBe(0.08);
   });
 
   it("does not guess unknown models or missing efforts", () => {
@@ -386,8 +397,8 @@ describe("computeEngineHealth", () => {
     // Regra atual: Claude é a segunda assinatura; OpenRouter só entra depois de Codex e Claude.
     expect(resolveFastTier(all, false, health)).toEqual({
       engine: "claude",
-      model: "haiku",
-      effort: "low",
+      model: "claude-haiku-5-5",
+      effort: "medium",
     });
   });
 
@@ -430,8 +441,8 @@ describe("computeEngineHealth", () => {
     const all: (e: Engine) => boolean = () => true;
     expect(resolveFastTier(all, false, health)).toEqual({
       engine: "claude",
-      model: "haiku",
-      effort: "low",
+      model: "claude-haiku-5-5",
+      effort: "medium",
     });
   });
 });

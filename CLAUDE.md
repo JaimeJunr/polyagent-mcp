@@ -117,7 +117,7 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
   It is the third `FAST_CANDIDATES` entry (`openrouter/inception/mercury-2`) — pay-per-token
   fallback after the first two subscription candidates (codex GPT-6 Luna medium, then Claude Haiku
-  low) are missing, quota-exhausted or unhealthy. The common `fast_delegate` path is subscription;
+  5.5 medium) are missing, quota-exhausted or unhealthy. The common `fast_delegate` path is subscription;
   OpenRouter spend only happens after both codex and claude fail. It has no engine-level read-only
   mode; bwrap supplies that guard.
 - **kimi** (`kimi -p`) — headless prompt via `-p`, `--output-format stream-json`, model via `-m`,
@@ -142,9 +142,9 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 
 `delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
 using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
-cost-benefit ladder: $0.07 → $0.21 (~3×) → $0.72 (~3.4×) → $1.82 (~2.5×) → $5.98 (~3.3×)
-(AA quota proxies; see `research/2026-09-30-gpt-6-1-sol.md`): 1=GPT-6 Luna max
-(codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol max (codex), 4=Claude Opus 5.5 high (claude),
+cost-benefit ladder: $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)
+(AA quota proxies; see `research/2026-10-07-haiku-5-5.md`): 1=GPT-6 Luna max
+(codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude),
 5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
 2026-09-14 (histórico); `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23 (Opus com max).
 `gpt-6.1-sol` foi confirmado em 2026-09-30 via `codex exec` com effort low e max
@@ -163,7 +163,7 @@ is missing, it falls back to the equivalent Cursor model only when `cursorEnable
 otherwise it throws a clear error naming the missing CLI.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
-healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna medium → Claude Haiku low → OpenCode
+healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna medium → Claude Haiku 5.5 medium → OpenCode
 mercury-2 → Grok 4.5 low), then the opt-in Cursor `DEFAULT_MODEL` as the final fallback. The first
 two candidates are **subscriptions** (codex and claude); the third is **pay-per-token** (OpenRouter
 API key / mercury-2). The Claude subscription candidate deliberately uses the same subscription as a
@@ -361,7 +361,7 @@ points, all in `cli.ts`:
   ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
   timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
 - **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna medium
-  → Claude Haiku low → OpenCode `openrouter/inception/mercury-2` → Grok 4.5 low. `resolveFastTier`
+  → Claude Haiku 5.5 medium → OpenCode `openrouter/inception/mercury-2` → Grok 4.5 low. `resolveFastTier`
   skips missing or unhealthy native engines before the opt-in Cursor fallback. Keep it level-free,
   with the neutral usage receipt `{ requestedLevel: 0, matchedRequest: true }`. It IS marked
   `alwaysLoad`: while deferred it was never called, the same adoption bug that motivated alwaysLoad
@@ -370,6 +370,8 @@ points, all in `cli.ts`:
   Claude Code e é um custo aceito. O pago (opencode) só entra quando codex e claude estão ausentes,
   sem cota ou unhealthy. A ordem e os números do bench de 2026-09-23 estão em
   `research/2026-09-23-aux-tools-bench.md`; medium manteve a velocidade do low e teve nota maior.
+  Haiku 5.5 mediu mediana de 5,7 s contra 8,6 s do Luna medium no bench de 2026-10-07; ver
+  `research/2026-10-07-haiku-5-5.md`.
 - **As quatro auxiliares seguem o mesmo caminho: a cascata `FAST_CANDIDATES`, pulando engine
   ausente ou unhealthy.** `explore`/`read_slice`/`web_lookup` resolvem por `resolveReadTool`
   (2026-09-25: antes ficavam presas no codex e, com a cota dele esgotada, só falhavam); o
@@ -419,7 +421,7 @@ points, all in `cli.ts`:
   primary engine, tier `model`/`effort` are dropped so the selected CLI uses its own defaults (or explicit
   caller values). `opencode` and `muse` (pay-per-token) stay outside `TIERS`. `muse` also stays
   outside `FAST_CANDIDATES`; `opencode` is the third `FAST_CANDIDATES` entry (pay-per-token
-  fallback after subscription GPT-6 Luna medium and Claude Haiku — see the `fast_delegate` invariant).
+  fallback after subscription GPT-6 Luna medium and Claude Haiku 5.5 medium — see the `fast_delegate` invariant).
 - **`read_slice` must return source lines, not just `file:line` prefixes** — this is an explicit
   instruction in `readSlicePrompt` and was a real regression (commit c41c2af). Preserve it.
 - **`read_slice` blocks full-file/verbatim dumps before spawning a worker.** `isFullFileRequest` in

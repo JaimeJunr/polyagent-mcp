@@ -137,6 +137,7 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/judgment/i);
     expect(text).toMatch(/levels 4 and 5/i);
     expect(text).toMatch(/Opus 5\.5 high.*Opus 5\.5 max/i);
+    expect(text).toContain("Levels 2 and 3 (GPT-6.1 Sol medium/xhigh on codex)");
     // Task fica só pra subagent com toolset próprio, não pra julgamento genérico
     expect(text).toMatch(/specialized|toolset/i);
   });

@@ -190,8 +190,8 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
   it("pula o primeiro da cascata quando está ausente ou unhealthy", () => {
     expect(resolveRunFiltered({}, {}, (e) => e !== "codex", false)).toEqual({
       engine: "claude",
-      model: "haiku",
-      effort: "low",
+      model: "claude-haiku-5-5",
+      effort: "medium",
     });
     expect(resolveRunFiltered({}, {}, (e) => e !== "codex" && e !== "claude", false)).toEqual({
       engine: "opencode",
@@ -200,8 +200,8 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
     });
     expect(resolveRunFiltered({}, {}, all, false, { codex: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
-      model: "haiku",
-      effort: "low",
+      model: "claude-haiku-5-5",
+      effort: "medium",
     });
   });
 

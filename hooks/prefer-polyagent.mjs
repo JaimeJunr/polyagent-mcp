@@ -150,7 +150,7 @@ const EDIT_DELEGATE_TEXT =
   "polyagent available: if this edit is part of a self-contained task (a feature, a bugfix, a " +
   "mechanical change across files, or running/fixing a build), hand the WHOLE task to " +
   "delegate(prompt, level) — the Cursor worker has full read/edit/shell access in cwd and runs cheap " +
-  "(level 1 = GPT-6 Luna max on codex; levels 2-5 escalate across codex/claude) — instead of implementing " +
+  "(level 1 = GPT-6 Luna max on codex; levels 2-3 = GPT-6.1 Sol medium/xhigh on codex; levels 4-5 = Claude Opus on claude) — instead of implementing " +
   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
   "Keep editing inline only for a quick one-off you're already positioned for.";
 
@@ -211,8 +211,8 @@ export function sessionStartContext() {
     'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. For PURE reading/locating/web with no edit ahead, ' +
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
-    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Level 1 (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
-    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 4 and 5 (Claude Opus 5.5 high, " +
+    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Its healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. Level 1 (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
+    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. Levels 2 and 3 (GPT-6.1 Sol medium/xhigh on codex) handle routine/complex work. Levels 4 and 5 (Claude Opus 5.5 high, " +
     "Claude Opus 5.5 max) are EXPENSIVE — 5 costs ~3.3x level 4. Both spend the Claude Code host subscription; level 4 is 44% cheaper than before but now shares host quota. Both are a last resort for real " +
     "reasoning — code review with a verdict, cross-file impact analysis, hard debugging. The Cursor worker " +
     "runs with full read/edit/shell access in cwd. The win of delegating execution AND judgment is context " +
@@ -250,7 +250,7 @@ const AGENT_PREF_BODY =
   'deferred; load one with ToolSearch("select:mcp__polyagent__generate_image,mcp__polyagent__follow_up,' +
   'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. If you WILL edit a file, native Read is correct. This complements the context-mode ' +
   "routing above — both keep raw output out of your context; when both fit, either is fine. " +
-  "Prefer fast_delegate to delegate for simple/urgent work where speed matters more than picking a level.";
+  "Prefer fast_delegate to delegate for simple/urgent work where speed matters more than picking a level. Its healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low.";
 
 // Reforço só para o subagente Explore: ele foi spawnado no modelo caro do orquestrador
 // (o Explore herda o modelo da sessão, capado em Opus), então empurra TODO o trabalho de

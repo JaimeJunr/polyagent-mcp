@@ -44,6 +44,12 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).toMatch(/agent:.{0,3}<name>/);
   });
 
+  it("instructions anunciam a escada AA atual antes dos schemas deferred", () => {
+    expect(indexSrc).toContain(
+      "levels: 1=GPT-6 Luna max, 2=GPT-6.1 Sol medium, 3=GPT-6.1 Sol xhigh, 4=Claude Opus 5.5 high, 5=Claude Opus 5.5 max; AA quota proxies $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)",
+    );
+  });
+
   it("a descrição do param agent ensina a passar uma skill colando o SKILL.md", () => {
     const desc = indexSrc.match(/const agentDescription =\s*"([^"]*)"/)?.[1] ?? "";
     expect(desc).toMatch(/skill/i);
@@ -126,6 +132,15 @@ describe("tool surface (US-003)", () => {
     expect(readme).not.toMatch(/^\| `plan` \|/m);
     expect(readme).not.toMatch(/^\| `build` \|/m);
     expect(readme).not.toMatch(/plan\(task\) then build\(plan\)/);
+  });
+
+  it("delegate e README descrevem a escada AA atual", () => {
+    const ladder = "$0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)";
+    const delegate = registeredToolBlock("delegate");
+    expect(delegate).toContain(ladder);
+    expect(delegate).toContain("3=GPT-6.1 Sol xhigh (codex)");
+    expect(readme.replace(/\s+/g, " ")).toContain(ladder);
+    expect(readme).toContain("3=GPT-6.1 Sol xhigh (codex)");
   });
 
   it("footer orienta a continuar e avaliar a sessão", () => {

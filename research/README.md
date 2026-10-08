@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-10-07 | [Claude Haiku 5.5 contra GPT-6 Luna](2026-10-07-haiku-5-5.md) | Id `claude-haiku-5-5`; alias `haiku` já resolve para ele; custo AA por effort em `src/costs.ts`; bench real 9/9, mediana 5,6 s contra 8,6 s do Luna medium; Haiku 5.5 medium vira 2º do `FAST_CANDIDATES`; Pareto do `delegate` revista e nível 3 passa a Sol 6.1 xhigh (max: 12/19 sucessos, p50 26,6 min) |
 | 2026-09-30 | [Eval de adoção depois dos PRs #37/#38](2026-09-30-adoption-handoff.md) | **Aplicada e medida:** r2 10/18 → hook novo 14/18. Bloquear `grep` no Bash uma vez levou localizar código de 0/3 a 3/3; implementação 2/4 → 3/4; aviso em `Agent`/`Skill` não mudou o handoff (0/2) |
 | 2026-09-30 | [GPT-6.1 Sol nos níveis 2 e 3](2026-09-30-gpt-6-1-sol.md) | Índice e custo AA por esforço; níveis 2/3 passam a medium/max; escada $0,07 → $0,21 → $0,72 → $1,82 → $5,98; id confirmado via codex-cli 0.159.2 |
 | 2026-09-28 | [Laya local (Unsloth Studio) no lugar do Jev](2026-09-28-laya-local.md) | Mesmo bench do Jev contra `laya-multilingual` e `laya-typed-decisions` via `POLYAGENT_JEV_URL`; seguro no gate a 0,85 mas quase não pula, `fan_out` longo estoura a janela, shadow ruim; Jev continua |

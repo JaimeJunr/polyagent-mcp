@@ -21,12 +21,12 @@ describe("resolveReadTool — cascata das três tools de leitura", () => {
     }
   });
 
-  it("codex sem cota (health 0) cai no claude haiku low", () => {
+  it("codex sem cota (health 0) cai no Claude Haiku 5.5 medium", () => {
     for (const tool of READ_TOOLS) {
       expect(resolveReadTool(tool, {}, {}, all, false, { codex: 0 }, true)).toEqual({
         engine: "claude",
-        model: "haiku",
-        effort: "low",
+        model: "claude-haiku-5-5",
+        effort: "medium",
       });
     }
   });

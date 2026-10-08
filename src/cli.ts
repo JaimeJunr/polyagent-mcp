@@ -487,7 +487,7 @@ export function resolveAuxTool(
  * antiga falhava; a cascata cai no próximo engine saudável.
  *
  * CUSTO: os dois primeiros candidatos são assinaturas (codex GPT-6 Luna medium e Claude Haiku
- * low), então o caminho comum é custo marginal zero. O 3º é pay-per-token (opencode/mercury-2),
+ * 5.5 medium), então o caminho comum é custo marginal zero. O 3º é pay-per-token (opencode/mercury-2),
  * usado só quando codex e claude estão ausentes, sem cota ou unhealthy. `run_filtered` passa a
  * poder gastar dinheiro apenas depois dessas duas assinaturas falharem.
  * Engine/modelo explícitos ainda vencem e não disparam a cascata.
@@ -1494,10 +1494,11 @@ interface TierEntry {
 }
 
 /**
- * Matriz do `delegate`: decisão do dono com dados Artificial Analysis de 2026-09-30 — ver
- * research/2026-09-30-gpt-6-1-sol.md (níveis 2/3) e
- * research/2026-09-24-custo-por-tarefa.md (nível 4).
- * Escada $0,07 → $0,21 (~3×) → $0,72 (~3,4×) → $1,82 (~2,5×) → $5,98 (~3,3×),
+ * Matriz do `delegate`: decisão do dono com dados Artificial Analysis. Base de 2026-09-30
+ * para os níveis 2/3: research/2026-09-30-gpt-6-1-sol.md; nível 4:
+ * research/2026-09-24-custo-por-tarefa.md. Nível 3 revisto em 2026-10-07:
+ * research/2026-10-07-haiku-5-5.md.
+ * Escada $0,07 → $0,21 (~3×) → $0,39 (~1,9×) → $1,82 (~4,7×) → $5,98 (~3,3×),
  * como proxy de cota. Tudo por assinatura (codex/claude): pay-per-token fica fora de propósito.
  * Em 2026-09-24, Opus 5.5 high substitui Astra max: índice geral 54 vs. 53, custo 44% menor.
  * O motivo de 2026-09-23 para manter Astra (topo medido em código) caducou: Opus 5.5 max
@@ -1511,7 +1512,10 @@ interface TierEntry {
 export const TIERS: Record<number, TierEntry> = {
   1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
   2: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  3: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "max" }, cursorModel: "grok-4.6-high-fast" },
+  // O max dá só +1 no índice AA sobre o xhigh (52 vs. 51) por +85% de custo ($0,72 vs. $0,39).
+  // No log até 2026-10-07, max teve 12/19 sucessos (2 timeouts, 4 cotas, 1 falha), p50 26,6 min
+  // e p90 48 min; medium teve 22/22 e p50 5,6 min. Ver research/2026-10-07-haiku-5-5.md.
+  3: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "xhigh" }, cursorModel: "grok-4.6-high-fast" },
   // gpt-6.1-sol confirmado via codex exec em 2026-09-30 (low e max, codex-cli 0.159.2);
   // decisão e custos: research/2026-09-30-gpt-6-1-sol.md. gpt-6-luna, gpt-6-sol e
   // claude-opus-5-5 confirmados em 2026-09-23 (Sol histórico, Opus com max);
@@ -1574,9 +1578,11 @@ export const HEALTH_THRESHOLD = 0.3;
  */
 export const FAST_CANDIDATES: Tier[] = [
   { engine: "codex", model: "gpt-6-luna", effort: "medium" },
-  // effort low no haiku é consistência com os vizinhos, não ganho: medido em 10100ms sem
-  // effort contra 10125ms com low (2 runs cada) — diferença dentro do ruído.
-  { engine: "claude", model: "haiku", effort: "low" },
+  // Haiku 5.5 id completo (o alias `haiku` também resolve para o 5.5 desde 2026-10-07,
+  // mas o id fixa o modelo); effort medium porque no bench de 2026-10-07 (bwrap, 9/9 acertos)
+  // medium levou mediana 5,7 s contra 5,6 s do low e tem índice AA 34 contra 29;
+  // fonte research/2026-10-07-haiku-5-5.md.
+  { engine: "claude", model: "claude-haiku-5-5", effort: "medium" },
   { engine: "opencode", model: "openrouter/inception/mercury-2" },
   { engine: "grok", model: "grok-4.5", effort: "low" },
 ];

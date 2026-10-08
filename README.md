@@ -14,12 +14,12 @@ The server exposes twelve tools:
 
 | Tool | Purpose |
 |------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). **Levels 4 and 5 are expensive — 5 costs ~3.3× level 4; last resort only. Both share the Claude Code host subscription.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
-| `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. First two candidates are subscriptions (GPT-6 Luna medium on codex, then Claude Haiku low); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, only after codex and claude are missing, quota-exhausted or unhealthy. The accepted Claude-subscription cost is the same one used by a Claude Code host orchestrator. Optionally accepts an `agent` persona. |
+| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). **Levels 4 and 5 are expensive — 5 costs ~3.3× level 4; last resort only. Both share the Claude Code host subscription.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
+| `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. First two candidates are subscriptions (GPT-6 Luna medium on codex, then Claude Haiku 5.5 medium); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, only after codex and claude are missing, quota-exhausted or unhealthy. The accepted Claude-subscription cost is the same one used by a Claude Code host orchestrator. Optionally accepts an `agent` persona. |
 | `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
-| `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade as `fast_delegate`: codex GPT-6 Luna medium, then Claude Haiku, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
-| `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. Falls back to Claude Haiku (native WebSearch) when codex is unhealthy or out of quota. |
+| `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade as `fast_delegate`: codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
+| `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. Falls back to Claude Haiku 5.5 medium (native WebSearch) when codex is unhealthy or out of quota. |
 | `decide` | Ask TypeSafe's Jev model for calibrated probabilities or a typed choice label. Pay-per-token through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
 | `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. With the optional Jev consensus gate, high agreement skips the Codex arbiter; uncertainty or Jev failure keeps it. |
@@ -333,7 +333,7 @@ own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent route
 ```
 You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
 `level` picks a distinct tier: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol
-max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Levels 4 and 5 are expensive
+xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Levels 4 and 5 are expensive
 (5 costs ~3.3× level 4) — reserve them for what cheaper levels cannot do. Both use the Claude Code
 host subscription: level 4 is 44% cheaper than before but now spends host quota. Codex holds levels
 1–3; Claude holds 4–5, so exhausted Claude quota takes down both levels and that host together. The worker has full read/edit/shell access
@@ -344,8 +344,8 @@ the fastest healthy worker. Pass agent:"name" or agent:{prompt:"..."} when the w
 needs a specialized persona.
 ```
 
-The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.21 (~3×) → $0.72 (~3.4×)
-→ $1.82 (~2.5×) → $5.98 (~3.3×). See the [GPT-6.1 Sol tier decision](research/2026-09-30-gpt-6-1-sol.md).
+The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.21 (~3×) → $0.39 (~1.9×)
+→ $1.82 (~4.7×) → $5.98 (~3.3×). See the [level 3 decision](research/2026-10-07-haiku-5-5.md).
 
 ## Develop
 
