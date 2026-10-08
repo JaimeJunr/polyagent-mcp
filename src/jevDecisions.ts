@@ -90,7 +90,7 @@ export function delegateShadowRequest(prompt: string): AskJevParams {
         criteria: {
           "1": "Mechanical or very simple task; cheapest GPT-6 Luna tier.",
           "2": "Routine implementation or analysis; GPT-6.1 Sol medium.",
-          "3": "Complex implementation or reasoning; GPT-6.1 Sol max.",
+          "3": "Complex implementation or reasoning; GPT-6.1 Sol xhigh.",
           "4": "Hard debugging or cross-file impact needing frontier reasoning; expensive Claude Opus 5.5 high, sharing the Claude Code host subscription.",
           "5": "Frontier reasoning that cheaper levels cannot handle; Claude Opus 5.5 max, last resort.",
         },

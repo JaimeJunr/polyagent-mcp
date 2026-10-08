@@ -31,7 +31,7 @@ describe("renderPolyagentBlock", () => {
   it("lists every delegate level from the tier table and steers fan_out with concrete triggers", () => {
     for (const level of ["1=", "2=", "3=", "4=", "5="]) expect(BLOCK).toContain(level);
     expect(BLOCK).toContain("2=codex gpt-6.1-sol medium");
-    expect(BLOCK).toContain("3=codex gpt-6.1-sol max");
+    expect(BLOCK).toContain("3=codex gpt-6.1-sol xhigh");
     expect(BLOCK).toContain("claude-opus-5-5");
     expect(BLOCK).toMatch(/fan_out/);
     expect(BLOCK).toMatch(/mode: ?"consensus"/);

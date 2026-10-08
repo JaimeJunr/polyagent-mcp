@@ -682,7 +682,7 @@ describe("resolveTier", () => {
   it("mapeia cada nível para a engine+modelo preferido (escada de Pareto codex + claude)", () => {
     expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
     expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "medium" });
-    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "max" });
+    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
     expect(resolveTier(4, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
     expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "max" });
   });
@@ -754,10 +754,10 @@ describe("resolveTier", () => {
 describe("resolveFastTier", () => {
   // Bench de 2026-09-23: codex medium e Claude Haiku são assinaturas estáveis;
   // o OpenRouter pay-per-token só deve entrar depois que ambas falharem.
-  it("FAST_CANDIDATES está na ordem GPT-6 Luna medium → haiku → mercury-2 → grok-4.5 low", () => {
+  it("FAST_CANDIDATES está na ordem GPT-6 Luna medium → Haiku 5.5 medium → mercury-2 → grok-4.5 low", () => {
     expect(FAST_CANDIDATES).toEqual([
       { engine: "codex", model: "gpt-6-luna", effort: "medium" },
-      { engine: "claude", model: "haiku", effort: "low" },
+      { engine: "claude", model: "claude-haiku-5-5", effort: "medium" },
       { engine: "opencode", model: "openrouter/inception/mercury-2" },
       { engine: "grok", model: "grok-4.5", effort: "low" },
     ]);
@@ -769,7 +769,7 @@ describe("resolveFastTier", () => {
   });
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
-    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "claude", model: "haiku", effort: "low" });
+    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "claude", model: "claude-haiku-5-5", effort: "medium" });
     expect(resolveFastTier((e) => e !== "codex" && e !== "claude")).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
     expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
   });
@@ -778,8 +778,8 @@ describe("resolveFastTier", () => {
     const all: (e: Engine) => boolean = () => true;
     expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.8 })).toEqual({
       engine: "claude",
-      model: "haiku",
-      effort: "low",
+      model: "claude-haiku-5-5",
+      effort: "medium",
     });
     expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.29, opencode: 0.8 })).toEqual({
       engine: "opencode",

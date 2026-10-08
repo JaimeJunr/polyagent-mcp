@@ -23,6 +23,9 @@ const CANDIDATES = [
   { id: "mercury-2", engine: "opencode", model: "openrouter/inception/mercury-2" },
   { id: "deepseek-v4.1-flash", engine: "opencode", model: "openrouter/deepseek/deepseek-v4.1-flash" },
   { id: "haiku-low", engine: "claude", model: "haiku", effort: "low" },
+  // Haiku 5.5 (2026-10-07) com id completo: o alias `haiku` já resolve para ele, mas o id fixa a medição.
+  { id: "haiku55-low", engine: "claude", model: "claude-haiku-5-5", effort: "low" },
+  { id: "haiku55-medium", engine: "claude", model: "claude-haiku-5-5", effort: "medium" },
   { id: "grok-4.5-low", engine: "grok", model: "grok-4.5", effort: "low" },
 ].filter((c) => !ONLY || ONLY.includes(c.id));
 

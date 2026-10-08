@@ -38,7 +38,7 @@ const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own .claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5; levels: 1=GPT-6 Luna max, 2=GPT-6.1 Sol medium, 3=GPT-6.1 Sol xhigh, 4=Claude Opus 5.5 high, 5=Claude Opus 5.5 max; AA quota proxies $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. fast_delegate's healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own .claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
   },
 );
 
@@ -175,7 +175,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The `level` (1-5) picks a DISTINCT model+effort pair by task difficulty, a cost-benefit ladder on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3x) → $0.72 (~3.4x) → $1.82 (~2.5x) → $5.98 (~3.3x): 1=GPT-6 Luna max (codex, cheapest), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: levels 4 and 5 are EXPENSIVE. Level 4 (Claude Opus 5.5 high) is 44% cheaper than its previous tier, but now spends the same Claude subscription as a Claude Code host; levels 4-5 and that host share quota. Level 5 (Claude Opus 5.5 max) costs ~3.3x level 4. Both are last resorts. Do NOT reach for 4 or 5 because a task 'feels important': use them only when a cheaper level already failed or the task genuinely needs frontier reasoning (hard debugging, cross-file impact, a review verdict that must hold). Levels 1-3 handle almost everything, including most implementation. Give a complete, self-contained instruction — the worker does not see your context.",
+      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The `level` (1-5) picks a DISTINCT model+effort pair by task difficulty, a cost-benefit ladder on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×): 1=GPT-6 Luna max (codex, cheapest), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: levels 4 and 5 are EXPENSIVE. Level 4 (Claude Opus 5.5 high) is 44% cheaper than its previous tier, but now spends the same Claude subscription as a Claude Code host; levels 4-5 and that host share quota. Level 5 (Claude Opus 5.5 max) costs ~3.3x level 4. Both are last resorts. Do NOT reach for 4 or 5 because a task 'feels important': use them only when a cheaper level already failed or the task genuinely needs frontier reasoning (hard debugging, cross-file impact, a review verdict that must hold). Levels 1-3 handle almost everything, including most implementation. Give a complete, self-contained instruction — the worker does not see your context.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       level: z
@@ -183,7 +183,7 @@ server.registerTool(
         .int()
         .min(1)
         .max(5)
-        .describe("Task difficulty 1-5, each a distinct model+effort: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol max (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Use the lowest level that fits. COST: 4 is expensive ($1.82/task AA proxy) and 5 costs ~3.3x more ($5.98); both spend the Claude Code host subscription — reserve both for tasks a cheaper level cannot do, never as a default."),
+        .describe("Task difficulty 1-5, each a distinct model+effort: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Use the lowest level that fits. COST: 4 is expensive ($1.82/task AA proxy) and 5 costs ~3.3x more ($5.98); both spend the Claude Code host subscription — reserve both for tasks a cheaper level cannot do, never as a default."),
       engine: z
         .string()
         .optional()
@@ -244,7 +244,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku low, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
@@ -307,7 +307,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku, then OpenRouter mercury-2); explore is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); explore is read-only: a non-codex engine needs the sandbox on."),
       ...routing,
     },
   },
@@ -339,7 +339,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku, then OpenRouter mercury-2); read_slice is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); read_slice is read-only: a non-codex engine needs the sandbox on."),
       want: z.string().describe("What to extract, e.g. 'the login handler and its imports'."),
       ...routing,
     },
@@ -375,13 +375,13 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Run a shell command via the coding-agent worker and get back ONLY the relevant lines/summary — semantic filtering of huge output (build/test/log). Complements mechanical filters: use when the noise needs judgment to strip. The default cascade is codex GPT-6 Luna medium, then Claude Haiku low (both subscriptions); OpenRouter mercury-2 is only reached when both are missing, quota-exhausted or unhealthy, so the pay-per-token cost is a late fallback. The full output stays on the worker's side.",
+      "Run a shell command via the coding-agent worker and get back ONLY the relevant lines/summary — semantic filtering of huge output (build/test/log). Complements mechanical filters: use when the noise needs judgment to strip. The default cascade is codex GPT-6 Luna medium, then Claude Haiku 5.5 medium (both subscriptions); OpenRouter mercury-2 is only reached when both are missing, quota-exhausted or unhealthy, so the pay-per-token cost is a late fallback. The full output stays on the worker's side.",
     inputSchema: {
       command: z.string().describe("The exact shell command to run."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna medium, then Claude Haiku, then OpenRouter mercury-2). run_filtered accepts any engine."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2). run_filtered accepts any engine."),
       want: z.string().optional().describe("What matters in the output, e.g. 'only failing tests'. Omit for meaningful-signal-only."),
       ...routing,
     },
@@ -413,13 +413,13 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT; Claude Haiku when codex is out): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
+      `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT; Claude Haiku 5.5 medium when codex is out): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
     inputSchema: {
       query: z.string().describe("What to look up on the web."),
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex' or 'claude' (the engines with web search). Beats POLYAGENT_WEB_LOOKUP_ENGINE. When omitted, uses codex (POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT) and falls back to Claude Haiku when codex is unhealthy or quota-exhausted."),
+        .describe("Engine override for this call: 'codex' or 'claude' (the engines with web search). Beats POLYAGENT_WEB_LOOKUP_ENGINE. When omitted, uses codex (POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT) and falls back to Claude Haiku 5.5 medium when codex is unhealthy or quota-exhausted."),
       ...routing,
     },
   },

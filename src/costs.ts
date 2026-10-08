@@ -1,7 +1,7 @@
 /**
  * Custos por tarefa do índice geral da AA; fonte: research/2026-09-24-custo-por-tarefa.md
  * (Sonnet 5.5: research/2026-09-28-sonnet-5-5.md;
- * GPT-6.1 Sol: research/2026-09-30-gpt-6-1-sol.md).
+ * GPT-6.1 Sol: research/2026-09-30-gpt-6-1-sol.md; Haiku 5.5: research/2026-10-07-haiku-5-5.md).
  */
 export const AA_COST_PER_TASK: Record<string, number> = {
   "codex|gpt-6-luna|low": 0.0045,
@@ -54,8 +54,17 @@ export const AA_COST_PER_TASK: Record<string, number> = {
   "claude|claude-sonnet-4-6|max": 2.49,
   // A AA só publica Haiku com extended thinking; qualquer effort registrado usa esse proxy.
   "claude|claude-haiku-4-5-20251001|*": 0.21,
-  // FAST_CANDIDATES registra o alias `haiku`, não o id completo, no log de uso.
-  "claude|haiku|*": 0.21,
+  // Haiku 5.5 (2026-10-07) é o primeiro Haiku com effort; xhigh não publicado pela AA.
+  "claude|claude-haiku-5-5|low": 0.02,
+  "claude|claude-haiku-5-5|medium": 0.05,
+  "claude|claude-haiku-5-5|high": 0.08,
+  "claude|claude-haiku-5-5|max": 0.21,
+  // FAST_CANDIDATES registra o alias `haiku`, não o id completo, no log de uso. Desde 2026-10-07 o
+  // alias resolve para o Haiku 5.5 (confirmado no `modelUsage`); registros anteriores eram o 4.5.
+  "claude|haiku|low": 0.02,
+  "claude|haiku|medium": 0.05,
+  "claude|haiku|high": 0.08,
+  "claude|haiku|max": 0.21,
 };
 
 export function estimateCostPerTask(engine?: string, model?: string, effort?: string): number | undefined {
