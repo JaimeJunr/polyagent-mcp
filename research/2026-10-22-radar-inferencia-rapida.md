@@ -34,6 +34,22 @@ Por que não muda nada sozinho:
 Encaixe provável: engine `opencode` com id `provider/model`, sem engine nova, se o modelo estiver no
 OpenRouter ou o opencode aceitar o provedor Fireworks. Não conferido.
 
+### Adendo 2026-10-23: medição self-hosted (0xSero / Sybil AI)
+
+Fonte: post de @0xSero no X, 2026-10-21, com card "measured" da Sybil AI. Medição de terceiro,
+não conferida por nós:
+
+- `DeepSeek-V4.1-Flash-1017`, pesos originais, em 4× RTX PRO 6000 (96 GB cada, 384 GB no total);
+- 675,9 tok/s de decode com um usuário só (concorrência 1);
+- janela de contexto de 528K;
+- "receitas a caminho": a configuração de serving ainda não foi publicada.
+
+O que muda: os pesos são abertos e rodam fora do Fireworks, então o modelo pode chegar por mais de
+um provedor (inclusive OpenRouter) sem depender da lista de espera do Ultrafast. Rodar local segue
+fora de alcance: 384 GB de VRAM contra este notebook e a note2. Tok/s em c1 também não é o nosso
+gargalo (ver item 1 acima). A janela de 528K é o dado novo que interessa: cabe a saída longa do
+`fan_out`, o limite que derrubou o Laya.
+
 ## Liquid RIPL (Real-time Inference Pipeline)
 
 Fonte: thread de @liquidai no X, 2026-10-22. Números do fornecedor, todos em B200, não conferidos:
@@ -59,7 +75,8 @@ Não conferido: se d1/LFM2.5 têm pesos abertos ou API pública, e o tamanho da 
 
 ## Reavaliar
 
-- **DeepSeek V4.1 Flash:** quando sair da lista de espera ou aparecer no OpenRouter. Rodar
+- **DeepSeek V4.1 Flash:** quando sair da lista de espera, aparecer no OpenRouter ou a receita de
+  serving do 0xSero sair e algum provedor hospedar os pesos abertos. Rodar
   `npm run bench` (skill `run-bench`) contra o mercury-2. Entra no lugar dele se tiver mediana menor,
   sem timeout e nota (`rate`) igual ou maior.
 - **Liquid d1 / LFM2.5:** quando houver API ou pesos acessíveis. Rodar o mesmo bench do Jev
