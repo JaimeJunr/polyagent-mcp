@@ -31,7 +31,7 @@ Critérios e o estudo de referência: `research/2026-09-23-tier-pareto.md`. O qu
 | Julgar pela nota **geral** | O polyagent é frota de código: quando geral e Coding Agent Index discordam, vale código. (Quase tirou o Astra, topo em código, por estar dominado na geral.) |
 | Aceitar recomendação de pesquisa web como veio | Confira a data: uma pesquisa "atualizada ontem" não tinha os lançamentos da véspera. Confira os números na fonte com `web_lookup`. |
 | Pôr modelo pay-per-token (OpenRouter) num nível | Os níveis são assinatura (custo = cota). Pesquisa de "custo por token" não enxerga isso: DeepSeek/MiMo "mais baratos" cobram dinheiro por chamada, e o Luna sai de graça. Pay-per-token entra só por decisão explícita do dono. |
-| Degrau grande demais | Cada nível ~3× o custo do anterior; o nível 2 tem que valer como degrau barato. |
+| Degrau grande demais | Low → middle custa ~3×; middle → high custa ~8,7×, salto aceito pelo dono em `research/2026-10-23-tres-niveis.md`. Middle é o degrau barato para trabalho mais difícil. |
 | Ignorar concentração de cota | Conte quantos níveis ficam numa assinatura só: cota estourada derruba todos juntos. Declare no comentário. |
 | Mexer no Cursor | Legado sem assinatura: não atualize `cursorModel` nem verifique ids dele. |
 

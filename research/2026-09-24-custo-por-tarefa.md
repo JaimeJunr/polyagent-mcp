@@ -1,5 +1,8 @@
 # Spike — custo por tarefa dos modelos da frota (2026-09-24/25)
 
+> A escada numérica abaixo é histórica; a decisão vigente está em
+> [três níveis nomeados — 2026-10-23](2026-10-23-tres-niveis.md). Dados e medições originais preservados.
+
 Contexto: complementar a [escada de níveis](2026-09-23-tier-pareto.md) com custos por esforço
 publicados pela Artificial Analysis (AA), consultados em 2026-09-24/25, e alimentar a coluna de
 estimativa nas avaliações locais do `rate`.

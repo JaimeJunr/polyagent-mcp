@@ -1,5 +1,8 @@
 # Decisões com Jev: consenso em `fan_out` e shadow do `delegate` (2026-09-24)
 
+> A escada numérica abaixo é histórica; a decisão vigente está em
+> [três níveis nomeados — 2026-10-23](2026-10-23-tres-niveis.md). Dados e medições originais preservados.
+
 O bruto foi gravado em 2026-09-25 UTC; a data no nome do arquivo é UTC.
 
 ## Contexto

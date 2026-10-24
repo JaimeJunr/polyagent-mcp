@@ -5,7 +5,7 @@ OpenCode CLIs**, with Cursor available as an opt-in fallback. Use the fleet for 
 and project exploration without burning the caller's context on raw worker output.
 
 Worker tools take optional **model** and **effort** overrides, return a `session_id`, and support
-`follow_up`. Difficulty levels select a distinct default model across the three active
+`follow_up`. Three named difficulty levels select distinct default models on the Codex and Claude
 subscriptions; `delegate` also accepts an explicit engine, including pay-per-token OpenCode.
 
 ## Tools
@@ -14,7 +14,7 @@ The server exposes twelve tools:
 
 | Tool | Purpose |
 |------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). **Levels 4 and 5 are expensive — 5 costs ~3.3× level 4; last resort only. Both share the Claude Code host subscription.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
+| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: low=GPT-6 Luna max (codex), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). **Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`. |
 | `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. First two candidates are subscriptions (GPT-6 Luna medium on codex, then Claude Haiku 5.5 medium); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, only after codex and claude are missing, quota-exhausted or unhealthy. The accepted Claude-subscription cost is the same one used by a Claude Code host orchestrator. Optionally accepts an `agent` persona. |
 | `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
@@ -22,13 +22,13 @@ The server exposes twelve tools:
 | `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. Falls back to Claude Haiku 5.5 medium (native WebSearch) when codex is unhealthy or out of quota. |
 | `decide` | Ask TypeSafe's Jev model for calibrated probabilities or a typed choice label. Pay-per-token through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
-| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. With the optional Jev consensus gate, high agreement skips the Codex arbiter; uncertainty or Jev failure keeps it. |
+| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. Required `levels` contains at least two names from `low`, `middle`, `high`; repeats are allowed. Start with `["low", "middle"]`; add `"high"` only after a cheaper consensus disagreed or for a costly verdict. With the optional Jev consensus gate, high agreement skips the Codex arbiter; uncertainty or Jev failure keeps it. |
 | `follow_up` | Continue a prior session by `session_id`. |
 | `bridge_stats` | Report calls and chars returned to context per tool, plus ratings; optional `export: true` writes `research/bench/<YYYY-MM-DD>-ratings.md` (needs `POLYAGENT_LOG`). |
 | `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
 
 Worker tools accept `cwd`, `model`, and `effort` where applicable. `delegate` requires a **level**
-(1-5); `fast_delegate` has none and picks the fastest healthy engine. Explicit `model`/`effort`
+("low", "middle", or "high"); `fast_delegate` has none and picks the fastest healthy engine. Explicit `model`/`effort`
 values override the selected tier.
 
 ### When an engine runs out of quota
@@ -37,7 +37,7 @@ A call that fails because the engine's plan quota is exhausted does **not** sile
 another engine — spending the next subscription is your decision. The call fails with an actionable
 error naming the engines still available (installed, enabled, and capable of what that tool needs)
 and how to switch: `engine:"<x>"` on the four auxiliary tools and `delegate`, or the lowest
-still-usable `level:<n>` when a tier engine remains. Tools that pick the engine themselves (`fast_delegate`, `fan_out`) and `follow_up`
+still-usable `level:"<name>"` when a tier engine remains. Tools that pick the engine themselves (`fast_delegate`, `fan_out`) and `follow_up`
 (pinned to the resumed session's engine) report the quota without suggesting a parameter, and
 `generate_image` reports it against the two engines that have an image tool at all (codex, grok). A transient rate limit is reported separately and asks you to wait, since switching
 engines would not help. Anything the classifier does not recognize — an expired login, for one —
@@ -49,8 +49,8 @@ propagates as the raw CLI failure instead of being guessed at.
 - `bubblewrap` (`bwrap`) installed — **required**, not recommended: the sandbox is mandatory and the
   server refuses to start without it (`sudo apt install bubblewrap`). Only `POLYAGENT_SANDBOX=off`
   waives it, as an explicit operator choice.
-- Codex installed and authenticated for read tools and levels 1/3; Grok for levels 2/4; Claude Code
-  for level 5.
+- Codex installed and authenticated for low/middle; Claude Code for high. Read tools use the
+  fast candidate cascade. Grok and OpenCode are optional fallbacks or explicit engine overrides.
 - Optional Cursor fallback: install `cursor-agent` and set `POLYAGENT_ENABLE_CURSOR=1`.
 
 ## Install
@@ -332,11 +332,11 @@ own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent route
 
 ```
 You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
-`level` picks a distinct tier: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol
-xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Levels 4 and 5 are expensive
-(5 costs ~3.3× level 4) — reserve them for what cheaper levels cannot do. Both use the Claude Code
-host subscription: level 4 is 44% cheaper than before but now spends host quota. Codex holds levels
-1–3; Claude holds 4–5, so exhausted Claude quota takes down both levels and that host together. The worker has full read/edit/shell access
+`level` is required: low=GPT-6 Luna max (codex), middle=GPT-6.1 Sol medium (codex),
+high=Claude Opus 5.5 high (claude). Numeric levels are rejected. Low/middle cover most work;
+high is expensive and shares the Claude Code host subscription, so reserve it for tasks cheaper
+levels cannot do. Exhausted Codex quota removes low/middle; exhausted Claude quota removes high
+and affects that host together. The worker has full read/edit/shell access
 in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
 your context. Delegate it, then review the result; edit inline only for a quick one-off you're
 already positioned for. Use fast_delegate(prompt) when the work is self-contained and you just want
@@ -344,8 +344,8 @@ the fastest healthy worker. Pass agent:"name" or agent:{prompt:"..."} when the w
 needs a specialized persona.
 ```
 
-The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.21 (~3×) → $0.39 (~1.9×)
-→ $1.82 (~4.7×) → $5.98 (~3.3×). See the [level 3 decision](research/2026-10-07-haiku-5-5.md).
+The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.21 (~3×) → $1.82 (~8.7×).
+See the [three-level decision](research/2026-10-23-tres-niveis.md).
 
 ## Develop
 

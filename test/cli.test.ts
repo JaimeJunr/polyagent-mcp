@@ -6,7 +6,7 @@ import {
   buildCursorArgs, buildGrokArgs, buildCodexArgs, buildClaudeArgs, buildOpencodeArgs, buildKimiArgs, buildMuseArgs, buildArgs, buildSandboxArgs, buildSandboxSpec,
   budgetNote, evidenceNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
-  FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
+  LEVELS, TIERS, FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
   fallbackOpts, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
   type SandboxSpec, type Engine,
 } from "../src/cli.js";
@@ -679,62 +679,60 @@ describe("resolveTier", () => {
     expect(IMAGE_MODEL).toBe("gpt-6-sol");
   });
 
-  it("mapeia cada nível para a engine+modelo preferido (escada de Pareto codex + claude)", () => {
-    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
-    expect(resolveTier(2, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "medium" });
-    expect(resolveTier(3, all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
-    expect(resolveTier(4, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
-    expect(resolveTier(5, all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "max" });
+  it("exports exactly three named levels and their primary models", () => {
+    expect(LEVELS).toEqual(["low", "middle", "high"]);
+    expect(Object.keys(TIERS)).toEqual(LEVELS);
+    expect(resolveTier("low", all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
+    expect(resolveTier("middle", all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "medium" });
+    expect(resolveTier("high", all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
   });
 
-  // GPT-6.1 Sol (2/3) e Opus 5.5 (4/5) repetem modelo com esforços diferentes: a distinção é do par.
-  it("usa um par modelo+esforço DISTINTO em cada nível (sem repetição)", () => {
-    const pairs = [1, 2, 3, 4, 5].map((l) => { const t = resolveTier(l, all); return `${t.model}:${t.effort}`; });
-    expect(new Set(pairs).size).toBe(5);
-  });
-
-  it("cai para o cursor-agent equivalente só quando CURSOR habilitado e a engine preferida falta", () => {
-    expect(resolveTier(1, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-luna-max-fast" });
-    expect(resolveTier(2, noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
-    expect(resolveTier(4, (e) => e !== "claude", true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
-    expect(resolveTier(5, (e) => e !== "claude", true)).toEqual({
-      engine: "cursor",
-      model: "claude-fable-max-fast",
+  it("uses a distinct model and effort pair per named level", () => {
+    const pairs = LEVELS.map((level) => {
+      const tier = resolveTier(level, all);
+      return `${tier.model}:${tier.effort}`;
     });
+    expect(new Set(pairs).size).toBe(3);
   });
 
-  it("lança erro claro quando a engine preferida falta e o cursor está desabilitado (default)", () => {
-    expect(() => resolveTier(1, noCodex, false)).toThrow(/needs the 'codex' CLI/);
-    expect(() => resolveTier(5, (e) => e !== "claude", false)).toThrow(/needs the 'claude' CLI/);
+  it("keeps the corresponding legacy Cursor fallback for each retained tier", () => {
+    expect(resolveTier("low", noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-luna-max-fast" });
+    expect(resolveTier("middle", noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
+    expect(resolveTier("high", (e) => e !== "claude", true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
   });
 
-  it("rejeita nível fora de 1-5", () => {
-    expect(() => resolveTier(0, all)).toThrow(/expected integer 1-5/);
-    expect(() => resolveTier(6, all)).toThrow(/expected integer 1-5/);
+  it("names the missing primary CLI when Cursor is disabled", () => {
+    expect(() => resolveTier("low", noCodex, false)).toThrow(/needs the 'codex' CLI/);
+    expect(() => resolveTier("high", (e) => e !== "claude", false)).toThrow(/needs the 'claude' CLI/);
+  });
+
+  it.each([0, 1, 2, 3, 4, 5, 6, "1", "medium", "HIGH", "", "toString", "__proto__"])("rejects invalid level %s at both resolvers", (level) => {
+    expect(() => resolveTier(level as never, all)).toThrow(/expected low, middle or high/);
+    expect(() => resolveDelegate(level as never, { engine: "codex" }, all)).toThrow(/expected low, middle or high/);
   });
 
   it("ignora health quando omitido (comportamento existente inalterado)", () => {
-    expect(resolveTier(1, all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
-    expect(resolveTier(1, all, true)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
+    expect(resolveTier("low", all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
+    expect(resolveTier("low", all, true)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
   });
 
   it("trata health vazio (log sem registros relevantes) igual a omitir health", () => {
     const empty = computeEngineHealth([], Date.now());
     expect(empty).toEqual({});
-    expect(resolveTier(1, all, true, empty)).toEqual(resolveTier(1, all, true));
-    expect(resolveTier(2, all, false, empty)).toEqual(resolveTier(2, all, false));
-    expect(resolveTier(5, all, true, {})).toEqual(resolveTier(5, all, true));
+    expect(resolveTier("low", all, true, empty)).toEqual(resolveTier("low", all, true));
+    expect(resolveTier("middle", all, false, empty)).toEqual(resolveTier("middle", all, false));
+    expect(resolveTier("high", all, true, {})).toEqual(resolveTier("high", all, true));
   });
 
   it("cai pro cursor quando a engine preferida está instalada mas com health baixo", () => {
-    expect(resolveTier(1, all, true, { codex: 0.1 })).toEqual({
+    expect(resolveTier("low", all, true, { codex: 0.1 })).toEqual({
       engine: "cursor",
       model: "gpt-5.6-luna-max-fast",
     });
   });
 
   it("mantém a engine preferida quando health está OK", () => {
-    expect(resolveTier(1, all, true, { codex: 0.9 })).toEqual({
+    expect(resolveTier("low", all, true, { codex: 0.9 })).toEqual({
       engine: "codex",
       model: "gpt-6-luna",
       effort: "max",
@@ -742,12 +740,12 @@ describe("resolveTier", () => {
   });
 
   it("lança erro quando toda engine candidata do tier (preferida + cursor) está unhealthy", () => {
-    expect(() => resolveTier(1, all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/needs the 'codex' CLI/);
-    expect(() => resolveTier(1, all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/unhealthy/);
+    expect(() => resolveTier("low", all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/needs the 'codex' CLI/);
+    expect(() => resolveTier("low", all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/unhealthy/);
   });
 
   it("lança erro quando a engine preferida está unhealthy e o cursor está desabilitado", () => {
-    expect(() => resolveTier(1, all, false, { codex: 0.1 })).toThrow(/needs the 'codex' CLI/);
+    expect(() => resolveTier("low", all, false, { codex: 0.1 })).toThrow(/needs the 'codex' CLI/);
   });
 });
 
@@ -807,22 +805,20 @@ describe("resolveFastTier", () => {
 
 describe("isDefaultTierEngine (tier-integrity receipt)", () => {
   it("is true when the resolved engine matches the tier's preferred engine", () => {
-    expect(isDefaultTierEngine(1, "codex")).toBe(true);
-    expect(isDefaultTierEngine(2, "codex")).toBe(true);
-    expect(isDefaultTierEngine(3, "codex")).toBe(true);
-    expect(isDefaultTierEngine(4, "claude")).toBe(true);
-    expect(isDefaultTierEngine(5, "claude")).toBe(true);
+    expect(isDefaultTierEngine("low", "codex")).toBe(true);
+    expect(isDefaultTierEngine("middle", "codex")).toBe(true);
+    expect(isDefaultTierEngine("high", "claude")).toBe(true);
   });
 
   it("is false when the resolved engine is a fallback (e.g. cursor)", () => {
-    expect(isDefaultTierEngine(1, "cursor")).toBe(false);
-    expect(isDefaultTierEngine(3, "grok")).toBe(false);
-    expect(isDefaultTierEngine(5, "cursor")).toBe(false);
+    expect(isDefaultTierEngine("low", "cursor")).toBe(false);
+    expect(isDefaultTierEngine("middle", "grok")).toBe(false);
+    expect(isDefaultTierEngine("high", "cursor")).toBe(false);
   });
 
   it("is false for an invalid level (no tier entry to match)", () => {
-    expect(isDefaultTierEngine(0, "codex")).toBe(false);
-    expect(isDefaultTierEngine(6, "codex")).toBe(false);
+    expect(isDefaultTierEngine(0 as never, "codex")).toBe(false);
+    expect(isDefaultTierEngine(6 as never, "codex")).toBe(false);
   });
 });
 
@@ -1204,29 +1200,40 @@ describe("resolveDelegate com engine explícito", () => {
   const all: (e: Engine) => boolean = () => true;
 
   it("recusa cursor explícito sem opt-in mesmo instalado", () => {
-    expect(() => resolveDelegate(1, { engine: "cursor" }, all, false))
-      .toThrow("delegate level 1 needs the 'cursor' CLI, which is disabled. Set POLYAGENT_ENABLE_CURSOR=1");
-    expect(resolveDelegate(1, { engine: "cursor" }, all, true).engine).toBe("cursor");
+    expect(() => resolveDelegate("low", { engine: "cursor" }, all, false))
+      .toThrow("delegate level low needs the 'cursor' CLI, which is disabled. Set POLYAGENT_ENABLE_CURSOR=1");
+    expect(resolveDelegate("low", { engine: "cursor" }, all, true).engine).toBe("cursor");
   });
 
   it("recusa engine explícita ausente com erro acionável", () => {
     for (const engine of ["opencode", "codex", "cursor"] as Engine[]) {
-      expect(() => resolveDelegate(1, { engine }, (candidate) => candidate !== engine, true))
-        .toThrow(`delegate level 1 needs the '${engine}' CLI, which is not installed. Install it or pick another engine.`);
+      expect(() => resolveDelegate("low", { engine }, (candidate) => candidate !== engine, true))
+        .toThrow(`delegate level low needs the '${engine}' CLI, which is not installed. Install it or pick another engine.`);
     }
   });
 
   it("não herda model/effort do tier quando a engine difere", () => {
-    expect(resolveDelegate(1, { engine: "opencode" }, all)).toEqual({
+    expect(resolveDelegate("low", { engine: "opencode" }, all)).toEqual({
       engine: "opencode", model: undefined, effort: undefined,
     });
-    expect(resolveDelegate(1, { engine: "opencode", model: "google/gemini-3.8-flash", effort: "high" }, all))
+    expect(resolveDelegate("low", { engine: "opencode", model: "google/gemini-3.8-flash", effort: "high" }, all))
       .toEqual({ engine: "opencode", model: "google/gemini-3.8-flash", effort: "high" });
   });
 
   it("herda model/effort quando a engine explícita é a primária do nível", () => {
-    expect(resolveDelegate(1, { engine: "codex" }, all)).toEqual({
+    expect(resolveDelegate("low", { engine: "codex" }, all)).toEqual({
       engine: "codex", model: "gpt-6-luna", effort: "max",
     });
+  });
+});
+
+describe("resolveDelegate named levels", () => {
+  it.each(["low", "middle", "high"] as const)("inherits %s when there is no override", (level) => {
+    expect(resolveDelegate(level, {}, () => true, false)).toEqual(resolveTier(level, () => true, false));
+  });
+
+  it("drops inherited defaults on a different engine and preserves explicit overrides", () => {
+    expect(resolveDelegate("high", { engine: "codex" }, () => true)).toEqual({ engine: "codex", model: undefined, effort: undefined });
+    expect(resolveDelegate("middle", { model: "custom", effort: "high" }, () => true)).toEqual({ engine: "codex", model: "custom", effort: "high" });
   });
 });

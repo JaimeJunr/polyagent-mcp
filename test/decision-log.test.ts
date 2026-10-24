@@ -5,9 +5,9 @@ import { join } from "node:path";
 import type { DecisionRecord } from "../src/usage.js";
 
 const decision: DecisionRecord = {
-  name: "delegate_level_shadow", candidates: ["1", "2", "3", "4", "5"],
-  choice: "2", confidence: 0.8, accepted: false, fallback: false,
-  latencyMs: 25, cost: 0.001, actual: "3",
+  name: "delegate_level_shadow", candidates: ["low", "middle", "high"],
+  choice: "middle", confidence: 0.8, accepted: false, fallback: false,
+  latencyMs: 25, cost: 0.001, actual: "middle",
 };
 
 afterEach(() => {

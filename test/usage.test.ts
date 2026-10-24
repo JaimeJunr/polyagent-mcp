@@ -24,11 +24,11 @@ describe("estimateCostPerTask", () => {
     expect(estimateCostPerTask("claude", "claude-sonnet-5-5", "max")).toBe(7.60);
   });
 
-  it("uses the published GPT-6.1 Sol medium cost for level 2", () => {
+  it("uses the published GPT-6.1 Sol medium cost for middle", () => {
     expect(estimateCostPerTask("codex", "gpt-6.1-sol", "medium")).toBe(0.21);
   });
 
-  it("uses the published GPT-6.1 Sol xhigh cost for level 3", () => {
+  it("uses the published GPT-6.1 Sol xhigh cost for explicit xhigh overrides", () => {
     expect(estimateCostPerTask("codex", "gpt-6.1-sol", "xhigh")).toBe(0.39);
   });
 
@@ -97,16 +97,16 @@ describe("decision usage", () => {
 
 describe("buildUsageEntry (tier-integrity receipt)", () => {
   it("includes requestedLevel and matchedRequest=true for the normal tier match", () => {
-    const entry = buildUsageEntry("delegate", 120, { requestedLevel: 1, matchedRequest: true });
-    expect(entry.requestedLevel).toBe(1);
+    const entry = buildUsageEntry("delegate", 120, { requestedLevel: "low", matchedRequest: true });
+    expect(entry.requestedLevel).toBe("low");
     expect(entry.matchedRequest).toBe(true);
     expect(entry.tool).toBe("delegate");
     expect(entry.outChars).toBe(120);
   });
 
   it("marks matchedRequest=false when the tier fell back (e.g. to cursor)", () => {
-    const entry = buildUsageEntry("delegate", 120, { requestedLevel: 1, matchedRequest: false });
-    expect(entry.requestedLevel).toBe(1);
+    const entry = buildUsageEntry("delegate", 120, { requestedLevel: "low", matchedRequest: false });
+    expect(entry.requestedLevel).toBe("low");
     expect(entry.matchedRequest).toBe(false);
   });
 
@@ -120,18 +120,18 @@ describe("buildUsageEntry (tier-integrity receipt)", () => {
     const entry = buildUsageEntry(
       "delegate",
       120,
-      { requestedLevel: 1, matchedRequest: true },
+      { requestedLevel: "low", matchedRequest: true },
       { engine: "codex", outcome: "success", durationMs: 42 },
     );
     expect(entry.engine).toBe("codex");
     expect(entry.outcome).toBe("success");
     expect(entry.durationMs).toBe(42);
-    expect(entry.requestedLevel).toBe(1);
+    expect(entry.requestedLevel).toBe("low");
     expect(entry.matchedRequest).toBe(true);
   });
 
   it("omits run fields when no run is given", () => {
-    const entry = buildUsageEntry("delegate", 120, { requestedLevel: 1, matchedRequest: true });
+    const entry = buildUsageEntry("delegate", 120, { requestedLevel: "low", matchedRequest: true });
     expect(entry).not.toHaveProperty("engine");
     expect(entry).not.toHaveProperty("outcome");
     expect(entry).not.toHaveProperty("durationMs");
@@ -444,5 +444,16 @@ describe("computeEngineHealth", () => {
       model: "claude-haiku-5-5",
       effort: "medium",
     });
+  });
+});
+
+describe("named level receipts", () => {
+  it.each(["low", "middle", "high"] as const)("records the %s name", (level) => {
+    expect(buildUsageEntry("delegate", 10, { requestedLevel: level, matchedRequest: true }).requestedLevel).toBe(level);
+  });
+
+  it("keeps fast_delegate's neutral receipt", () => {
+    expect(buildUsageEntry("fast_delegate", 10, { requestedLevel: 0, matchedRequest: true }))
+      .toMatchObject({ requestedLevel: 0, matchedRequest: true });
   });
 });
