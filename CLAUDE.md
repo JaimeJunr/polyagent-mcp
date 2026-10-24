@@ -76,6 +76,8 @@ the **pure logic is testable without spawning a worker process**:
   `<!-- polyagent-mcp:end -->`. `renderPolyagentBlock` generates it from `TIERS` (levels never
   drift) and carries the `fan_out` triggers: 27 real `fan_out` calls against 744 `delegate` in the
   usage log (2026-07-03 → 2026-09-26) motivated it — the host judged alone instead of fanning out.
+  Start with `levels: ["low", "middle"]`; add `"high"` only after a cheaper consensus disagreed
+  or for a costly verdict. `fan_out` accepts at least two names, with repeats allowed.
   `npm run install-claude-md` (`src/installClaudeMd.ts`, `--dry-run` to preview) is the explicit
   first install: it removes the old hand-written `<polyagent_preference>` section, writes
   `CLAUDE.md.polyagent.bak`, and appends the block. After that, `index.ts` refreshes the block on
@@ -145,27 +147,28 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   guarantee). It has no engine-level read-only (`engineReadOnly: false`); bwrap supplies that guard.
   `--provider echo` exercises the dialect without token cost.
 
-`delegate` takes a required `level` (1-5) → `resolveTier` maps difficulty to (engine, model, effort),
-using a distinct model+effort pair at every level, all on subscriptions (codex + claude) — a Pareto
-cost-benefit ladder: $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)
-(AA quota proxies; see `research/2026-10-07-haiku-5-5.md`): 1=GPT-6 Luna max
-(codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude),
-5=Claude Opus 5.5 max (claude). Os ids `gpt-6-astra` foram confirmados em execução real em
-2026-09-14 (histórico); `gpt-6-luna`, `gpt-6-sol` e `claude-opus-5-5`, em 2026-09-23 (Opus com max).
-`gpt-6.1-sol` foi confirmado em 2026-09-30 via `codex exec` com effort low e max
-(codex-cli 0.159.2; `gpt-6-sol` permanece como registro histórico e modelo de imagem).
-Opus 5.5 com effort high foi confirmado ao vivo em 2026-09-26 (`modelUsage` = `claude-opus-5-5`).
-O alias `opus` ainda resolve para o `claude-opus-5` antigo — use sempre `claude-opus-5-5`.
-**Custo:** os níveis 4 e 5 são caros — o 4 ficou 44% mais barato que antes, mas agora gasta a
-assinatura Claude do host Claude Code; o 5 custa ~3,3× o 4. São último recurso, não default:
-níveis 1-3 dão conta da maior parte do trabalho, implementação inclusa. Escalar para 4/5 só quando
-um nível barato já falhou ou a tarefa exige raciocínio de fronteira de verdade. Codex ocupa 3 dos
-5 níveis: cota estourada nele derruba 1-3. Claude ocupa 4-5 e compartilha a assinatura do host;
-cota estourada nele derruba 4, 5 e o host juntos, enquanto codex 1-3 continuam disponíveis.
-Consequência aceita: Grok 4.6 saiu da matriz em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo)
-e a assinatura Google já estava de fora — ver `research/2026-09-18-agy-google-cli.md`. `resolveTier(level, has, cursorEnabled)` uses the preferred CLI when present. If it
-is missing, it falls back to the equivalent Cursor model only when `cursorEnabled` is true;
-otherwise it throws a clear error naming the missing CLI.
+`delegate` takes a required named `level` (`"low" | "middle" | "high"`) → `resolveTier` maps
+it to (engine, model, effort). `LEVELS` exports those names in increasing cost order and `Level`
+is the shared type. Numeric levels are rejected; this is a deliberate breaking change.
+All three defaults use subscriptions (codex + claude), with AA quota proxies
+$0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, AA 38),
+middle=GPT-6.1 Sol medium (codex, AA 48), high=Claude Opus 5.5 high (claude, AA 54).
+Decision and evidence: `research/2026-10-23-tres-niveis.md`. The five-level ladder made the host
+keep choosing among the cheapest options; three names simplify that choice. Sol xhigh and Opus
+max are no longer delegate levels; explicit model/effort overrides and historical costs remain.
+
+Ids confirmed in real execution: `gpt-6-luna` on 2026-09-23; `gpt-6.1-sol` on 2026-09-30
+(codex-cli 0.159.2); `claude-opus-5-5` with high effort on 2026-09-26 (`modelUsage`).
+The alias `opus` still resolves to the old `claude-opus-5` — use the full id.
+**Custo:** high é caro e compartilha a assinatura Claude do host Claude Code. Low/middle dão
+conta da maior parte do trabalho, implementação inclusa. Escalar para high só depois de um nível
+barato falhar ou para raciocínio de fronteira/veredito caro. Codex concentra low/middle: cota
+esgotada nele derruba os dois. Claude concentra high e o host: cota esgotada afeta ambos juntos,
+enquanto low/middle continuam disponíveis. Grok continua fora da matriz padrão.
+`resolveTier(level, has, cursorEnabled)` uses the preferred healthy CLI when present. If it is
+missing or unhealthy, it falls back to the retained tier's legacy Cursor model only when
+`cursorEnabled` is true and Cursor is healthy; otherwise it throws naming the missing/unhealthy CLI.
+The Cursor ids were preserved from the retained tiers, without refreshing them.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
 healthy candidate in `FAST_CANDIDATES` (GPT-6 Luna medium → Claude Haiku 5.5 medium → OpenCode
@@ -188,6 +191,8 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
 - `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` and `rate` tools.
+  New delegate/fan_out receipts store named `requestedLevel`; `fast_delegate` keeps neutral `0`.
+  Readers/stats tolerate numeric `requestedLevel` in old logs and skip malformed JSONL lines.
 
 ### Ratings (`rate`)
 
@@ -285,7 +290,7 @@ points, all in `cli.ts`:
   | `null`. `runCursor` converte o acerto em `QuotaError` com mensagem acionável — `quotaCandidates`
   monta a lista de engines instaladas, habilitadas (`CURSOR_ENABLED`) e capazes do que a tool exige
   (intersecção com `AUX_TOOL_REQUIREMENTS`/`ENGINE_CAPABILITIES`), e `quotaErrorMessage` escolhe a
-  forma da sugestão pela superfície da tool: `engine:"<x>"` nas quatro auxiliares, `level:<n>` (menor
+  forma da sugestão pela superfície da tool: `engine:"<x>"` nas quatro auxiliares, `level:"<name>"` (menor
   nível cuja engine primária sobrou) no `delegate`, nenhuma em `fast_delegate`/`fan_out`, a lista
   restrita a codex/grok em `generate_image` (as duas com tool de imagem própria), e "presa à sessão"
   em `follow_up`. É por isso que `RunOpts.tool` existe: ela não

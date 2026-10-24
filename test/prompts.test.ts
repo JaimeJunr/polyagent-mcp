@@ -5,13 +5,13 @@ import {
 } from "../src/prompts.js";
 
 describe("appendDelegateRiskHint", () => {
-  it("leaves level 3 unchanged", () => {
-    expect(appendDelegateRiskHint("result", 3)).toBe("result");
+  it.each(["low", "middle"] as const)("leaves %s unchanged", (level) => {
+    expect(appendDelegateRiskHint("result", level)).toBe("result");
   });
 
-  it.each([4, 5])("adds the cross-check hint to level %i", (level) => {
-    expect(appendDelegateRiskHint("result", level)).toBe(
-      `result\nLevel-${level} verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`,
+  it("adds the cross-check hint to high", () => {
+    expect(appendDelegateRiskHint("result", "high")).toBe(
+      'result\nHigh-level verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").',
     );
   });
 });
@@ -162,8 +162,8 @@ describe("generateImagePrompt", () => {
 describe("fanOutArbiterPrompt", () => {
   it("embeds each worker's engine, level, session_id, and text", () => {
     const p = fanOutArbiterPrompt([
-      { engine: "codex", level: 1, sessionId: "abc", text: "the bug is in auth.ts:42" },
-      { engine: "grok", level: 2, sessionId: "def", text: "the bug is in auth.ts:42" },
+      { engine: "codex", level: "low", sessionId: "abc", text: "the bug is in auth.ts:42" },
+      { engine: "grok", level: "middle", sessionId: "def", text: "the bug is in auth.ts:42" },
     ]);
     expect(p).toContain("codex");
     expect(p).toContain("grok");
@@ -173,7 +173,7 @@ describe("fanOutArbiterPrompt", () => {
   });
 
   it("asks for a compact consensus/disagreement digest, not a rehash", () => {
-    const p = fanOutArbiterPrompt([{ engine: "codex", level: 1, text: "x" }]);
+    const p = fanOutArbiterPrompt([{ engine: "codex", level: "low", text: "x" }]);
     expect(p).toMatch(/agree/i);
     expect(p).toMatch(/diverg|disagree/i);
     expect(p).toMatch(/compact|concise|terse/i);
@@ -181,8 +181,8 @@ describe("fanOutArbiterPrompt", () => {
 
   it("marks failed workers distinctly", () => {
     const p = fanOutArbiterPrompt([
-      { engine: "codex", level: 1, text: "ok result" },
-      { engine: "grok", level: 2, text: "timed out", error: true },
+      { engine: "codex", level: "low", text: "ok result" },
+      { engine: "grok", level: "middle", text: "timed out", error: true },
     ]);
     expect(p).toMatch(/fail/i);
   });

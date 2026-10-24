@@ -73,7 +73,7 @@ describe.each(["delegate", "fast_delegate"])("%s entrega skill ao worker", (tool
   async function invoke(agent?: unknown) {
     const tool = tools.get(toolName);
     expect(tool).toBeDefined();
-    const input = z.object(tool!.schema).parse({ prompt: "Check the code.", level: 1, cwd: project, agent });
+    const input = z.object(tool!.schema).parse({ prompt: "Check the code.", level: "low", cwd: project, agent });
     return tool!.handler(input);
   }
 

@@ -840,9 +840,9 @@ export function quotaCandidates(
 /** Engines com tool de imagem própria — as únicas que generate_image sabe usar. */
 const IMAGE_ENGINES: Engine[] = ["codex", "grok"];
 
-/** Menor nível do delegate (1-5) cuja engine primária está entre as candidatas. */
-function lowestLevelFor(candidates: Engine[]): number | undefined {
-  for (const level of Object.keys(TIERS).map(Number).sort((a, b) => a - b)) {
+/** Menor nível nomeado do delegate cuja engine primária está entre as candidatas. */
+function lowestLevelFor(candidates: Engine[]): Level | undefined {
+  for (const level of LEVELS) {
     if (candidates.includes(TIERS[level].primary.engine)) return level;
   }
   return undefined;
@@ -878,8 +878,8 @@ export function quotaErrorMessage(
     const level = lowestLevelFor(candidates);
     const tierEngines = new Set(Object.values(TIERS).map(({ primary }) => primary.engine));
     const explicit = candidates.find((candidate) => !tierEngines.has(candidate));
-    if (level !== undefined && explicit) return `${head} — retry with level:${level} or engine:"${explicit}"`;
-    if (level !== undefined) return `${head} — retry with level:${level}`;
+    if (level !== undefined && explicit) return `${head} — retry with level:"${level}" or engine:"${explicit}"`;
+    if (level !== undefined) return `${head} — retry with level:"${level}"`;
     return explicit ? `${head} — retry with engine:"${explicit}"` : head;
   }
   if (tool === "fast_delegate" || tool === "fan_out") {
@@ -1500,39 +1500,24 @@ interface TierEntry {
   cursorModel: string;
 }
 
+/** Níveis públicos em ordem crescente de custo; números antigos não são aceitos na entrada. */
+export const LEVELS = ["low", "middle", "high"] as const;
+export type Level = typeof LEVELS[number];
+
 /**
- * Matriz do `delegate`: decisão do dono com dados Artificial Analysis. Base de 2026-09-30
- * para os níveis 2/3: research/2026-09-30-gpt-6-1-sol.md; nível 4:
- * research/2026-09-24-custo-por-tarefa.md. Nível 3 revisto em 2026-10-07:
- * research/2026-10-07-haiku-5-5.md.
- * Escada $0,07 → $0,21 (~3×) → $0,39 (~1,9×) → $1,82 (~4,7×) → $5,98 (~3,3×),
- * como proxy de cota. Tudo por assinatura (codex/claude): pay-per-token fica fora de propósito.
- * Em 2026-09-24, Opus 5.5 high substitui Astra max: índice geral 54 vs. 53, custo 44% menor.
- * O motivo de 2026-09-23 para manter Astra (topo medido em código) caducou: Opus 5.5 max
- * tem 66 vs. 62. Ainda NÃO há índice de código de Opus high; reavaliar com AA e rate.
- * Grok 4.6 saiu em 2026-09-23 (mesma nota do Sol xhigh a 3,5× o custo).
- * Cota aceita: codex concentra 3 de 5 níveis (1-3); claude concentra 4-5 e compartilha a
- * assinatura do host Claude Code — esgotá-la derruba os dois níveis e o host juntos.
- * O cursor saiu do caminho padrão (assinatura cancelada) — fallback só sob CURSOR_ENABLED.
- * Leitura barata (explore/read_slice) reaproveita o modelo do nível 1.
+ * Matriz do `delegate`: decisão do dono em research/2026-10-23-tres-niveis.md.
+ * Três nomes reduzem a indecisão do host: Luna max (AA 38/$0,07), Sol medium (48/$0,21)
+ * e Opus high (54/$1,82). Escada de cota $0,07 → $0,21 (~3×) → $1,82 (~8,7×).
+ * Codex concentra low/middle; high usa a assinatura Claude do host Claude Code.
+ * Low/middle cobrem a maior parte do trabalho; high é caro e fica para escalada justificada.
+ * Ids confirmados: Luna em 2026-09-23, Sol 6.1 em 2026-09-30 (codex-cli 0.159.2),
+ * Opus 5.5 high em 2026-09-26 (modelUsage). O alias `opus` ainda aponta ao Opus antigo.
+ * Cursor permanece legado e opt-in: conservam-se os ids dos três tiers retidos, sem refresh.
  */
-export const TIERS: Record<number, TierEntry> = {
-  1: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
-  2: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  // O max dá só +1 no índice AA sobre o xhigh (52 vs. 51) por +85% de custo ($0,72 vs. $0,39).
-  // No log até 2026-10-07, max teve 12/19 sucessos (2 timeouts, 4 cotas, 1 falha), p50 26,6 min
-  // e p90 48 min; medium teve 22/22 e p50 5,6 min. Ver research/2026-10-07-haiku-5-5.md.
-  3: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "xhigh" }, cursorModel: "grok-4.6-high-fast" },
-  // gpt-6.1-sol confirmado via codex exec em 2026-09-30 (low e max, codex-cli 0.159.2);
-  // decisão e custos: research/2026-09-30-gpt-6-1-sol.md. gpt-6-luna, gpt-6-sol e
-  // claude-opus-5-5 confirmados em 2026-09-23 (Sol histórico, Opus com max);
-  // gpt-6-astra em 2026-09-14 (histórico). Opus com effort high
-  // confirmado em 2026-09-26 (modelUsage = claude-opus-5-5). O alias `opus` ainda resolve
-  // para o claude-opus-5 antigo — use sempre o id completo claude-opus-5-5.
-  // Os cursorModel NÃO acompanham o refresh: o cursor é legado (assinatura cancelada) e os ids
-  // dele ficaram como estavam — deduzidos do padrão dos vizinhos, nunca verificados.
-  4: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" }, cursorModel: "gpt-6-astra-max-fast" },
-  5: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "max" }, cursorModel: "claude-fable-max-fast" },
+export const TIERS: Record<Level, TierEntry> = {
+  low: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
+  middle: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
+  high: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" }, cursorModel: "gpt-6-astra-max-fast" },
 };
 
 /**
@@ -1623,20 +1608,20 @@ export function resolveFastTier(
 }
 
 /**
- * Roteia o nível (1-5) para (engine, modelo, effort). Usa a engine preferida do nível se instalada
+ * Roteia o nível nomeado (low/middle/high) para (engine, modelo, effort). Usa a engine preferida do nível se instalada
  * E saudável (quando `health` é passado — ver computeEngineHealth em src/usage.ts). Se faltar ou
  * estiver unhealthy: cai para o cursor-agent equivalente SÓ quando CURSOR_ENABLED E o próprio cursor
  * está saudável; senão lança erro claro. `has`/`cursorEnabled`/`health` são injetados para teste.
  * `health` omitido preserva o comportamento anterior (toda engine é tratada como saudável).
  */
 export function resolveTier(
-  level: number,
+  level: Level,
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
   health?: Record<string, number>,
 ): Tier {
+  if (!LEVELS.includes(level)) throw new Error(`invalid delegate level: received ${level}, expected low, middle or high`);
   const entry = TIERS[level];
-  if (!entry) throw new Error(`invalid delegate level: received ${level}, expected integer 1-5`);
   const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
   if (has(entry.primary.engine) && healthy(entry.primary.engine)) return entry.primary;
   if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: entry.cursorModel };
@@ -1659,14 +1644,14 @@ export interface DelegateResolution {
  * model/effort fornecidos pelo caller atravessam — cada CLI usa seu próprio default. Função pura.
  */
 export function resolveDelegate(
-  level: number,
+  level: Level,
   params: { engine?: string; model?: string; effort?: string } = {},
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
   health?: Record<string, number>,
 ): DelegateResolution {
+  if (!LEVELS.includes(level)) throw new Error(`invalid delegate level: received ${level}, expected low, middle or high`);
   const entry = TIERS[level];
-  if (!entry) throw new Error(`invalid delegate level: received ${level}, expected integer 1-5`);
 
   if (params.engine !== undefined) {
     const engine = parseEngine(params.engine, "parâmetro engine de delegate");
@@ -1703,8 +1688,8 @@ export function resolveDelegate(
  * resolveTier caiu no fallback (ex.: cursor) ou o nível é inválido. Usado pelo usage log para emitir
  * o "matched_request" do trust layer (src/usage.ts), sem acoplar usage.ts à matriz TIERS.
  */
-export function isDefaultTierEngine(level: number, engine: Engine): boolean {
-  return TIERS[level]?.primary.engine === engine;
+export function isDefaultTierEngine(level: Level, engine: Engine): boolean {
+  return LEVELS.includes(level) && TIERS[level].primary.engine === engine;
 }
 
 /**

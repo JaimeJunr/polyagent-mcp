@@ -9,9 +9,9 @@ function toolUse(name: string, input: Record<string, unknown>): string {
 describe("parseStream — como o host passou o agent ao worker", () => {
   it("registra name, inline e none para delegate e fast_delegate", () => {
     const stream = [
-      toolUse("mcp__polyagent__delegate", { prompt: "x", level: 1, agent: "ivt-core:code-reviewer" }),
+      toolUse("mcp__polyagent__delegate", { prompt: "x", level: "low", agent: "ivt-core:code-reviewer" }),
       toolUse("mcp__polyagent__fast_delegate", { prompt: "x", agent: { prompt: "skill body" } }),
-      toolUse("mcp__polyagent__delegate", { prompt: "x", level: 1 }),
+      toolUse("mcp__polyagent__delegate", { prompt: "x", level: "low" }),
     ].join("\n");
     expect(parseStream(stream).agentArgs).toEqual(["name", "inline", "none"]);
   });

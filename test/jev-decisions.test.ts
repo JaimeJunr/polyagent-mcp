@@ -103,10 +103,10 @@ describe("fan_out Jev agreement", () => {
   });
 
   it("returns the first worker text with the agreement note and all worker session handles", () => {
-    const text = fanOutAgreementText("first answer", "- codex (level 1): codex:a\n- claude (level 5): claude:b", 0.93);
+    const text = fanOutAgreementText("first answer", "- codex (level low): codex:a\n- claude (level high): claude:b", 0.93);
     expect(text).toContain("[jev: workers agree (p=0.93), arbiter skipped]");
     expect(text).toContain("first answer");
-    expect(text).toContain("Worker sessions (pass to follow_up):\n- codex (level 1): codex:a\n- claude (level 5): claude:b");
+    expect(text).toContain("Worker sessions (pass to follow_up):\n- codex (level low): codex:a\n- claude (level high): claude:b");
   });
 
   it("falls back on low probability, an error, or an invalid answer", () => {
@@ -184,12 +184,12 @@ describe("fan_out Jev agreement", () => {
 });
 
 describe("delegate Jev shadow", () => {
-  it("offers five levels and truncates the task prompt", () => {
+  it("offers three named levels and truncates the task prompt", () => {
     const request = delegateShadowRequest("x".repeat(20_000));
     expect(request.questions.level).toMatchObject({ type: "choice" });
-    expect(Object.keys(request.questions.level.criteria ?? {})).toEqual(["1", "2", "3", "4", "5"]);
-    expect(request.questions.level.criteria?.["2"]).toContain("GPT-6.1 Sol medium");
-    expect(request.questions.level.criteria?.["3"]).toContain("GPT-6.1 Sol xhigh");
+    expect(Object.keys(request.questions.level.criteria ?? {})).toEqual(["low", "middle", "high"]);
+    expect(request.questions.level.criteria?.middle).toContain("GPT-6.1 Sol medium");
+    expect(request.questions.level.criteria?.high).toContain("Claude Opus 5.5 high");
     expect((request.state as string).length).toBeLessThanOrEqual(12_000);
   });
 
@@ -202,32 +202,32 @@ describe("delegate Jev shadow", () => {
 
   it("records a valid choice without changing the requested level", () => {
     const decision = shadowDecision({
-      answers: { level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 } },
+      answers: { level: { type: "choice", choice: "middle", probabilities: { middle: 0.8 }, confidence: 0.8 } },
       usage: { cost: 0.002 },
-    }, 4, 42);
-    expect(decision).toMatchObject({ name: "delegate_level_shadow", candidates: ["1", "2", "3", "4", "5"], choice: "2", confidence: 0.8, actual: "4", accepted: false, fallback: false, latencyMs: 42, cost: 0.002 });
+    }, "high", 42);
+    expect(decision).toMatchObject({ name: "delegate_level_shadow", candidates: ["low", "middle", "high"], choice: "middle", confidence: 0.8, actual: "high", accepted: false, fallback: false, latencyMs: 42, cost: 0.002 });
   });
 
   it("records null on failure or an invalid choice", () => {
-    expect(shadowDecision(new Error("timeout"), 3, 5000)).toMatchObject({ choice: null, confidence: null, actual: "3", accepted: false, fallback: false });
-    expect(shadowDecision({ answers: { level: { type: "choice", choice: "9", probabilities: {}, confidence: 0.5 } } }, 3, 2).choice).toBeNull();
-    expect(shadowDecision({} as never, 3, 2).choice).toBeNull();
+    expect(shadowDecision(new Error("timeout"), "middle", 5000)).toMatchObject({ choice: null, confidence: null, actual: "middle", accepted: false, fallback: false });
+    expect(shadowDecision({ answers: { level: { type: "choice", choice: "9", probabilities: {}, confidence: 0.5 } } }, "middle", 2).choice).toBeNull();
+    expect(shadowDecision({} as never, "middle", 2).choice).toBeNull();
   });
 
   it("starts the worker before askJev, then logs the shadow result", async () => {
     const events: string[] = [];
-    const fake = new FakeJevFetch(response({ level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 },
+    const fake = new FakeJevFetch(response({ level: { type: "choice", choice: "middle", probabilities: { middle: 0.8 }, confidence: 0.8 },
       names_target: noul(0.9), defines_done: noul(0.9), single_task: noul(0.9),
     }));
     const decisions: DecisionRecord[] = [];
     const result = await withDelegateShadow(
       async () => { events.push("worker"); return "worker result"; },
-      "task", 4,
+      "task", "high",
       { ask: async (params) => { events.push("jev"); return askWith(fake)(params); }, log: (decision) => decisions.push(decision) },
     );
     expect(events).toEqual(["worker", "jev"]);
     expect(result).toBe("worker result");
-    expect(decisions).toMatchObject([{ choice: "2", actual: "4", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: "clear" }]);
+    expect(decisions).toMatchObject([{ choice: "middle", actual: "high", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: "clear" }]);
   });
 
   it("preserves a worker error when Jev fails", async () => {
@@ -235,10 +235,10 @@ describe("delegate Jev shadow", () => {
     const decisions: DecisionRecord[] = [];
     const workerError = new Error("worker failed");
     await expect(withDelegateShadow(
-      async () => { throw workerError; }, "task", 3,
+      async () => { throw workerError; }, "task", "middle",
       { ask: askWith(fake), log: (decision) => decisions.push(decision) },
     )).rejects.toBe(workerError);
-    expect(decisions).toMatchObject([{ choice: null, actual: "3" }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
+    expect(decisions).toMatchObject([{ choice: null, actual: "middle" }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
   });
 
   it("asks the three clarity criteria in the same request as the level", () => {
@@ -271,18 +271,18 @@ describe("delegate Jev shadow", () => {
 
   it("logs level and clarity from one Jev call, tagged with the worker session", async () => {
     const fake = new FakeJevFetch(response({
-      level: { type: "choice", choice: "2", probabilities: { "2": 0.8 }, confidence: 0.8 },
+      level: { type: "choice", choice: "middle", probabilities: { middle: 0.8 }, confidence: 0.8 },
       names_target: noul(0.9), defines_done: noul(0.3), single_task: noul(0.9),
     }));
     const decisions: DecisionRecord[] = [];
     await withDelegateShadow(
       async () => toolResult("done\n\n---\nsession_id: codex:t-1 (pass to follow_up to continue; grade it with rate(session_id, score 1-5))"),
-      "task", 3,
+      "task", "middle",
       { ask: askWith(fake), log: (decision) => decisions.push(decision), sessionOf: footerSession },
     );
     expect(fake.calls).toHaveLength(1);
     expect(decisions).toMatchObject([
-      { name: "delegate_level_shadow", choice: "2", session: "codex:t-1" },
+      { name: "delegate_level_shadow", choice: "middle", session: "codex:t-1" },
       { name: "delegate_prompt_clarity_shadow", choice: "unclear", session: "codex:t-1" },
     ]);
   });
@@ -298,10 +298,16 @@ describe("delegate Jev shadow", () => {
     const fake = new FakeJevFetch(new Promise<JevHttpResponse>(() => {}));
     const decisions: DecisionRecord[] = [];
     const result = await withDelegateShadow(
-      async () => "worker result", "task", 1,
+      async () => "worker result", "task", "low",
       { ask: askWith(fake), log: (decision) => decisions.push(decision), timeoutMs: 5 },
     );
     expect(result).toBe("worker result");
-    expect(decisions).toMatchObject([{ choice: null, actual: "1", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
+    expect(decisions).toMatchObject([{ choice: null, actual: "low", accepted: false, fallback: false }, { name: "delegate_prompt_clarity_shadow", choice: null }]);
+  });
+});
+
+describe("Jev rejects old numeric choices", () => {
+  it.each(["1", "3", "5", "medium", "toString"])("rejects %s", (choice) => {
+    expect(shadowDecision({ answers: { level: { type: "choice", choice, probabilities: {}, confidence: 0.8 } } }, "high", 1).choice).toBeNull();
   });
 });

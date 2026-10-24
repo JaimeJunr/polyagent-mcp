@@ -47,7 +47,7 @@ describe("tool surface (US-003)", () => {
 
   it("instructions anunciam a escada AA atual antes dos schemas deferred", () => {
     expect(indexSrc).toContain(
-      "levels: 1=GPT-6 Luna max, 2=GPT-6.1 Sol medium, 3=GPT-6.1 Sol xhigh, 4=Claude Opus 5.5 high, 5=Claude Opus 5.5 max; AA quota proxies $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)",
+      "levels: low=GPT-6 Luna max, middle=GPT-6.1 Sol medium, high=Claude Opus 5.5 high; AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×)",
     );
   });
 
@@ -134,12 +134,12 @@ describe("tool surface (US-003)", () => {
   });
 
   it("delegate e README descrevem a escada AA atual", () => {
-    const ladder = "$0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)";
+    const ladder = "$0.07 → $0.21 (~3×) → $1.82 (~8.7×)";
     const delegate = registeredToolBlock("delegate");
     expect(delegate).toContain(ladder);
-    expect(delegate).toContain("3=GPT-6.1 Sol xhigh (codex)");
+    expect(delegate).toContain("middle=GPT-6.1 Sol medium (codex)");
     expect(readme.replace(/\s+/g, " ")).toContain(ladder);
-    expect(readme).toContain("3=GPT-6.1 Sol xhigh (codex)");
+    expect(readme).toContain("middle=GPT-6.1 Sol medium (codex)");
   });
 
   it("footer orienta a continuar e avaliar a sessão", () => {

@@ -18,10 +18,12 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-10-23 | [Três níveis nomeados no delegate](2026-10-23-tres-niveis.md) | Decisão do dono: low=Luna max, middle=Sol 6.1 medium, high=Opus 5.5 high; quebra da entrada numérica; custos $0,07 → $0,21 → $1,82; evidência AA, ratings locais e critérios de reavaliação |
 | 2026-10-22 | [Radar: inferência rápida](2026-10-22-radar-inferencia-rapida.md) | Sem medição: DeepSeek V4.1 Flash no Fireworks como rival do mercury-2 na fila rápida; Liquid RIPL/d1 como possível substituto do Jev; critérios de bench pra cada um |
 | 2026-10-07 | [Claude Haiku 5.5 contra GPT-6 Luna](2026-10-07-haiku-5-5.md) | Id `claude-haiku-5-5`; alias `haiku` já resolve para ele; custo AA por effort em `src/costs.ts`; bench real 9/9, mediana 5,6 s contra 8,6 s do Luna medium; Haiku 5.5 medium vira 2º do `FAST_CANDIDATES`; Pareto do `delegate` revista e nível 3 passa a Sol 6.1 xhigh (max: 12/19 sucessos, p50 26,6 min) |
 | 2026-09-30 | [Eval de adoção depois dos PRs #37/#38](2026-09-30-adoption-handoff.md) | **Aplicada e medida:** r2 10/18 → hook novo 14/18. Bloquear `grep` no Bash uma vez levou localizar código de 0/3 a 3/3; implementação 2/4 → 3/4; aviso em `Agent`/`Skill` não mudou o handoff (0/2) |
 | 2026-09-30 | [GPT-6.1 Sol nos níveis 2 e 3](2026-09-30-gpt-6-1-sol.md) | Índice e custo AA por esforço; níveis 2/3 passam a medium/max; escada $0,07 → $0,21 → $0,72 → $1,82 → $5,98; id confirmado via codex-cli 0.159.2 |
+| 2026-09-28 | [Família LoRA de fine-tuning](2026-09-28-familia-lora.md) | Sem medição: o que SoRA, QLoRA, DoRA, rsLoRA, LoRA+, VeRA e PiSSA mudam no remendo de baixo rank; Unsloth tem LoRA, QLoRA, rsLoRA e DoRA, não tem SoRA; bridge não muda |
 | 2026-09-28 | [Laya local (Unsloth Studio) no lugar do Jev](2026-09-28-laya-local.md) | Mesmo bench do Jev contra `laya-multilingual` e `laya-typed-decisions` via `POLYAGENT_JEV_URL`; seguro no gate a 0,85 mas quase não pula, `fan_out` longo estoura a janela, shadow ruim; Jev continua |
 | 2026-09-28 | [Claude Sonnet 5.5 contra a frota](2026-09-28-sonnet-5-5.md) | Índice AA e $/tarefa por esforço; fora da fronteira de Pareto, `TIERS` não muda; custo entra em `src/costs.ts`; id ainda sem teste ao vivo |
 | 2026-09-24 | [Decisões com Jev: consenso em `fan_out` e shadow do `delegate`](2026-09-24-jev-decisions-bench.md) | Benchmark sintético do gate de consenso e da sugestão shadow de nível; flags seguem opt-in |
