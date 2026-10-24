@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
+  runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote, denyNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
@@ -71,6 +71,11 @@ const agentSchema = z.union([
 ]);
 const agentDescription =
   "Run the worker as a specialized agent/persona. A name (e.g. 'pit:issue-investigator' or 'code-reviewer') is resolved from .claude/agents (project + home) and ~/.claude/plugins — its system prompt is injected via each engine's channel (claude --append-system-prompt, grok --rules, codex developer_instructions, cursor/opencode/kimi/muse prompt prefix). Or pass an inline { prompt } to skip file lookup. Works on every level/engine, not just claude. To hand over a skill, pass { skill: 'plugin:name' } (e.g. { skill: 'ivt-quality:security-audit' }): its SKILL.md becomes the persona and its folder (scripts/, references/) is mounted read-only in the worker sandbox.";
+
+// Comandos bloqueados no sandbox. Só delegate/fast_delegate (as que executam): fora do `routing`.
+const denySchema = z.array(z.string());
+const denyDescription =
+  "Commands to block inside the worker's sandbox: a command plus the args that identify it, e.g. ['git push', 'rm', 'make db-up', 'npx prisma migrate', 'python manage.py migrate', 'docker compose down']. Outside git the args match as an ordered subsequence of the call's tokens (so `make -j4 db-up` and `docker compose -f x.yml down` are caught; `db-up2` is not); git matches the subcommand after its global options. Only commands on PATH are caught, not scripts run by path (`bin/rails`, `./manage.py`) nor indirect runs (`npm run migrate`). A matching call fails with exit 126 and the worker is told up front. A guardrail against accidents, not a security boundary (the worker could still reach the binary some other way). Requires the bwrap sandbox: refused when POLYAGENT_SANDBOX=off.";
 
 /**
  * Formata o resultado do Cursor: passa o texto pelo egress scrubber (scrubSecrets) antes do footer
@@ -176,7 +181,7 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The required `level` picks one of three named model+effort pairs on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, cheapest), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: high is EXPENSIVE ($1.82/task AA proxy, ~8.7× middle) and shares the Claude Code host subscription. Use high only when a cheaper level already failed or for frontier reasoning such as hard debugging, cross-file impact, or a costly review verdict. Low/middle cover most work, including implementation. Give a complete, self-contained instruction — the worker does not see your context.",
+      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The required `level` picks one of three named model+effort pairs on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, cheapest), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: high is EXPENSIVE ($1.82/task AA proxy, ~8.7× middle) and shares the Claude Code host subscription. Use high only when a cheaper level already failed or for frontier reasoning such as hard debugging, cross-file impact, or a costly review verdict. Low/middle cover most work, including implementation. Give a complete, self-contained instruction — the worker does not see your context. Optional `deny` blocks commands (e.g. 'git push', 'rm', 'make db-up', 'npx prisma migrate') inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       level: z.enum(LEVELS)
@@ -186,6 +191,7 @@ server.registerTool(
         .optional()
         .describe("Explicit engine override: 'codex', 'grok', 'claude', 'cursor', 'opencode', 'kimi' or 'muse'. It beats the level's primary engine. With 'opencode', model must use the provider/model format (e.g. 'google/gemini-3.8-flash'). If it differs from the level's primary engine, the tier model and effort are not inherited."),
       agent: agentSchema.optional().describe(agentDescription),
+      deny: denySchema.optional().describe(denyDescription),
       timeout_ms: z
         .number()
         .int()
@@ -199,7 +205,7 @@ server.registerTool(
   // resolveDelegate. force: no sandbox o $HOME isolado tira o "trusted" do cursor-agent e todo
   // shell é rejeitado sem --force; grok/codex/opencode auto-aprovam por args.
   // `model`/`effort` explícitos do chamador ainda sobrepõem o tier quando aplicável.
-  async ({ prompt, level, engine: engineParam, agent, timeout_ms, cwd, model, effort }) => {
+  async ({ prompt, level, engine: engineParam, agent, deny, timeout_ms, cwd, model, effort }) => {
     const tier = resolveDelegate(
       level,
       { engine: engineParam, model, effort },
@@ -215,13 +221,14 @@ server.registerTool(
       tier.engine,
       async () => {
         const res = await runCursor({
-          prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
+          prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote() + denyNote(deny),
           cwd,
           engine: tier.engine,
           model: tier.model,
           effort: tier.effort,
           agentPrompt: withTerseStyle(resolved?.prompt),
           roBinds: resolved?.mountRo ? [resolved.mountRo] : undefined,
+          deny,
           force: true,
           timeoutMs: timeout_ms,
           tool: "delegate",
@@ -242,10 +249,11 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier.",
+      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier. Optional `deny` blocks commands (e.g. 'git push', 'rm', 'make db-up', 'npx prisma migrate') inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       agent: agentSchema.optional().describe(agentDescription),
+      deny: denySchema.optional().describe(denyDescription),
       timeout_ms: z
         .number()
         .int()
@@ -256,7 +264,7 @@ server.registerTool(
     },
   },
   // A ordem observada escolhe engine+modelo+effort; overrides explícitos continuam vencendo.
-  async ({ prompt, agent, timeout_ms, cwd, model, effort }) => {
+  async ({ prompt, agent, deny, timeout_ms, cwd, model, effort }) => {
     const tier = resolveFastTier(hasEngine, CURSOR_ENABLED, currentEngineHealth());
     const selectedModel = model ?? tier.model;
     const selectedEffort = effort ?? tier.effort;
@@ -265,13 +273,14 @@ server.registerTool(
       "fast_delegate",
       tier.engine,
       () => runCursor({
-        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote(),
+        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote() + denyNote(deny),
         cwd,
         engine: tier.engine,
         model: selectedModel,
         effort: selectedEffort,
         agentPrompt: withTerseStyle(resolved?.prompt),
         roBinds: resolved?.mountRo ? [resolved.mountRo] : undefined,
+        deny,
         force: true,
         timeoutMs: timeout_ms,
         tool: "fast_delegate",
