@@ -20,16 +20,18 @@
  *    one-time reminder to run ToolSearch, because these MCP tools are deferred
  *    and lose to the always-loaded native Read/Grep until their schemas load.
  *  - Fail-open: web, Read grande e Bash de busca podem ser bloqueados só uma vez; os demais
- *    casos apenas injetam `additionalContext`. Agent/Task/Skill nunca são bloqueados:
- *    o worker não tem MCP nem browser, então a tool nativa às vezes é a certa.
+ *    casos apenas injetam `additionalContext`. Agent/Task/Skill: em redirect, deny único
+ *    SÓ quando o subagent/skill é encontrado e não precisa de MCP, browser nem subagents
+ *    (o worker consegue assumir o trabalho); caso contrário, só nudge. O nudge sozinho
+ *    não mudou nada (handoff 0/2, research/2026-09-30-adoption-handoff.md).
  *  - Never breaks the tool: any error → print nothing, exit 0.
  *
  * Env:
  *  - POLYAGENT_HOOK_MIN_LINES: line threshold for the Read nudge (default 300).
  *  - POLYAGENT_HOOK_MODE: off | nudge | redirect (padrão redirect).
  */
-import { readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -143,6 +145,122 @@ export function agentSkillNudge(tool, toolInput) {
   return null;
 }
 
+// ---- Handoff com redirect: só quando o worker realmente assume o trabalho ----
+
+const HANDOFF_MAX_DEPTH = 6;
+// Skill que cita MCP (exceto context-mode), browser ou subagents precisa do host.
+const SKILL_NEEDS_HOST_RE =
+  /mcp__(?!plugin_context-mode_)|playwright|agent-browser|Claude_Browser|claude-in-chrome|subagent_type|\b(?:Task|Agent) tool\b/i;
+
+/** `plugin:nome` → { plugin, base }; null se vazio, com '/' ou '..'. */
+function splitHandoffName(raw) {
+  if (typeof raw !== "string" || !raw || raw.includes("/") || raw.includes("..")) return null;
+  const i = raw.lastIndexOf(":");
+  const base = i < 0 ? raw : raw.slice(i + 1);
+  const plugin = i < 0 ? "" : raw.slice(0, i);
+  return base ? { plugin, base } : null;
+}
+
+/** Caminhos de arquivo sob `root` (profundidade ≤ 6, sem diretórios ocultos) aceitos por `accept`. */
+function walkFind(root, accept, readdir, depth = 0) {
+  if (depth > HANDOFF_MAX_DEPTH) return null;
+  let entries;
+  try {
+    entries = readdir(root, { withFileTypes: true });
+  } catch {
+    return null; // diretório ausente/ilegível: segue sem derrubar o hook
+  }
+  for (const e of entries) {
+    const full = `${root}/${e.name}`;
+    if (e.isDirectory()) {
+      if (e.name.startsWith(".")) continue;
+      const hit = walkFind(full, accept, readdir, depth + 1);
+      if (hit) return hit;
+    } else if (accept(full)) return full;
+  }
+  return null;
+}
+
+/** Conteúdo do primeiro arquivo que existe nos caminhos diretos, senão varre os plugins. */
+function findHandoffFile(direct, pluginRoot, accept, deps) {
+  for (const p of direct) {
+    try {
+      return deps.readFileSync(p, "utf8");
+    } catch {
+      // próximo candidato
+    }
+  }
+  const hit = walkFind(pluginRoot, accept, deps.readdirSync);
+  if (!hit) return null;
+  try {
+    return deps.readFileSync(hit, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function handoffDeps(deps = {}) {
+  return {
+    readdirSync: deps.readdirSync ?? readdirSync,
+    readFileSync: deps.readFileSync ?? readFileSync,
+    home: deps.home ?? process.env.HOME ?? homedir(),
+  };
+}
+
+/** Texto do arquivo do subagente (`.claude/agents/<base>.md`), ou null se não achar. */
+export function findSubagentFile(subagentType, cwd, deps) {
+  const n = splitHandoffName(subagentType);
+  if (!n) return null;
+  const d = handoffDeps(deps);
+  const direct = [...(cwd ? [`${cwd}/.claude/agents/${n.base}.md`] : []), `${d.home}/.claude/agents/${n.base}.md`];
+  const accept = (p) => p.endsWith(`/agents/${n.base}.md`) && (!n.plugin || p.includes(`/${n.plugin}/`));
+  return findHandoffFile(direct, `${d.home}/.claude/plugins`, accept, d);
+}
+
+/** Texto do SKILL.md (`skills/<base>/SKILL.md`), ou null se não achar. */
+export function findSkillFile(skill, cwd, deps) {
+  const n = splitHandoffName(skill);
+  if (!n) return null;
+  const d = handoffDeps(deps);
+  const direct = [
+    ...(cwd ? [`${cwd}/.claude/skills/${n.base}/SKILL.md`] : []),
+    `${d.home}/.claude/skills/${n.base}/SKILL.md`,
+  ];
+  const accept = (p) => p.endsWith(`/skills/${n.base}/SKILL.md`) && (!n.plugin || p.includes(`/${n.plugin}/`));
+  return findHandoffFile(direct, `${d.home}/.claude/plugins`, accept, d);
+}
+
+/** true = manter a tool nativa (precisa de MCP, browser ou subagents; ou não achou o arquivo). */
+export function subagentNeedsHost(text) {
+  if (typeof text !== "string") return true;
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  const line = m && /^tools:[ \t]*(.*)$/m.exec(m[1]);
+  if (!line) return true; // sem `tools:` herda tudo
+  return line[1].split(/[\s,\[\]'"]+/).filter(Boolean).some(
+    (t) => t === "Agent" || t === "Task" ||
+      (t.startsWith("mcp__") && !t.startsWith("mcp__plugin_context-mode_")), // inclui as tools de browser (mcp__)
+  );
+}
+
+export function skillNeedsHost(text) {
+  return typeof text !== "string" || SKILL_NEEDS_HOST_RE.test(text);
+}
+
+/** Texto de redirect quando o worker pode assumir o handoff; null se deve ficar o nudge. */
+export function handoffRedirectText(tool, toolInput, cwd, deps) {
+  const ti = toolInput ?? {};
+  if (tool === "Skill") {
+    const skill = typeof ti.skill === "string" ? ti.skill.slice(0, 120) : "";
+    if (skillNeedsHost(findSkillFile(skill, cwd, deps))) return null;
+    return `polyagent worker can run this skill (${skill}) now: delegate(prompt, level, agent: { skill: "${skill}" }) ` +
+      "(or fast_delegate). The worker gets its SKILL.md as persona and the skill folder mounted read-only.";
+  }
+  const name = typeof ti.subagent_type === "string" ? ti.subagent_type.slice(0, 120) : "";
+  if (subagentNeedsHost(findSubagentFile(name, cwd, deps))) return null;
+  return `polyagent worker can run this subagent (${name}) now: delegate(prompt, level, agent: "${name}") ` +
+    "(or fast_delegate). The worker gets its persona; it has no MCP servers or browser.";
+}
+
 // Edit/Write → o agente está prestes a IMPLEMENTAR ele mesmo. 1×/sessão, lembra que uma
 // tarefa self-contained pode ir INTEIRA pro delegate(prompt, level) em vez de gastar tokens
 // caros de orquestrador. Não desencoraja editar — só reposiciona: delegar execução é o default.
@@ -224,9 +342,8 @@ export function sessionStartContext() {
     "connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or " +
     "browser and do not load your subagents or global/plugin skills on their own, but you can hand them over " +
     "through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), " +
-    "a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a " +
-    "skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own " +
-    ".claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP " +
+    "a skill with agent: { skill: \"plugin:name\" } (its folder is mounted read-only, so scripts/ and " +
+    "references/ stay readable). A task is not all-or-nothing: only steps that need an MCP " +
     "server or a browser stay with you; delegate the rest. " +
     "For locating/mapping code, call the bridge's explore(question) DIRECTLY instead of spawning the " +
     "native Explore subagent — the bridge runs on GPT-6 Luna (cheap) while a spawned " +
@@ -283,7 +400,8 @@ export function decide(input, deps = {}) {
   const read = deps.readFileSync ?? readFileSync;
   const minLines = deps.minLines ?? MIN_LINES;
   const seen = input?.seen instanceof Set ? input.seen : new Set();
-  const base = baseDecision(input, { stat, read, minLines }, seen);
+  const handoff = { readdirSync: deps.readdirSync, readFileSync: deps.readFileSync, home: deps.home };
+  const base = baseDecision(input, { stat, read, minLines, handoff }, seen);
   if (!base) return null;
   // O primeiro nudge da sessão carrega junto o lembrete único de preload.
   if (base.key !== "preload" && !seen.has("preload")) {
@@ -297,7 +415,7 @@ export function decide(input, deps = {}) {
 }
 
 /** Decisão base por tipo de tool, já respeitando o dedup (`seen`). */
-function baseDecision(input, { stat, read, minLines }, seen) {
+function baseDecision(input, { stat, read, minLines, handoff }, seen) {
   const tool = input?.tool_name;
   const ti = input?.tool_input ?? {};
 
@@ -315,12 +433,16 @@ function baseDecision(input, { stat, read, minLines }, seen) {
     return seen.has("bash-search") ? null : { key: "bash-search", text: BASH_SEARCH_TEXT, redirect: true };
   }
 
-  // Handoff de persona/skill: só nudge, nunca bloqueia a ferramenta nativa.
+  // Handoff de persona/skill: deny único (redirect) só se o worker assume o trabalho;
+  // senão só nudge. Isentos (claude-code-guide, statusline-setup) → null.
   if (tool === "Agent" || tool === "Task" || tool === "Skill") {
     const key = tool === "Skill" ? "skill-handoff" : "agent-handoff";
     if (seen.has(key)) return null;
-    const text = agentSkillNudge(tool, ti);
-    return text ? { key, text } : null;
+    const nudgeText = agentSkillNudge(tool, ti);
+    if (!nudgeText) return null;
+    const cwd = typeof input?.cwd === "string" && input.cwd ? input.cwd : "";
+    const text = handoffRedirectText(tool, ti, cwd, handoff);
+    return text ? { key, text, redirect: true } : { key, text: nudgeText };
   }
 
   // Edit/Write/MultiEdit → o agente vai implementar ele mesmo. 1×/sessão: reposiciona
@@ -464,7 +586,7 @@ async function main() {
     process.exit(0);
   }
   const seen = loadSeen(path);
-  const res = decide({ tool_name: data?.tool_name, tool_input: data?.tool_input, seen });
+  const res = decide({ tool_name: data?.tool_name, tool_input: data?.tool_input, cwd: data?.cwd, seen });
   if (!res) process.exit(0);
   for (const k of res.keys) seen.add(k);
   saveSeen(path, seen);
