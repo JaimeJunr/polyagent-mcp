@@ -65,7 +65,12 @@ the **pure logic is testable without spawning a worker process**:
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
   collisions pick the newest match by mtime. An inline `{prompt}` skips lookup. Only the markdown
-  body crosses into the worker, and names containing `/` or `..` are rejected.
+  body crosses into the worker, and names containing `/` or `..` are rejected. `{ skill: "plugin:name" }`
+  resolves `skills/<name>/SKILL.md` (project `.claude/skills`, `~/.claude/skills`, then `~/.claude/plugins`,
+  newest by mtime, plugin prefix filters the path): the body becomes the persona and the canonical skill
+  folder comes back as `mountRo`, which `delegate`/`fast_delegate` pass as `RunOpts.roBinds` — the one
+  exception to "no new bind", so the skill's `scripts/`/`references/` are readable (RO) in the sandbox.
+  Motivated by handoff 0/2 in `research/2026-09-30-adoption-handoff.md`.
 - `claudeMd.ts` — managed routing block in the user's global `~/.claude/CLAUDE.md` (override path
   with `POLYAGENT_CLAUDE_MD_PATH`), delimited by `<!-- polyagent-mcp:begin v=<version> -->` …
   `<!-- polyagent-mcp:end -->`. `renderPolyagentBlock` generates it from `TIERS` (levels never
@@ -298,7 +303,7 @@ points, all in `cli.ts`:
   engine)` is the impure half (mkdtemp + `existsSync` probing) — keep the fs/tmp side effects there.
 - **Only `cwd` is mounted — paths outside it are invisible.** A command touching a sibling path
   (additional working dir, adjacent monorepo) fails with `No such file or directory`. Mount extras
-  RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
+  RO per call via `RunOpts.roBinds` (skill folders), or RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
   the ones that exist and aren't the workspace, and `buildSandboxArgs` binds them **after** the HOME
   overlays but **before** the workspace, so the workspace stays the last (never-shadowed) bind.
 - **Mandatory, with no graceful fallback.** `SANDBOX_ON` is true unless `POLYAGENT_SANDBOX` is
