@@ -48,8 +48,12 @@ Com `deny: ["git push", "git merge", "rm"]`: exit 126 em `git push origin main`,
 `git -C . -c a=b push`, alias `git p` → push, `git merge x`, `/usr/bin/git push`, `rm`, `/bin/rm`,
 `git --exec-path=/usr/lib/git-core push`. Passam: `git commit`, `git log`, `git status`.
 `/usr/lib/git-core/git-push` é symlink para `/usr/bin/git` (o shim): falha sem dar push, só sem a
-mensagem de bloqueio. Escapam (documentado): `git pull` (merge interno), `-c alias.x=push`,
-`npm --registry x publish` contra a regra `npm publish`.
+mensagem de bloqueio. Escapam (documentado): `git pull` (merge interno), `-c alias.x=push`, scripts do projeto chamados
+por caminho (`bin/rails`, `./manage.py`, `node_modules/.bin/*`) e execuções indiretas (`npm run
+migrate`, um alvo de make que roda migrate por dentro, `bundle exec` carregando em-processo): só
+comandos no PATH/dirs de sistema recebem shim e o `cmd` rejeita barra. Fora do git a regra casa por
+subsequência ordenada de tokens inteiros, então `npm --registry x publish`, `make -j4 db-up` e
+`docker compose -f x.yml down` são bloqueados.
 
 ## Reavaliar
 

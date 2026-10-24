@@ -243,7 +243,7 @@ const SANDBOX_PROXY_ENV = [
   "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
 ];
 
-/** Regra de `deny`: comando + prefixo de args que o shim bloqueia. */
+/** Regra de `deny`: comando + args que o shim bloqueia (git: prefixo do subcomando; demais: subsequência). */
 export interface DenyRule {
   cmd: string;
   args: string[];
@@ -293,8 +293,9 @@ const GIT_GLOBAL_SINGLE =
 
 /**
  * Gera o shim POSIX `/bin/sh` que substitui `cmd` no sandbox. Função pura. Bloqueia (stderr + exit 126)
- * quando os tokens iniciais do argv — depois das opções globais e da resolução de alias, no caso do
- * git — igualam os args de alguma regra; regra sem args bloqueia toda invocação. Fora disso faz
+ * quando os args de alguma regra aparecem no argv — no git, como tokens iniciais depois das opções
+ * globais e da resolução de alias; nos demais comandos, como subsequência ordenada em qualquer
+ * posição, por igualdade exata de token. Regra sem args bloqueia toda invocação. Fora disso faz
  * `exec "$REAL" "$@"` com os args originais. Guardrail contra acidente, não fronteira de segurança.
  *
  * Limites conhecidos: o alias é lido da config do cwd/global (não de `-C <outro-repo>`), e o git
@@ -313,8 +314,17 @@ export function buildShimScript(cmd: string, rules: DenyRule[], realPath: string
   for (const rule of mine.filter((r) => r.args.length === 0)) lines.push(`block ${shQuote(label(rule))}`);
   lines.push("match() {", "  :");
   for (const rule of mine.filter((r) => r.args.length > 0)) {
-    const cond = rule.args.map((arg, i) => `[ "\${${i + 1}-}" = ${shQuote(arg)} ]`).join(" && ");
-    lines.push(`  if ${cond}; then block ${shQuote(label(rule))}; fi`);
+    if (cmd === "git") {
+      // git: tokens iniciais (já depois das opções globais), senão `git commit -m push` seria barrado
+      const cond = rule.args.map((arg, i) => `[ "\${${i + 1}-}" = ${shQuote(arg)} ]`).join(" && ");
+      lines.push(`  if ${cond}; then block ${shQuote(label(rule))}; fi`);
+      continue;
+    }
+    // demais comandos: subsequência ordenada de tokens inteiros em qualquer posição (greedy), assim
+    // `make -j4 db-up` e `docker compose -f x.yml down` não escapam; `i` é o próximo token esperado
+    lines.push("  i=0", '  for a in "$@"; do', '    case "$i" in');
+    rule.args.forEach((arg, i) => lines.push(`      ${i}) [ "$a" = ${shQuote(arg)} ] && i=${i + 1} ;;`));
+    lines.push("    esac", "  done", `  if [ "$i" = ${rule.args.length} ]; then block ${shQuote(label(rule))}; fi`);
   }
   lines.push("}");
   if (cmd === "git") {

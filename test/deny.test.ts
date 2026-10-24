@@ -289,11 +289,65 @@ describe("buildShimScript — comportamento real via sh", () => {
     });
   });
 
-  it("regra com args em comando não-git casa pelos tokens iniciais (`npm publish`)", () => {
+  it("regra com args em comando não-git casa como subsequência ordenada (`npm publish`)", () => {
     withShim("npm", [{ cmd: "npm", args: ["publish"] }], (shim) => {
       expect(exec(shim, ["publish", "--tag", "x"]).code).toBe(126);
+      expect(exec(shim, ["--registry", "x", "publish"]).code).toBe(126);
       expect(exec(shim, ["install"]).code).toBe(0);
-      expect(exec(shim, ["run", "publish"]).code).toBe(0); // publish não é o token inicial
+      expect(exec(shim, ["install", "publisher"]).code).toBe(0);
+    });
+  });
+
+  const blockedBy = (cmd: string, rule: string[], cases: string[][], allowed: string[][]) =>
+    withShim(cmd, [{ cmd, args: rule }], (shim) => {
+      for (const args of cases) expect([args.join(" "), exec(shim, args).code]).toEqual([args.join(" "), 126]);
+      for (const args of allowed) expect([args.join(" "), exec(shim, args).code]).toEqual([args.join(" "), 0]);
+    });
+
+  it("make db-up: opções e alvos antes da regra não escapam; db-up2 e outros alvos passam", () => {
+    blockedBy("make", ["db-up"],
+      [["db-up"], ["-j4", "db-up"], ["-C", "infra", "db-up"], ["build", "db-up"], ["db-up", "build"]],
+      [["build"], ["db-up2"], ["-C", "db-up2"], []]);
+  });
+
+  it("npx prisma migrate: flags intercaladas bloqueiam, prisma generate passa", () => {
+    blockedBy("npx", ["prisma", "migrate"],
+      [["prisma", "migrate", "deploy"], ["-y", "prisma", "migrate", "deploy"], ["prisma", "-q", "migrate"]],
+      [["prisma", "generate"], ["migrate"], ["-y", "prisma"], ["migrate", "prisma"]]);
+  });
+
+  it("docker compose down: -f x.yml no meio não escapa, compose up passa", () => {
+    blockedBy("docker", ["compose", "down"],
+      [["compose", "down"], ["compose", "-f", "x.yml", "down"], ["compose", "-f", "x.yml", "down", "-v"]],
+      [["compose", "up"], ["compose", "-f", "x.yml", "up", "-d"], ["down", "compose"], ["ps"]]);
+  });
+
+  it("python manage.py migrate: -u antes bloqueia, runserver e ordem invertida passam", () => {
+    blockedBy("python", ["manage.py", "migrate"],
+      [["manage.py", "migrate"], ["-u", "manage.py", "migrate"], ["manage.py", "--noinput", "migrate"]],
+      [["manage.py", "runserver"], ["migrate", "manage.py"], ["manage.py"], ["-m", "migrate"]]);
+  });
+
+  it("bundle exec rails db:migrate: igualdade exata de token (db:migrate:status passa)", () => {
+    blockedBy("bundle", ["exec", "rails", "db:migrate"],
+      [["exec", "rails", "db:migrate"], ["exec", "rails", "db:migrate", "VERSION=1"], ["exec", "-v", "rails", "db:migrate"]],
+      [["exec", "rails", "db:migrate:status"], ["exec", "rails", "server"], ["exec", "db:migrate", "rails"]]);
+    blockedBy("rake", ["db:migrate"], [["db:migrate"], ["-t", "db:migrate"]], [["db:migrate:status"], ["db:rollback"]]);
+  });
+
+  it("subsequência exige tokens inteiros e não reaproveita um token para duas posições", () => {
+    blockedBy("tool", ["a", "a"], [["a", "x", "a"]], [["a"], ["aa"], ["a", "b"]]);
+  });
+
+  it("git mantém a lógica de subcomando: `git commit -m push` passa, sem subsequência", () => {
+    withShim("git", GIT_PUSH, (shim) => {
+      expect(exec(shim, ["commit", "-m", "push"]).code).toBe(0);
+      expect(exec(shim, ["log", "push"]).code).toBe(0);
+      expect(exec(shim, ["push"]).code).toBe(126);
+    });
+    withShim("git", [{ cmd: "git", args: ["push", "--force"] }], (shim) => {
+      expect(exec(shim, ["push", "origin", "--force"]).code).toBe(0); // git continua por prefixo
+      expect(exec(shim, ["push", "--force"]).code).toBe(126);
     });
   });
 

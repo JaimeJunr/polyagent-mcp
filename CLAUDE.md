@@ -314,7 +314,12 @@ points, all in `cli.ts`:
   the ones that exist and aren't the workspace, and `buildSandboxArgs` binds them **after** the HOME
   overlays but **before** the workspace, so the workspace stays the last (never-shadowed) bind.
 - **`deny` blocks commands via shims (`delegate`/`fast_delegate`, `RunOpts.deny`).** Each entry is a
-  command prefix (`"git push"`, `"rm"`); `parseDenyRules` rejects empty entries, a cmd outside
+  command + the args that identify it (`"git push"`, `"rm"`, `"make db-up"`, `"python manage.py migrate"`);
+  matching in the shim: **git** compares the leading tokens after global options/alias resolution (so
+  `git commit -m push` passes), **every other command** matches the rule args as an **ordered
+  subsequence** of argv, any position, exact token equality (`make -j4 db-up`, `npx -y prisma migrate
+  deploy`, `docker compose -f x.yml down` blocked; `db-up2`, `db:migrate:status`, reversed order pass).
+  `parseDenyRules` rejects empty entries, a cmd outside
   `/^[A-Za-z0-9._+-]+$/` (no slash), `sh`/`bash`/`dash` (the shim itself runs on `/bin/sh`) and args with
   quotes/backslash/`$`/backtick (they are embedded in a shell script). `buildShimScript` emits the POSIX
   `/bin/sh` shim: for `git` it skips global options (`-C`, `-c`, `--git-dir`, …) and resolves aliases via
@@ -332,7 +337,10 @@ points, all in `cli.ts`:
   against accidents, not a security boundary** (the worker can still reach the binary some other
   way); `denyNote` tells it up front what exits 126. `deny` needs bwrap: with `POLYAGENT_SANDBOX=off`
   `runCursor` rejects (`DENY_NEEDS_SANDBOX`) instead of running unguarded, and `fallbackOpts` carries
-  `deny` to the retried engine. Verified live under real bwrap 2026-10-24 (`/bin/rm`, `/usr/bin/rm`,
+  `deny` to the retried engine. **Not covered:** project scripts invoked by path (`bin/rails`,
+  `./manage.py`, `node_modules/.bin/*`) and indirect runs (`npm run migrate`, a make target that runs
+  migrate internally, `bundle exec` loading in-process) — only commands on PATH/system dirs are shimmed
+  and slashes are rejected in `cmd`. Verified live under real bwrap 2026-10-24 (`/bin/rm`, `/usr/bin/rm`,
   `git -C . -c a=b push`, alias `git p` blocked; `git status`/`git init` pass).
 - **Mandatory, with no graceful fallback.** `SANDBOX_ON` is true unless `POLYAGENT_SANDBOX` is
   `off`/`0`/`false`/`no`/empty. With the sandbox on and `bwrap` missing from PATH, `sandboxPreflight()`
