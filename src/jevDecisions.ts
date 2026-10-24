@@ -1,3 +1,4 @@
+import { LEVELS, type Level } from "./cli.js";
 import type { AskJevParams, JevResult } from "./jev.js";
 import type { DecisionRecord } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
@@ -6,7 +7,6 @@ const FANOUT_PER_WORKER_CHARS = 6_000;
 const FANOUT_TOTAL_CHARS = 24_000;
 const SHADOW_PROMPT_CHARS = 12_000;
 const JEV_DECISION_TIMEOUT_MS = 5_000;
-const LEVELS = ["1", "2", "3", "4", "5"];
 
 export type FanOutGateVerdict =
   | { accepted: true; fallback: false; choice: string; confidence: number; probability: number; cost: number | null }
@@ -88,11 +88,9 @@ export function delegateShadowRequest(prompt: string): AskJevParams {
         type: "choice",
         instructions: "Which difficulty level fits this task? Choose the lowest level likely to complete it well.",
         criteria: {
-          "1": "Mechanical or very simple task; cheapest GPT-6 Luna tier.",
-          "2": "Routine implementation or analysis; GPT-6.1 Sol medium.",
-          "3": "Complex implementation or reasoning; GPT-6.1 Sol xhigh.",
-          "4": "Hard debugging or cross-file impact needing frontier reasoning; expensive Claude Opus 5.5 high, sharing the Claude Code host subscription.",
-          "5": "Frontier reasoning that cheaper levels cannot handle; Claude Opus 5.5 max, last resort.",
+          low: "Mechanical work and routine implementation; GPT-6 Luna max, $0.07/task AA quota proxy.",
+          middle: "Implementation or reasoning beyond low; GPT-6.1 Sol medium, $0.21/task AA quota proxy. Low/middle cover most work.",
+          high: "Hard debugging, cross-file impact or a costly verdict after cheaper levels fail; expensive Claude Opus 5.5 high, $1.82/task AA quota proxy, sharing the Claude Code host subscription.",
         },
       },
       ...CLARITY_QUESTIONS,
@@ -158,9 +156,9 @@ export function footerSession(value: unknown): string | undefined {
   return undefined;
 }
 
-export function shadowDecision(result: JevResult | Error, requestedLevel: number, latencyMs: number): DecisionRecord {
+export function shadowDecision(result: JevResult | Error, requestedLevel: Level, latencyMs: number): DecisionRecord {
   const answer = result instanceof Error ? undefined : result.answers?.level;
-  const valid = answer?.type === "choice" && LEVELS.includes(answer.choice)
+  const valid = answer?.type === "choice" && LEVELS.some((level) => level === answer.choice)
     && Number.isFinite(answer.confidence) && answer.confidence >= 0 && answer.confidence <= 1;
   return {
     name: "delegate_level_shadow",
@@ -171,7 +169,7 @@ export function shadowDecision(result: JevResult | Error, requestedLevel: number
     fallback: false,
     latencyMs,
     cost: result instanceof Error ? null : result.usage?.cost ?? null,
-    actual: String(requestedLevel),
+    actual: requestedLevel,
   };
 }
 
@@ -240,7 +238,7 @@ export async function runFanOutConsensusGate<T>(
 export async function withDelegateShadow<T>(
   work: () => Promise<T>,
   prompt: string,
-  requestedLevel: number,
+  requestedLevel: Level,
   deps: DecisionDeps,
 ): Promise<T> {
   let worker: Promise<T>;

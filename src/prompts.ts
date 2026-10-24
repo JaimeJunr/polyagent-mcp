@@ -1,3 +1,5 @@
+import type { Level } from "./cli.js";
+
 /**
  * Prompt builders puros — isolados de index.ts para serem testáveis sem subir o server.
  * Cada função devolve o texto (e o modo, quando aplicável) passado ao Cursor agent.
@@ -148,7 +150,7 @@ export function webLookupPrompt(query: string): string {
 /** Saída de um worker do `fan_out`, repassada ao arbiter para comparação. */
 export interface FanOutWorkerOutput {
   engine: string;
-  level: number;
+  level: Level;
   sessionId?: string;
   text: string;
   /** true quando o worker falhou/timeout — o texto vira a mensagem de erro. */
@@ -226,8 +228,8 @@ export function generateImageGrokPrompt(description: string, outPath: string, in
   return [task, saveRule, "Report ONLY the final saved path — no summary."].join("\n\n");
 }
 
-/** Anexa uma sugestão de segunda opinião aos resultados dos níveis mais caros do delegate. */
-export function appendDelegateRiskHint(text: string, level: number): string {
-  if (level !== 4 && level !== 5) return text;
-  return `${text}\nLevel-${level} verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`;
+/** Anexa uma sugestão de segunda opinião aos resultados do nível high do delegate. */
+export function appendDelegateRiskHint(text: string, level: Level): string {
+  if (level !== "high") return text;
+  return `${text}\nHigh-level verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`;
 }

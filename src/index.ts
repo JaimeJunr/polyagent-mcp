@@ -8,9 +8,9 @@ import { z } from "zod";
 import {
   runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
-  resolveDelegate, isDefaultTierEngine, withTerseStyle,
+  resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
-  type CliResult, type Engine,
+  type CliResult, type Engine, type Level,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
 import {
@@ -38,7 +38,7 @@ const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (level 1-5; levels: 1=GPT-6 Luna max, 2=GPT-6.1 Sol medium, 3=GPT-6.1 Sol xhigh, 4=Claude Opus 5.5 high, 5=Claude Opus 5.5 max; AA quota proxies $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×)); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. fast_delegate's healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own .claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (three named levels: low=GPT-6 Luna max, middle=GPT-6.1 Sol medium, high=Claude Opus 5.5 high; AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×); high is expensive and shares the Claude Code host subscription, while low/middle cover most work); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. fast_delegate's healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with an inline {prompt} holding its SKILL.md body. Only that text crosses: files outside cwd (a skill's scripts/ or references/) stay invisible, so paste what the worker needs; skills in the repo's own .claude/skills sit inside cwd and are readable. A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
   },
 );
 
@@ -139,9 +139,9 @@ async function formatRun(
 async function runFanOutWorker(
   prompt: string,
   cwd: string | undefined,
-  level: number,
+  level: Level,
   tier: { engine: Engine; model?: string; effort?: string },
-): Promise<{ level: number; tier: typeof tier; res: CliResult }> {
+): Promise<{ level: Level; tier: typeof tier; res: CliResult }> {
   const started = Date.now();
   const receipt = { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) };
   try {
@@ -175,15 +175,11 @@ server.registerTool(
   {
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The `level` (1-5) picks a DISTINCT model+effort pair by task difficulty, a cost-benefit ladder on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $0.39 (~1.9×) → $1.82 (~4.7×) → $5.98 (~3.3×): 1=GPT-6 Luna max (codex, cheapest), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: levels 4 and 5 are EXPENSIVE. Level 4 (Claude Opus 5.5 high) is 44% cheaper than its previous tier, but now spends the same Claude subscription as a Claude Code host; levels 4-5 and that host share quota. Level 5 (Claude Opus 5.5 max) costs ~3.3x level 4. Both are last resorts. Do NOT reach for 4 or 5 because a task 'feels important': use them only when a cheaper level already failed or the task genuinely needs frontier reasoning (hard debugging, cross-file impact, a review verdict that must hold). Levels 1-3 handle almost everything, including most implementation. Give a complete, self-contained instruction — the worker does not see your context.",
+      "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The required `level` picks one of three named model+effort pairs on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, cheapest), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: high is EXPENSIVE ($1.82/task AA proxy, ~8.7× middle) and shares the Claude Code host subscription. Use high only when a cheaper level already failed or for frontier reasoning such as hard debugging, cross-file impact, or a costly review verdict. Low/middle cover most work, including implementation. Give a complete, self-contained instruction — the worker does not see your context.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
-      level: z
-        .number()
-        .int()
-        .min(1)
-        .max(5)
-        .describe("Task difficulty 1-5, each a distinct model+effort: 1=GPT-6 Luna max (codex), 2=GPT-6.1 Sol medium (codex), 3=GPT-6.1 Sol xhigh (codex), 4=Claude Opus 5.5 high (claude), 5=Claude Opus 5.5 max (claude). Use the lowest level that fits. COST: 4 is expensive ($1.82/task AA proxy) and 5 costs ~3.3x more ($5.98); both spend the Claude Code host subscription — reserve both for tasks a cheaper level cannot do, never as a default."),
+      level: z.enum(LEVELS)
+        .describe("Required difficulty name: low=GPT-6 Luna max (codex, $0.07/task), middle=GPT-6.1 Sol medium (codex, $0.21), high=Claude Opus 5.5 high (claude, $1.82). AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do."),
       engine: z
         .string()
         .optional()
@@ -446,13 +442,13 @@ server.registerTool(
     // Schemas deferidos perdem adoção, o mesmo problema que levou fast_delegate a alwaysLoad.
     _meta: { "anthropic/alwaysLoad": true },
     description:
-      "Use for independent second opinions, comparing 2+ approaches/designs/options/alternatives, cross-checking a risky verdict before acting (mode:'consensus'), or broad research that splits into independent parts. Do not use for simple lookups, single-file edits, or tightly coupled sequential work: it runs several workers and costs several times a single delegate. It returns a compact digest; mode:'race' returns the first success, while mode:'consensus' compares all outputs and returns agreement/disagreement plus worker session_ids for follow_up.",
+      "Use for independent second opinions, comparing 2+ approaches/designs/options/alternatives, cross-checking a risky verdict before acting (mode:'consensus'), or broad research that splits into independent parts. Do not use for simple lookups, single-file edits, or tightly coupled sequential work: it runs several workers and costs several times a single delegate. Levels: low=GPT-6 Luna max ($0.07/task), middle=GPT-6.1 Sol medium ($0.21), high=Claude Opus 5.5 high ($1.82); AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Start with low/middle, which cover most work; add high only after a cheaper consensus disagreed or for a costly verdict. High is expensive and shares the Claude Code host subscription. It returns a compact digest; mode:'race' returns the first success, while mode:'consensus' compares all outputs and returns agreement/disagreement plus worker session_ids for follow_up.",
     inputSchema: {
       prompt: z.string().describe("The task prompt sent identically to every worker."),
       levels: z
-        .array(z.number().int().min(1).max(5))
+        .array(z.enum(LEVELS))
         .min(2)
-        .describe("Which delegate tiers (1-5) to fan out to, one worker per entry. Repeat a level (e.g. [1,1,1]) to sample the same model N times instead of diversifying engines."),
+        .describe("Which named delegate levels to fan out to: low, middle, high. One worker per entry, at least two; repeats are allowed (e.g. [\"low\",\"low\",\"low\"]) to sample the same model N times."),
       mode: z
         .enum(["race", "consensus"])
         .default("race")

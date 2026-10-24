@@ -204,14 +204,28 @@ describe("quotaErrorMessage — erro acionável por tool (US-006)", () => {
   });
 
   it("no delegate sugere o menor level cuja engine primária está disponível", () => {
-    // grok estourou: fora da matriz desde 2026-09-23; o menor restante é 1 (codex).
+    // grok estourou: fora da matriz desde 2026-09-23; o menor restante é low (codex).
     expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["codex", "claude"]))
-      .toContain("retry with level:1");
-    // Codex ocupa 1-3; Claude ocupa 4-5, então a sugestão deve ser o menor restante: 4.
+      .toContain('retry with level:"low"');
+    // Codex ocupa low/middle; Claude ocupa high, o menor restante com outra assinatura.
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["grok", "claude"]))
-      .toContain("retry with level:4");
+      .toContain('retry with level:"high"');
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["claude"]))
-      .toContain("retry with level:4");
+      .toContain('retry with level:"high"');
+  });
+
+  it("prefere low mesmo quando claude aparece antes na lista de candidatas", () => {
+    expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["claude", "codex"]))
+      .toContain('retry with level:"low"');
+  });
+
+  it("não inventa nível quando só há override de engine ou nenhuma candidata", () => {
+    const explicit = quotaErrorMessage("quota_exhausted", "codex", "delegate", ["opencode"]);
+    expect(explicit).toContain('retry with engine:"opencode"');
+    expect(explicit).not.toContain("retry with level:");
+    const empty = quotaErrorMessage("quota_exhausted", "codex", "delegate", []);
+    expect(empty).toContain("no other engine is available for delegate");
+    expect(empty).not.toContain("retry with level:");
   });
 
   it("em fast_delegate/fan_out/generate_image informa a cota sem sugerir parâmetro", () => {

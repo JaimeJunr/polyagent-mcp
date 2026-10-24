@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { TIERS } from "./cli.js";
+import { LEVELS, TIERS } from "./cli.js";
 
 // Bloco gerenciado no CLAUDE.md global do usuário: o host lê esse arquivo em toda sessão, então é
 // o canal mais forte para rotear (o `instructions` do server e as descrições das tools competem
@@ -45,8 +45,11 @@ export const nodeClaudeMdFs: ClaudeMdFs = {
 };
 
 function tierLine(): string {
-  return Object.entries(TIERS)
-    .map(([level, { primary }]) => `${level}=${primary.engine} ${primary.model ?? "default"} ${primary.effort ?? ""}`.trim())
+  return LEVELS
+    .map((level) => {
+      const { primary } = TIERS[level];
+      return `${level}=${primary.engine} ${primary.model} ${primary.effort ?? ""}`.trim();
+    })
     .join(", ");
 }
 
@@ -56,7 +59,7 @@ export function renderPolyagentBlock(version: string): string {
 ## polyagent-mcp routing
 
 - Reading and locating: \`explore\` (map/search the repo), \`read_slice\` (a slice of a known file), \`run_filtered\` (noisy command, keep the signal), \`web_lookup\` (docs/web). Native Read only right before an Edit of that file.
-- Execution: \`delegate(prompt, level)\` for self-contained work (features, bugfixes, multi-file edits, builds, commits, PRs); \`fast_delegate\` when speed matters more than the level. Levels: ${tierLine()}. Pick the lowest level that can do it; 4-5 are expensive and share the Claude Code subscription.
+- Execution: \`delegate(prompt, level)\` for self-contained work (features, bugfixes, multi-file edits, builds, commits, PRs); \`fast_delegate\` when speed matters more than the level. Levels: ${tierLine()}. AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work; high is expensive and shares the Claude Code subscription. Pick the lowest level that can do it.
 - Worker prompts must stand alone: say where to work, how to verify it is done, and ask for one task per call.
 - Grade worker results with \`rate(session_id, 1-5)\`.
 - polyagent spawns each engine CLI itself (\`codex exec\`, \`claude -p\`): an MCP server named \`codex\` failing to connect says nothing about polyagent. Call the tool; do not guess it is down.
@@ -69,9 +72,9 @@ export function renderPolyagentBlock(version: string): string {
 Use \`fan_out\` (not several \`delegate\` calls you compare yourself) when:
 - choosing between 2+ designs, approaches, libraries or options → \`mode: "consensus"\`;
 - a verdict is costly to get wrong: merge/no-merge review, root cause of a hard bug, a destructive migration → \`mode: "consensus"\`;
-- a bug has competing hypotheses → one prompt, \`levels: [1, 2, 3]\`, \`mode: "consensus"\`;
+- a bug has competing hypotheses → one prompt, \`levels: ["low", "middle"]\`, \`mode: "consensus"\`;
 - you want the first acceptable answer across engines → \`mode: "race"\`.
-Start with \`levels: [1, 2]\`; add 3 for hard problems; use 4-5 only after a cheaper consensus disagreed. Skip it for lookups, single-file edits and sequential work.
+Start with \`levels: ["low", "middle"]\`; add "high" only after a cheaper consensus disagreed or for a costly verdict. Skip it for lookups, single-file edits and sequential work.
 ${BLOCK_END}
 `;
 }

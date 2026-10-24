@@ -29,9 +29,9 @@ describe("renderPolyagentBlock", () => {
   });
 
   it("lists every delegate level from the tier table and steers fan_out with concrete triggers", () => {
-    for (const level of ["1=", "2=", "3=", "4=", "5="]) expect(BLOCK).toContain(level);
-    expect(BLOCK).toContain("2=codex gpt-6.1-sol medium");
-    expect(BLOCK).toContain("3=codex gpt-6.1-sol xhigh");
+    for (const level of ["low=", "middle=", "high="]) expect(BLOCK).toContain(level);
+    expect(BLOCK).toContain("middle=codex gpt-6.1-sol medium");
+    expect(BLOCK).toContain("high=claude claude-opus-5-5 high");
     expect(BLOCK).toContain("claude-opus-5-5");
     expect(BLOCK).toMatch(/fan_out/);
     expect(BLOCK).toMatch(/mode: ?"consensus"/);
@@ -137,5 +137,17 @@ describe("syncClaudeMd", () => {
     const fs = new FakeClaudeMdFs({ [PATH]: "mine\n" });
     expect(syncClaudeMd(PATH, "dry-run", BLOCK, fs)).toMatchObject({ action: "appended", legacyRemoved: false });
     expect(fs.writes).toHaveLength(0);
+  });
+});
+
+describe("named fan_out guidance", () => {
+  it("starts cheap and reserves high for disagreement or a costly verdict", () => {
+    expect(BLOCK).toContain('levels: ["low", "middle"]');
+    expect(BLOCK).toMatch(/add "high" only after a cheaper consensus disagreed or for a costly verdict/);
+  });
+
+  it("does not offer removed numeric levels or expensive model variants", () => {
+    expect(BLOCK).not.toMatch(/levels: \[\d|[1-5]=|4-5|gpt-6\.1-sol xhigh|claude-opus-5-5 max/);
+    expect(BLOCK).toMatch(/high is expensive.*Claude Code subscription/);
   });
 });

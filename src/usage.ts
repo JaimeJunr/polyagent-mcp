@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import type { Level } from "./cli.js";
 import { estimateCostPerTask } from "./costs.js";
 
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
@@ -35,8 +36,8 @@ export interface UsageEntry {
   model?: string;
   /** Esforço efetivamente usado pelo CLI. */
   effort?: string;
-  /** Tier-integrity receipt: nível pedido pelo chamador (só presente em tools com resolveTier). */
-  requestedLevel?: number;
+  /** Nível pedido; números são históricos (JSONL antigo) ou o receipt neutro 0 do fast_delegate. */
+  requestedLevel?: Level | number;
   /** true se a engine resolvida é a preferida do nível; false quando resolveTier caiu no fallback. */
   matchedRequest?: boolean;
   /** Engine que rodou a chamada (ex. "codex"|"grok"|"claude"|"cursor"). Usado por computeEngineHealth. */
@@ -66,7 +67,7 @@ export interface ToolStats {
 
 /** Receipt do tier resolvido para o nível pedido, injetado por quem chama resolveTier (src/cli.ts). */
 export interface TierReceipt {
-  requestedLevel: number;
+  requestedLevel: Level | 0;
   matchedRequest: boolean;
 }
 

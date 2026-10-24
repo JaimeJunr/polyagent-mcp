@@ -21,6 +21,7 @@ const withArbiter = flags.includes("--arbiter") && suite !== "shadow";
 
 const { askJev, resolveOpenRouterKey } = await import(join(REPO, "dist/jev.js"));
 const { fanOutAgreementRequest, delegateShadowRequest } = await import(join(REPO, "dist/jevDecisions.js"));
+const { LEVELS } = await import(join(REPO, "dist/cli.js"));
 const { scrubSecrets } = await import(join(REPO, "dist/scrub.js"));
 const { runCursor, EXPLORE_MODEL, withTerseStyle } = withArbiter
   ? await import(join(REPO, "dist/cli.js")) : {};
@@ -86,7 +87,7 @@ async function runFanout(fixture, rep) {
   };
   try {
     const outputs = fixture.outputs.map((output, i) => ({
-      engine: "codex", level: i + 1, text: output,
+      engine: "codex", level: LEVELS[i % LEVELS.length], text: output,
     }));
     await runCursor({
       prompt: fanOutArbiterPrompt(outputs), cwd: REPO, engine: "codex",
@@ -108,10 +109,10 @@ async function runShadow(fixture, rep) {
   };
   try {
     const result = await callJev(delegateShadowRequest(fixture.prompt));
-    row.choice = Number(result.answers.level.choice);
+    row.choice = result.answers.level.choice;
     row.confidence = result.answers.level.confidence;
     row.cost = result.usage?.cost ?? null;
-    if (!Number.isInteger(row.choice) || row.choice < 1 || row.choice > 5
+    if (!LEVELS.includes(row.choice)
       || !Number.isFinite(row.confidence) || row.confidence < 0 || row.confidence > 1) {
       throw new Error("Jev returned an invalid level or confidence");
     }
@@ -191,14 +192,14 @@ if (fanout.length) {
 if (shadow.length) {
   const valid = shadow.filter((row) => row.choice !== null);
   const exact = valid.filter((row) => row.choice === row.expected).length;
-  const inRange = valid.filter((row) => row.choice >= row.ok[0] && row.choice <= row.ok[1]).length;
-  const over = valid.filter((row) => row.choice > row.ok[1]).length;
-  const under = valid.filter((row) => row.choice < row.ok[0]).length;
+  const inRange = valid.filter((row) => LEVELS.indexOf(row.choice) >= LEVELS.indexOf(row.ok[0]) && LEVELS.indexOf(row.choice) <= LEVELS.indexOf(row.ok[1])).length;
+  const over = valid.filter((row) => LEVELS.indexOf(row.choice) > LEVELS.indexOf(row.ok[1])).length;
+  const under = valid.filter((row) => LEVELS.indexOf(row.choice) < LEVELS.indexOf(row.ok[0])).length;
   console.log(`shadow (${shadow.length} attempts, ${valid.length} valid): exact ${exact}/${shadow.length} ${ratio(exact, shadow.length)}, within range ${inRange}/${shadow.length} ${ratio(inRange, shadow.length)}, over ${over}, under ${under}, errors ${shadow.length - valid.length}`);
-  console.log("expected\\chosen      1   2   3   4   5   err");
-  for (let expected = 1; expected <= 5; expected++) {
+  console.log(`expected\\chosen ${[...LEVELS, "err"].map((level) => level.padStart(6)).join(" ")}`);
+  for (const expected of LEVELS) {
     const group = shadow.filter((row) => row.expected === expected);
-    const cells = [1, 2, 3, 4, 5, null].map((choice) => String(group.filter((row) => row.choice === choice).length).padStart(3));
+    const cells = [...LEVELS, null].map((choice) => String(group.filter((row) => row.choice === choice).length).padStart(6));
     console.log(`${String(expected).padStart(15)} ${cells.join(" ")}`);
   }
 }
