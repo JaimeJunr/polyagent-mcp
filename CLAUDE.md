@@ -327,8 +327,20 @@ points, all in `cli.ts`:
   internally without calling `git merge`); block = stderr `polyagent: '<rule>' is blocked in this sandbox
   (deny list)` + `exit 126`, otherwise `exec "$REAL" "$@"`. `buildSandboxSpec` (impure half) writes the
   shims (0755) into a **separate** `cbx-shim-` dir — never in `isoHome`/`tmpDir`, which are RW inside the
-  sandbox and would let the worker rewrite the bind source — binds the real binary RO at
-  `/run/polyagent-real/<cmd>` and overlays **every** `resolveShimTargets` location with `--ro-bind`.
+  sandbox and would let the worker rewrite the bind source — and binds that dir RO at
+  `/run/polyagent-shims`, **prepended to the sandbox PATH** (`spec.path`): bare-name calls hit the shim
+  for every denied cmd, including those that cannot be overlaid. Overlay rule per cmd
+  (`resolveShimTargets`, with injected `exists`/`realpath`/`isSymlink`/`isElf`): if the first match
+  resolves (realpath) to an **ELF**, overlay that ELF itself (covers every name pointing to it, e.g.
+  `python` → `python3.14`) plus every non-symlink ELF location of the cmd, and bind the real binary RO at
+  `/run/polyagent-real/<cmd>` (the shim's `REAL`; a relocated ELF still runs). **Never bind onto a
+  symlink destination**: bwrap aborts with `Can't mount on symlink destination /usr/bin/npx` and the
+  whole sandbox dies (found live 2026-10-24; the `sh`-level tests cannot see it — `test/deny-bwrap.test.ts`
+  runs real bwrap). If it resolves to a **script** (`npx`/`npm` → `…/npx-cli.js`, `#!/usr/bin/env node`),
+  nothing is overlaid or relocated (the script `require`s relative to its own path) and `REAL` is the
+  original absolute path of the first match, so only the PATH shim covers it. Two denied cmds that
+  resolve to the same ELF (`python`, `python3`): only the first gets the overlay, the second relies on
+  the PATH shim (its relocated real is still bound).
   **Gotcha:** `--ro-bind /bin /bin` is a mount separate from `/usr/bin` even when `/bin` → `usr/bin`
   on the host, so overlaying `/usr/bin/rm` alone leaves `/bin/rm` open; hence PATH dirs plus
   `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin` all get the shim (a command found
@@ -337,11 +349,13 @@ points, all in `cli.ts`:
   against accidents, not a security boundary** (the worker can still reach the binary some other
   way); `denyNote` tells it up front what exits 126. `deny` needs bwrap: with `POLYAGENT_SANDBOX=off`
   `runCursor` rejects (`DENY_NEEDS_SANDBOX`) instead of running unguarded, and `fallbackOpts` carries
-  `deny` to the retried engine. **Not covered:** project scripts invoked by path (`bin/rails`,
+  `deny` to the retried engine. **Not covered:** an absolute path to a script (`/usr/bin/npx` →
+  node script, only the PATH shim covers it), project scripts invoked by path (`bin/rails`,
   `./manage.py`, `node_modules/.bin/*`) and indirect runs (`npm run migrate`, a make target that runs
   migrate internally, `bundle exec` loading in-process) — only commands on PATH/system dirs are shimmed
   and slashes are rejected in `cmd`. Verified live under real bwrap 2026-10-24 (`/bin/rm`, `/usr/bin/rm`,
-  `git -C . -c a=b push`, alias `git p` blocked; `git status`/`git init` pass).
+  `git -C . -c a=b push`, alias `git p` blocked; `git status`/`git init` pass; `make`, `npx`, `chmod`,
+  `python`, `git` in `test/deny-bwrap.test.ts`).
 - **Mandatory, with no graceful fallback.** `SANDBOX_ON` is true unless `POLYAGENT_SANDBOX` is
   `off`/`0`/`false`/`no`/empty. With the sandbox on and `bwrap` missing from PATH, `sandboxPreflight()`
   (called in `index.ts` right before `server.connect`) throws naming the remedy (installing

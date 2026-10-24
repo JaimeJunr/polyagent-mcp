@@ -255,6 +255,7 @@ describe("buildSandboxArgs", () => {
     roBinds: [],
     shims: [],
     realBins: [],
+    shimDir: null,
     extraEnv: [["HTTPS_PROXY", "http://proxy:8080"]],
   };
 

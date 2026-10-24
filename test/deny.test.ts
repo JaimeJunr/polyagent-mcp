@@ -50,21 +50,69 @@ describe("parseDenyRules", () => {
 
 describe("resolveShimTargets", () => {
   const SYSTEM = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"];
-  const fsOf = (files: string[], links: Record<string, string> = {}) => ({
-    exists: (p: string) => files.includes(p),
-    realpath: (p: string) => links[p] ?? p,
-  });
+  type Kind = "elf" | "script";
+  /**
+   * fs falso: `files` são arquivos regulares, `symlinks` apontam para um arquivo, e `real` simula
+   * symlink de DIRETÓRIO (/bin → usr/bin): o arquivo não é symlink, mas o realpath muda.
+   */
+  const fsOf = (
+    files: Record<string, Kind>,
+    symlinks: Record<string, string> = {},
+    real: Record<string, string> = {},
+  ) => {
+    const realpath = (p: string): string => real[p] ?? (symlinks[p] ? realpath(symlinks[p]) : p);
+    return {
+      exists: (p: string) => p in files || (p in symlinks && realpath(p) in files),
+      realpath,
+      isSymlink: (p: string) => p in symlinks,
+      isElf: (p: string) => files[p] === "elf",
+    };
+  };
+  const resolve = (cmd: string, dirs: string[], fs: ReturnType<typeof fsOf>) =>
+    resolveShimTargets(cmd, dirs, fs.exists, fs.realpath, fs.isSymlink, fs.isElf);
 
   it("cobre /bin e /usr/bin separadamente (bind de /bin não é o mesmo mount de /usr/bin)", () => {
-    const { exists, realpath } = fsOf(["/usr/bin/rm", "/bin/rm"], { "/bin/rm": "/usr/bin/rm" });
-    const res = resolveShimTargets("rm", ["/usr/bin", "/bin"], exists, realpath);
+    const fs = fsOf({ "/usr/bin/rm": "elf", "/bin/rm": "elf" }, {}, { "/bin/rm": "/usr/bin/rm" });
+    const res = resolve("rm", ["/usr/bin", "/bin"], fs);
     expect(res?.targets).toEqual(["/usr/bin/rm", "/bin/rm"]);
     expect(res?.real).toBe("/usr/bin/rm");
+    expect(res?.relocate).toBe(true);
+  });
+
+  it("symlink para ELF (python → python3.14): sobrepõe o ELF resolvido, nunca o symlink", () => {
+    const fs = fsOf(
+      { "/usr/bin/python3.14": "elf" },
+      { "/usr/bin/python": "/usr/bin/python3", "/usr/bin/python3": "/usr/bin/python3.14" },
+    );
+    const res = resolve("python", ["/usr/bin"], fs);
+    expect(res?.targets).toEqual(["/usr/bin/python3.14"]);
+    expect(res?.real).toBe("/usr/bin/python3.14");
+    expect(res?.relocate).toBe(true);
+  });
+
+  it("symlink para script (npx → npx-cli.js): não sobrepõe nada, REAL é o path original", () => {
+    const fs = fsOf(
+      { "/usr/lib/node_modules/npm/bin/npx-cli.js": "script" },
+      { "/usr/bin/npx": "/usr/lib/node_modules/npm/bin/npx-cli.js" },
+    );
+    const res = resolve("npx", ["/usr/bin"], fs);
+    expect(res).toEqual({ targets: [], real: "/usr/bin/npx", relocate: false });
+  });
+
+  it("script regular (não symlink) também não é sobreposto nem realocado", () => {
+    const fs = fsOf({ "/usr/bin/rake": "script" });
+    expect(resolve("rake", ["/usr/bin"], fs)).toEqual({ targets: [], real: "/usr/bin/rake", relocate: false });
+  });
+
+  it("nunca inclui localização que é symlink, mesmo apontando para o ELF", () => {
+    const fs = fsOf({ "/usr/bin/git": "elf" }, { "/bin/git": "/usr/bin/git", "/usr/local/bin/git": "/usr/bin/git" });
+    const res = resolve("git", ["/usr/bin", "/bin"], fs);
+    expect(res?.targets).toEqual(["/usr/bin/git"]);
   });
 
   it("inclui os dirs de sistema mesmo fora do PATH, dedupando por path", () => {
-    const { exists, realpath } = fsOf(["/usr/bin/git", "/bin/git", "/opt/tools/git"]);
-    const res = resolveShimTargets("git", ["/opt/tools", "/usr/bin"], exists, realpath);
+    const fs = fsOf({ "/usr/bin/git": "elf", "/bin/git": "elf", "/opt/tools/git": "elf" });
+    const res = resolve("git", ["/opt/tools", "/usr/bin"], fs);
     expect(res?.targets).toEqual(["/opt/tools/git", "/usr/bin/git", "/bin/git"]);
     // o real é o realpath do PRIMEIRO match, na ordem do PATH
     expect(res?.real).toBe("/opt/tools/git");
@@ -72,15 +120,20 @@ describe("resolveShimTargets", () => {
   });
 
   it("ignora dirs relativos e vazios do PATH", () => {
-    const { exists, realpath } = fsOf(["/usr/bin/git", "bin/git", "./git"]);
-    const res = resolveShimTargets("git", ["", ".", "bin"], exists, realpath);
+    const fs = fsOf({ "/usr/bin/git": "elf", "bin/git": "elf", "./git": "elf" });
+    const res = resolve("git", ["", ".", "bin"], fs);
     expect(res?.targets).toEqual(["/usr/bin/git"]);
   });
 
   it("devolve null (sem lançar) quando o comando não existe em lugar nenhum", () => {
-    const { exists, realpath } = fsOf(["/usr/bin/ls"]);
-    expect(resolveShimTargets("npm-fantasma", ["/usr/bin"], exists, realpath)).toBeNull();
-    expect(SYSTEM.every((dir) => !exists(`${dir}/npm-fantasma`))).toBe(true);
+    const fs = fsOf({ "/usr/bin/ls": "elf" });
+    expect(resolve("npm-fantasma", ["/usr/bin"], fs)).toBeNull();
+    expect(SYSTEM.every((dir) => !fs.exists(`${dir}/npm-fantasma`))).toBe(true);
+  });
+
+  it("symlink quebrado não conta como existente", () => {
+    const fs = fsOf({}, { "/usr/bin/ghost": "/usr/lib/gone" });
+    expect(resolve("ghost", ["/usr/bin"], fs)).toBeNull();
   });
 });
 
@@ -118,6 +171,7 @@ describe("buildSandboxArgs com shims", () => {
       { file: "/tmp/cbx-shim-x/git", target: "/bin/git" },
     ],
     realBins: [{ src: "/usr/bin/git", dest: "/run/polyagent-real/git" }],
+    shimDir: "/tmp/cbx-shim-x",
     extraEnv: [],
   };
   const binds = (args: string[]) =>
@@ -152,8 +206,25 @@ describe("buildSandboxArgs com shims", () => {
     expect(all).toContainEqual(["--ro-bind", "/usr/bin/git", "/run/polyagent-real/git"]);
   });
 
+  it("binda o dir dos shims RO em /run/polyagent-shims, depois do tmpfs /run e antes do workspace", () => {
+    const args = buildSandboxArgs(spec);
+    const all = binds(args);
+    const dirAt = all.findIndex((b) => b[2] === "/run/polyagent-shims");
+    expect(all[dirAt]).toEqual(["--ro-bind", "/tmp/cbx-shim-x", "/run/polyagent-shims"]);
+    const tmpfsAt = args.indexOf("--tmpfs");
+    expect(args.indexOf("/run/polyagent-shims")).toBeGreaterThan(tmpfsAt);
+    expect(dirAt).toBeGreaterThan(all.findIndex((b) => b[2] === "/home/u/.gradle"));
+    expect(dirAt).toBeLessThan(all.findIndex((b) => b[2] === "/repo"));
+    expect(all[all.length - 1][2]).toBe("/repo");
+  });
+
+  it("sem shimDir não há bind de /run/polyagent-shims", () => {
+    const args = buildSandboxArgs({ ...spec, shimDir: null });
+    expect(args).not.toContain("/run/polyagent-shims");
+  });
+
   it("sem shims o argv segue igual (nenhum bind extra)", () => {
-    const plain = binds(buildSandboxArgs({ ...spec, shims: [], realBins: [] }));
+    const plain = binds(buildSandboxArgs({ ...spec, shims: [], realBins: [], shimDir: null }));
     expect(plain.some((b) => b[2].includes("polyagent-real"))).toBe(false);
     expect(plain[plain.length - 1]).toEqual(["--bind", "/repo", "/repo"]);
   });

@@ -48,12 +48,20 @@ Com `deny: ["git push", "git merge", "rm"]`: exit 126 em `git push origin main`,
 `git -C . -c a=b push`, alias `git p` → push, `git merge x`, `/usr/bin/git push`, `rm`, `/bin/rm`,
 `git --exec-path=/usr/lib/git-core push`. Passam: `git commit`, `git log`, `git status`.
 `/usr/lib/git-core/git-push` é symlink para `/usr/bin/git` (o shim): falha sem dar push, só sem a
-mensagem de bloqueio. Escapam (documentado): `git pull` (merge interno), `-c alias.x=push`, scripts do projeto chamados
-por caminho (`bin/rails`, `./manage.py`, `node_modules/.bin/*`) e execuções indiretas (`npm run
-migrate`, um alvo de make que roda migrate por dentro, `bundle exec` carregando em-processo): só
-comandos no PATH/dirs de sistema recebem shim e o `cmd` rejeita barra. Fora do git a regra casa por
-subsequência ordenada de tokens inteiros, então `npm --registry x publish`, `make -j4 db-up` e
-`docker compose -f x.yml down` são bloqueados.
+mensagem de bloqueio. Escapam (documentado): `git pull` (merge interno), `-c alias.x=push`, caminho absoluto até um script
+(`/usr/bin/npx` é symlink para um script node: só o shim do PATH cobre, não dá para sobrepor nem
+realocar), scripts do projeto chamados por caminho (`bin/rails`, `./manage.py`, `node_modules/.bin/*`)
+e execuções indiretas (`npm run migrate`, um alvo de make que roda migrate por dentro, `bundle exec`
+carregando em-processo): o `cmd` rejeita barra. Fora do git a regra casa por subsequência ordenada de
+tokens inteiros, então `npm --registry x publish`, `make -j4 db-up` e `docker compose -f x.yml down`
+são bloqueados.
+
+Achado em teste vivo (2026-10-24): com `npx` na lista, TODO comando falhava com `bwrap: Can't mount on
+symlink destination /usr/bin/npx` (o bwrap recusa bind sobre symlink e o sandbox inteiro morre). Em
+`/usr/bin`, `npx`/`npm` são symlinks para scripts node que fazem `require` relativo ao próprio path
+(realocar quebra) e `python` é symlink para o ELF `python3.14`. Desenho v2: dir de shims em
+`/run/polyagent-shims` na frente do PATH; overlay só do ELF resolvido (nunca de symlink); script não
+é tocado. `test/deny-bwrap.test.ts` roda bwrap de verdade (11 casos, 0 pulados neste host).
 
 ## Reavaliar
 

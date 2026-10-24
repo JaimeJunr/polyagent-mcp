@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
 
@@ -367,25 +367,52 @@ export function buildShimScript(cmd: string, rules: DenyRule[], realPath: string
 const SHIM_SYSTEM_DIRS = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"];
 /** Onde o binário real fica dentro do sandbox (o REAL do shim); /run é um tmpfs limpo. */
 const SHIM_REAL_DIR = "/run/polyagent-real";
+/** Dir RO com um shim por comando negado, PREPENDIDO ao PATH do sandbox: cobre toda chamada por nome,
+ *  inclusive dos comandos que não dá pra sobrepor (scripts, symlinks). */
+const SHIM_PATH_DIR = "/run/polyagent-shims";
+
+/** Resultado de resolveShimTargets. `relocate` diz se `real` é um ELF sobreposto (e portanto montado
+ *  em /run/polyagent-real/<cmd>) ou o path original, intocado, de um script. */
+export interface ShimResolution {
+  targets: string[];
+  real: string;
+  relocate: boolean;
+}
 
 /**
- * Lista todo `<dir>/<cmd>` existente nos dirs do PATH do sandbox + dirs de sistema (sem duplicar) e
- * o realpath do primeiro achado, que vira o binário real. Null se o comando não existe em lugar
- * nenhum — nada a bloquear. Função pura: o fs entra por parâmetro.
+ * Decide o que sobrepor para `cmd`, olhando todo `<dir>/<cmd>` existente nos dirs do PATH do sandbox
+ * + dirs de sistema (sem duplicar). Null se o comando não existe em lugar nenhum — nada a bloquear.
+ * - O primeiro achado resolve (realpath) para um ELF: sobrepõe o próprio ELF (cobre todo nome que
+ *   aponta pra ele, ex. python → python3.14) mais cada localização que NÃO é symlink e é ELF; o
+ *   `real` é esse ELF, realocado. O bwrap recusa bind sobre symlink ("Can't mount on symlink
+ *   destination") e derruba o sandbox inteiro, então symlink nunca entra em `targets`.
+ * - Resolve para um script (`npx` → npx-cli.js, `#!/usr/bin/env node`): nada é sobreposto nem
+ *   realocado — o script faz `require` relativo ao próprio path — e `real` é o path original do
+ *   primeiro achado. Só o shim do PATH cobre; um path absoluto até o script escapa.
+ * Função pura: o fs entra por parâmetro.
  */
 export function resolveShimTargets(
   cmd: string,
   searchDirs: string[],
   exists: (p: string) => boolean,
   realpath: (p: string) => string,
-): { targets: string[]; real: string } | null {
-  const targets: string[] = [];
+  isSymlink: (p: string) => boolean,
+  isElf: (p: string) => boolean,
+): ShimResolution | null {
+  const locations: string[] = [];
   for (const dir of [...searchDirs, ...SHIM_SYSTEM_DIRS]) {
     if (!dir.startsWith("/")) continue; // vazio/relativo no PATH não é um local fixo
     const candidate = join(dir, cmd);
-    if (!targets.includes(candidate) && exists(candidate)) targets.push(candidate);
+    if (!locations.includes(candidate) && exists(candidate)) locations.push(candidate);
   }
-  return targets.length === 0 ? null : { targets, real: realpath(targets[0]) };
+  if (locations.length === 0) return null;
+  const resolved = realpath(locations[0]);
+  if (!isElf(resolved)) return { targets: [], real: locations[0], relocate: false };
+  const targets = [resolved];
+  for (const location of locations) {
+    if (!targets.includes(location) && !isSymlink(location) && isElf(location)) targets.push(location);
+  }
+  return { targets, real: resolved, relocate: true };
 }
 
 export interface SandboxSpec {
@@ -413,6 +440,8 @@ export interface SandboxSpec {
   shims: { file: string; target: string }[];
   /** Binários reais dos shims, montados RO em `dest` (o REAL do shim), junto dos shims. */
   realBins: { src: string; dest: string }[];
+  /** Dir do host com um shim por comando negado, montado RO em /run/polyagent-shims (já no PATH). */
+  shimDir: string | null;
   extraEnv: Array<[string, string]>;
 }
 
@@ -433,6 +462,7 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   // depois do tmpfs /run e dos overlays do HOME (senão somem), antes do workspace (que fica por último)
   for (const { src, dest } of spec.realBins) args.push("--ro-bind", src, dest);
   for (const { file, target } of spec.shims) args.push("--ro-bind", file, target);
+  if (spec.shimDir) args.push("--ro-bind", spec.shimDir, SHIM_PATH_DIR);
   args.push(spec.workspaceRo ? "--ro-bind" : "--bind", spec.workspace, spec.workspace);
   args.push(
     "--setenv", "HOME", spec.home,
@@ -1098,16 +1128,37 @@ export function buildSandboxSpec(
   const realpath = (p: string): string => {
     try { return realpathSync(p); } catch { return p; }
   };
+  const isSymlink = (p: string): boolean => {
+    try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
+  };
+  const isElf = (p: string): boolean => {
+    let fd: number | undefined;
+    try {
+      fd = openSync(p, "r");
+      const magic = Buffer.alloc(4);
+      return readSync(fd, magic, 0, 4, 0) === 4 && magic.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
+    } catch {
+      return false;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
+  };
+  // Dois cmds que resolvem pro mesmo ELF (python e python3): só o primeiro leva o overlay — um segundo
+  // bind sobre o mesmo destino empilharia mounts. O segundo fica coberto pelo shim do PATH.
+  const overlaid = new Set<string>();
   try {
     for (const cmd of new Set(deny.map((rule) => rule.cmd))) {
-      const found = resolveShimTargets(cmd, path.split(":"), isFile, realpath);
+      const found = resolveShimTargets(cmd, path.split(":"), isFile, realpath, isSymlink, isElf);
       if (!found) continue; // comando inexistente: nada a bloquear
       shimDir ??= mkdtempSync(join(tmpdir(), "cbx-shim-"));
       const file = join(shimDir, cmd);
       const dest = `${SHIM_REAL_DIR}/${cmd}`;
-      writeFileSync(file, buildShimScript(cmd, deny, dest), { mode: 0o755 });
+      writeFileSync(file, buildShimScript(cmd, deny, found.relocate ? dest : found.real), { mode: 0o755 });
       chmodSync(file, 0o755); // o umask pode ter tirado o x
+      if (!found.relocate) continue; // script: REAL é o path original, nada a montar
       realBins.push({ src: found.real, dest });
+      if (overlaid.has(found.real)) continue;
+      overlaid.add(found.real);
       for (const target of found.targets) shims.push({ file, target });
     }
   } catch (err) {
@@ -1117,7 +1168,7 @@ export function buildSandboxSpec(
   const spec: SandboxSpec = {
     home,
     user: process.env.USER ?? userInfo().username,
-    path,
+    path: shimDir ? `${SHIM_PATH_DIR}:${path}` : path,
     lang: process.env.LANG ?? "C.UTF-8",
     lcAll: process.env.LC_ALL ?? "C.UTF-8",
     isoHome,
@@ -1141,6 +1192,7 @@ export function buildSandboxSpec(
     roBinds: roBinds.filter((p) => p !== workspace && existsSync(p)),
     shims,
     realBins,
+    shimDir: shimDir ?? null,
     extraEnv: SANDBOX_PROXY_ENV
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k] as string]),
