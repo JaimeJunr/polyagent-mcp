@@ -3,8 +3,7 @@
 Contexto: no [eval de adoção de 2026-09-30](2026-09-30-adoption-handoff.md) o handoff ficou 0/2 em
 três condições (texto, texto + aviso do hook). Pedido com subagent, o host chamava o `Agent` nativo;
 pedido com skill, carregava a `Skill` e fazia o trabalho sozinho. O
-estudo de 2026-10-23 sobre negar a primeira edição (`2026-10-23-edit-redirect.md`, ainda não
-mergeado) mostrou que negar a primeira `Edit` não ajuda: o host já leu os arquivos e prefere repetir.
+[estudo de 2026-10-23](2026-10-23-edit-redirect.md) sobre negar a primeira edição mostrou que negar a primeira `Edit` não ajuda: o host já leu os arquivos e prefere repetir.
 Em `Agent`/`Skill` o host ainda não fez o trabalho, como no `grep`, e o `delegate` substitui a
 chamada na hora.
 
