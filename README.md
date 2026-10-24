@@ -169,6 +169,16 @@ routing block to `~/.claude/CLAUDE.md` between `<!-- polyagent-mcp:begin … -->
 `CLAUDE.md.polyagent.bak`. From then on the server refreshes the block on each start (only when the
 markers exist). Set `POLYAGENT_CLAUDE_MD=off` to stop that, or delete both markers.
 
+**Managed `polyagent` skill.** Run `npm run install-skill -- --dry-run` to preview, then
+`npm run install-skill` (or `npx -p polyagent-mcp polyagent-mcp-install-skill`). It writes
+`polyagent/SKILL.md` into `~/.claude/skills` (Claude Code) and `~/.agents/skills` (Codex, OpenCode and
+other AGENTS-aware clients); override the roots with `POLYAGENT_SKILL_ROOTS` (`:`-separated). The
+`CLAUDE.md` block stays short because it loads every session; the skill loads only when the task matches
+and carries the how-to: tool choice, a stand-alone worker prompt, levels, `deny`, handing over agents and
+skills, `follow_up` and `rate`. Like ai-memory's skills, the file carries an ownership marker
+(`<!-- polyagent-mcp-managed: routing-skill … -->`): a same-name skill without it is never overwritten,
+and the server refreshes marked copies on each start. Set `POLYAGENT_SKILL=off` to stop that.
+
 Registering the tools is not enough. Two structural forces push the agent back to
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
 tools used to be **deferred** — the agent had to run a tool-search to load their schemas,

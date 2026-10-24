@@ -33,6 +33,7 @@ import { fanOutAgreementText, footerSession, runFanOutConsensusGate, withDelegat
 import {
   CLAUDE_MD_BOOT_SYNC, CLAUDE_MD_PATH, nodeClaudeMdFs, PACKAGE_VERSION, renderPolyagentBlock, syncClaudeMd,
 } from "./claudeMd.js";
+import { nodeSkillFs, renderPolyagentSkill, SKILL_BOOT_SYNC, SKILL_ROOTS, syncSkill } from "./skill.js";
 
 const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
@@ -774,6 +775,18 @@ if (CLAUDE_MD_BOOT_SYNC) {
     syncClaudeMd(CLAUDE_MD_PATH, "boot", renderPolyagentBlock(PACKAGE_VERSION), nodeClaudeMdFs);
   } catch {
     // Erro de disco no CLAUDE.md não pode impedir o server de subir.
+  }
+}
+
+// Mesma regra para a skill: só reescreve o que `npm run install-skill` instalou (com marcador).
+if (SKILL_BOOT_SYNC) {
+  const skill = renderPolyagentSkill(PACKAGE_VERSION);
+  for (const root of SKILL_ROOTS) {
+    try {
+      syncSkill(root, "boot", skill, nodeSkillFs);
+    } catch {
+      // Raiz sem permissão de escrita não pode impedir o server de subir.
+    }
   }
 }
 
