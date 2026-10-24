@@ -87,6 +87,14 @@ the **pure logic is testable without spawning a worker process**:
   writing to stdout (the MCP channel). `POLYAGENT_CLAUDE_MD=off` disables the boot refresh. A
   broken marker pair (begin without end, or two blocks) is skipped on boot and raises on install.
   `writeFileSync` follows a symlinked `CLAUDE.md` (dotfiles), so the link survives.
+- `skill.ts` — managed Agent Skill `polyagent`, modeled on ai-memory's skills: `renderPolyagentSkill`
+  generates it from `TIERS`, `syncSkill` writes `<root>/polyagent/SKILL.md` for each of `SKILL_ROOTS`
+  (`~/.claude/skills` and `~/.agents/skills`; `POLYAGENT_SKILL_ROOTS` overrides). The always-loaded
+  `CLAUDE.md` block routes; the skill loads on demand and carries the how-to (worker prompt shape,
+  `deny`, `agent` handover, `follow_up` `mode:'ask'`, `rate` scale). Ownership is the
+  `<!-- polyagent-mcp-managed: routing-skill v=… -->` marker: a same-name file without it is user-owned
+  and never written. `npm run install-skill` (`src/installSkill.ts`, `--dry-run`) creates it; boot only
+  refreshes marked copies, never creates, never throws. `POLYAGENT_SKILL=off` disables the boot refresh.
 
 ### Engines & tiers (multi-CLI)
 

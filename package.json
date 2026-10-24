@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "polyagent-mcp": "dist/index.js",
-    "polyagent-mcp-install-claude-md": "dist/installClaudeMd.js"
+    "polyagent-mcp-install-claude-md": "dist/installClaudeMd.js",
+    "polyagent-mcp-install-skill": "dist/installSkill.js"
   },
   "files": [
     "dist"
@@ -21,7 +22,8 @@
     "prepublishOnly": "npm run build",
     "bench": "npm run build && node bench/aux-bench.mjs",
     "bench:jev": "node bench/jev-bench.mjs",
-    "install-claude-md": "node dist/installClaudeMd.js"
+    "install-claude-md": "node dist/installClaudeMd.js",
+    "install-skill": "node dist/installSkill.js"
   },
   "keywords": [
     "mcp",
