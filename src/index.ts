@@ -723,7 +723,7 @@ server.registerTool(
   "decide",
   {
     description:
-      "Ask TypeSafe's Jev System One model for a structured decision: calibrated probabilities for noul questions or a typed label with probabilities for choice questions, not free-form text. Useful for gating risky tool calls, classification, or verifying a worker's claim. Cheap (~$0.04/M input tokens, output free), ~0.5s, pay-per-token through OpenRouter.",
+      "Ask a System One decision model (default Baseten Elephant 1, free; Jev via model override) for a structured decision: calibrated probabilities for noul questions or a typed label with probabilities for choice questions, not free-form text. Useful for gating risky tool calls, classification, or verifying a worker's claim. ~0.5s through OpenRouter; the free default allows 20 req/min and a daily cap, with a 16K context.",
     inputSchema: {
       state: z
         .union([z.string(), z.record(z.unknown())])

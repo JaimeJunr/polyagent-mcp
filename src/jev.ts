@@ -1,7 +1,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const JEV_MODEL = process.env.POLYAGENT_JEV_MODEL || "typesafe/jev-1.13";
+// Elephant 1 (grátis, mesmo /v1/systemone) acertou mais o shadow que o Jev no bench de 2026-10-24:
+// research/2026-10-24-modelos-decisao-gratis.md. POLYAGENT_JEV_MODEL=typesafe/jev-1.13 volta ao Jev.
+export const DEFAULT_JEV_MODEL = "baseten/elephant-1:free";
+export function resolveJevModel(env: NodeJS.ProcessEnv): string {
+  return env.POLYAGENT_JEV_MODEL || DEFAULT_JEV_MODEL;
+}
+export const JEV_MODEL = resolveJevModel(process.env);
 export const JEV_URL = process.env.POLYAGENT_JEV_URL || "https://openrouter.ai/api/v1/systemone";
 const jevEnabled = (value: string | undefined): boolean => /^(1|true|on)$/i.test(value ?? "");
 const fanOutThresholdEnv = process.env.POLYAGENT_JEV_FANOUT_THRESHOLD;

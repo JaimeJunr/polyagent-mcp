@@ -24,6 +24,8 @@ Falhas individuais entram no JSONL com `err` e contam como fallback no resumo de
 `--arbiter` mede até seis chamadas adicionais pelo caminho real `runCursor`/codex, uma por caso
 selecionado mesmo com mais de uma repetição; seu `cost` é `null` porque `runCursor` não o retorna.
 O resumo calcula as taxas sobre todas as tentativas e mostra também quantas respostas foram válidas.
+Desde 2026-10-24 o arquivo leva o id do modelo (`POLYAGENT_JEV_MODEL`, default Elephant 1) no nome e
+cada linha traz `model`; o `AAAA-MM-DD-jev-bench.jsonl` sem sufixo é do Jev; modelos `:free` esperam 3,1 s antes de cada chamada (limite de 20 req/min), pausa incluída no `ms`.
 
 ## Como o bench mede
 

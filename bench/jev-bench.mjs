@@ -19,7 +19,7 @@ if (!Number.isSafeInteger(reps) || reps < 1 || !["all", "fanout", "fanout-long",
 }
 const withArbiter = flags.includes("--arbiter") && suite !== "shadow";
 
-const { askJev, resolveOpenRouterKey } = await import(join(REPO, "dist/jev.js"));
+const { askJev, resolveOpenRouterKey, JEV_MODEL } = await import(join(REPO, "dist/jev.js"));
 const { fanOutAgreementRequest, delegateShadowRequest } = await import(join(REPO, "dist/jevDecisions.js"));
 const { LEVELS } = await import(join(REPO, "dist/cli.js"));
 const { scrubSecrets } = await import(join(REPO, "dist/scrub.js"));
@@ -37,7 +37,11 @@ try {
 
 const DATE = new Date().toISOString().slice(0, 10);
 mkdirSync(join(REPO, "research/bench"), { recursive: true });
-const OUT = join(REPO, "research/bench", `${DATE}-jev-bench.jsonl`);
+// Um arquivo por modelo (POLYAGENT_JEV_MODEL): comparar modelos não pode misturar linhas.
+const MODEL_SLUG = `-${JEV_MODEL.replace(/[^A-Za-z0-9.-]+/g, "_")}`;
+const OUT = join(REPO, "research/bench", `${DATE}-jev-bench${MODEL_SLUG}.jsonl`);
+// Modelos `:free` do OpenRouter aceitam 20 req/min; sem pausa, os 429 viram erro no bench.
+const FREE_PACING_MS = JEV_MODEL.endsWith(":free") ? 3100 : 0;
 const rows = [];
 const arbiterIds = new Set([
   "review-null-guard", "approach-pagination", "bug-cache",
@@ -50,12 +54,13 @@ function errorText(error) {
 }
 
 function record(row) {
-  appendFileSync(OUT, JSON.stringify(row) + "\n");
+  appendFileSync(OUT, JSON.stringify({ model: JEV_MODEL, ...row }) + "\n");
   rows.push(row);
   console.log(`${row.suite}/${row.kind} ${row.id} #${row.rep} ${row.ms}ms${row.err ? ` ERR ${row.err}` : ""}`);
 }
 
 async function callJev(request) {
+  if (FREE_PACING_MS) await new Promise((resolve) => setTimeout(resolve, FREE_PACING_MS));
   return askJev(request, { fetch: (url, init) => globalThis.fetch(url, init), key });
 }
 
@@ -143,7 +148,7 @@ function summaryLine(name, subset) {
   console.log(`${name.padEnd(15)} ${String(subset.length).padStart(5)} ${String(subset.filter((row) => !row.err).length).padStart(5)} ${String(subset.filter((row) => !!row.err).length).padStart(5)} ${String(median(times) ?? "-").padStart(9)} ${String(times.length ? Math.max(...times) : "-").padStart(7)} ${cost.toFixed(6).padStart(12)} (${priced.length}/${subset.length} priced)`);
 }
 
-console.log(`Jev bench: ${reps} rep(s), ${suite}${withArbiter ? " + arbiter" : ""} → ${OUT}`);
+console.log(`Jev bench (${JEV_MODEL}): ${reps} rep(s), ${suite}${withArbiter ? " + arbiter" : ""} → ${OUT}`);
 const selectedFanout = suite === "fanout" ? FANOUT_CASES
   : suite === "fanout-long" ? FANOUT_LONG_CASES
     : suite === "all" ? [...FANOUT_CASES, ...FANOUT_LONG_CASES] : [];
