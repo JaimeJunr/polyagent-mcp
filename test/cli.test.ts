@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,10 +8,13 @@ import {
   budgetNote, evidenceNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
   LEVELS, TIERS, FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
-  fallbackOpts, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
+  fallbackOpts, runCursor, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
   type SandboxSpec, type Engine,
 } from "../src/cli.js";
 import { computeEngineHealth } from "../src/usage.js";
+
+const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
+vi.mock("node:child_process", () => ({ spawn: spawnMock }));
 
 describe("codex environment fallback helpers", () => {
   it("detects the missing CODEX_HOME directory error", () => {
@@ -36,9 +40,15 @@ describe("codex environment fallback helpers", () => {
     expect(FALLBACK_ENGINE_ORDER).toEqual(["codex", "grok", "claude"]);
   });
 
-  // runCursor's spawn boundary is not mocked in this suite; retry wiring is integration-verified.
+  // A retentativa entre engines é coberta em process-error.test.ts.
 
   describe("fallbackOpts", () => {
+    it.each([{ roBinds: ["/skills/audit", "/skills/review"] }, { roBinds: [] }])("preserva roBinds no fallback: $roBinds", ({ roBinds }) => {
+      const result = fallbackOpts({ prompt: "q", agentPrompt: "Audit.", roBinds }, "claude");
+      expect(result.roBinds).toEqual(roBinds);
+      expect(result.agentPrompt).toBe("Audit.");
+    });
+
     it("drops mode so the fallback engine's workspace is never mounted read-only", () => {
       const opts = { prompt: "q", engine: "codex" as Engine, mode: "ask" as const, cwd: "/repo" };
       expect(fallbackOpts(opts, "grok")).not.toHaveProperty("mode");
@@ -242,8 +252,60 @@ describe("buildSandboxArgs", () => {
     homeRo: ["/home/u/.config/cursor/auth.json", "/home/u/.local"],
     homeRw: ["/home/u/.gradle"],
     extraBinds: ["/mnt/extra"],
+    roBinds: [],
     extraEnv: [["HTTPS_PROXY", "http://proxy:8080"]],
   };
+
+  it.each([false, true])("monta duas skills RO após HOME/extras e antes do workspace (RO=%s)", (workspaceRo) => {
+    const roBinds = ["/home/u/.claude/skills/audit", "/home/u/.claude/plugins/quality/skills/review"];
+    const args = buildSandboxArgs({ ...spec, workspaceRo, roBinds });
+    const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
+    expect(binds.slice(-4)).toEqual([
+      ["--bind", "/mnt/extra", "/mnt/extra"],
+      ...roBinds.map((p) => ["--ro-bind", p, p]),
+      [workspaceRo ? "--ro-bind" : "--bind", "/repo", "/repo"],
+    ]);
+    const homeRwAt = binds.findIndex((bind) => bind[1] === "/home/u/.gradle");
+    expect(homeRwAt).toBeGreaterThan(-1);
+    expect(binds.findIndex((bind) => bind[1] === roBinds[0])).toBeGreaterThan(homeRwAt);
+  });
+
+  it.each([false, true])("filtra roBinds inexistentes e o workspace (RO=%s)", (workspaceRo) => {
+    const root = mkdtempSync(join(tmpdir(), "cbx-ro-binds-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = root;
+    const workspace = join(root, "workspace");
+    const skill = join(root, "skill");
+    const reference = join(root, "reference.md");
+    mkdirSync(workspace);
+    mkdirSync(skill);
+    writeFileSync(reference, "Reference.");
+    const built = buildSandboxSpec(workspace, "codex", workspaceRo, [skill, join(root, "missing"), workspace, reference]);
+    try {
+      expect(built.spec.roBinds).toEqual([skill, reference]);
+      expect(built.spec.workspaceRo).toBe(workspaceRo);
+    } finally {
+      built.cleanup();
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("usa roBinds vazio quando omitido", () => {
+    const root = mkdtempSync(join(tmpdir(), "cbx-ro-default-"));
+    const previousHome = process.env.HOME;
+    process.env.HOME = root;
+    const built = buildSandboxSpec("/repo", "codex");
+    try {
+      expect(built.spec.roBinds).toEqual([]);
+    } finally {
+      built.cleanup();
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it("monta o $HOME isolado ANTES dos binds de subpaths do HOME", () => {
     const args = buildSandboxArgs(spec);
@@ -538,6 +600,47 @@ describe("buildSandboxArgs", () => {
     } finally {
       codex.cleanup();
       if (oldCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = oldCodexHome;
+    }
+  });
+});
+
+describe("runCursor com arquivos da skill", () => {
+  it.each(["ask", undefined] as const)("encaminha roBinds ao bwrap com mode=%s sem CLI real", async (mode) => {
+    const root = mkdtempSync(join(tmpdir(), "cbx-skill-spawn-"));
+    const skill = join(root, "skill");
+    const workspace = join(root, "workspace");
+    mkdirSync(skill);
+    mkdirSync(workspace);
+    writeFileSync(join(root, "bwrap"), "", { mode: 0o755 });
+    vi.stubEnv("HOME", root);
+    vi.stubEnv("PATH", root);
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      setImmediate(() => {
+        child.stdout.emit("data", Buffer.from('{"result":"ok"}'));
+        child.emit("close", 0);
+      });
+      return child;
+    });
+    try {
+      const result = await runCursor({ prompt: "Audit.", cwd: workspace, engine: "claude", roBinds: [skill], mode });
+      expect(result.text).toBe("ok");
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      const [bin, args] = spawnMock.mock.calls[0] as [string, string[]];
+      expect(bin).toBe(join(root, "bwrap"));
+      const skillAt = args.indexOf(skill);
+      expect(skillAt).toBeGreaterThan(-1);
+      expect(args.slice(skillAt - 1, skillAt + 2)).toEqual(["--ro-bind", skill, skill]);
+      const workspaceAt = args.indexOf(workspace);
+      expect(workspaceAt).toBeGreaterThan(skillAt);
+      expect(args.slice(workspaceAt - 1, workspaceAt + 2)).toEqual([mode ? "--ro-bind" : "--bind", workspace, workspace]);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

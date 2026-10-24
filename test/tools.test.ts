@@ -38,9 +38,10 @@ describe("tool surface (US-003)", () => {
 
   it("as instructions mandam delegar o resto quando a tarefa precisa de skills, subagents ou browser", () => {
     expect(indexSrc).toMatch(/not all-or-nothing/);
-    expect(indexSrc).toMatch(/inline \{prompt\}/);
+    expect(indexSrc).toMatch(/a skill with agent: \{ skill: 'plugin:name' \}/);
+    expect(indexSrc).toMatch(/mounted read-only/);
     expect(indexSrc).toMatch(/only steps that need an MCP server or a browser stay with you/i);
-    expect(indexSrc).toMatch(/files outside cwd/);
+    expect(indexSrc).not.toMatch(/paste what the worker needs/);
     expect(indexSrc).toMatch(/agent:.{0,3}<name>/);
   });
 
@@ -50,11 +51,9 @@ describe("tool surface (US-003)", () => {
     );
   });
 
-  it("a descrição do param agent ensina a passar uma skill colando o SKILL.md", () => {
+  it("a descrição do param agent ensina a passar uma skill por nome com arquivos RO", () => {
     const desc = indexSrc.match(/const agentDescription =\s*"([^"]*)"/)?.[1] ?? "";
-    expect(desc).toMatch(/skill/i);
-    expect(desc).toMatch(/SKILL\.md body/);
-    expect(desc).toMatch(/outside cwd/);
+    expect(desc).toContain("To hand over a skill, pass { skill: 'plugin:name' } (e.g. { skill: 'ivt-quality:security-audit' }): its SKILL.md becomes the persona and its folder (scripts/, references/) is mounted read-only in the worker sandbox.");
   });
 
   it("sincroniza o bloco do CLAUDE.md no boot, antes de conectar, sem quebrar o startup", () => {

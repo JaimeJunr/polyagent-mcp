@@ -42,16 +42,17 @@ const PROMPTS = [
   { id: "impl-rename", category: "implementation", prompt: "Renomeie a constante DEFAULT_TIMEOUT_MS para WORKER_TIMEOUT_MS no projeto todo e garanta que build e testes continuam passando.", expect: ["delegate", "fast_delegate"] },
   { id: "h-impl-flag", category: "implementation", heldout: true, prompt: "Coloca uma opção --json no bench/aux-bench.mjs que imprime o resumo final em JSON em vez de texto.", expect: ["delegate", "fast_delegate"] },
   // Handoff (2026-09-27): o host deve passar subagent/skill ao worker via `agent` em vez de largar a
-  // delegação. expectAgent exige o formato: "name" (subagent pelo nome) ou "inline" (SKILL.md colado).
-  { id: "handoff-agent", category: "handoff", prompt: "Use o agent ivt-core:code-reviewer para revisar o último commit deste repo (HEAD~1..HEAD). Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: "name" },
-  { id: "handoff-skill", category: "handoff", prompt: "Faça uma auditoria de segurança de src/cli.ts seguindo a skill ivt-quality:security-audit. Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: "inline" },
+  // delegação. expectAgent lista os formatos aceitos: "name" (subagent pelo nome), "skill" (skill pelo nome)
+  // ou "inline" (SKILL.md colado).
+  { id: "handoff-agent", category: "handoff", prompt: "Use o agent ivt-core:code-reviewer para revisar o último commit deste repo (HEAD~1..HEAD). Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: ["name"] },
+  { id: "handoff-skill", category: "handoff", prompt: "Faça uma auditoria de segurança de src/cli.ts seguindo a skill ivt-quality:security-audit. Não edite nada; só me traga os achados.", expect: ["delegate", "fast_delegate"], expectAgent: ["skill", "inline"] },
 ];
 
 // Formato do `agent` que o host passou ao worker: subagent por nome, persona/skill colada, ou nada.
 const AGENT_TOOLS = new Set(["mcp__polyagent__delegate", "mcp__polyagent__fast_delegate"]);
 function agentKind(agent) {
   if (typeof agent === "string") return "name";
-  if (agent && typeof agent === "object") return "inline";
+  if (agent && typeof agent === "object") return typeof agent.skill === "string" ? "skill" : "inline";
   return "none";
 }
 
@@ -150,7 +151,7 @@ function makeRow(prompt, label, run) {
   const toolHit = prompt.expect.length === 0
     ? !violation
     : prompt.expect.some((name) => bridgeNames.includes(name));
-  const hit = toolHit && (!prompt.expectAgent || parsed.agentArgs.includes(prompt.expectAgent));
+  const hit = toolHit && (!prompt.expectAgent || prompt.expectAgent.some((kind) => parsed.agentArgs.includes(kind)));
 
   return {
     date: DATE,

@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 // @ts-expect-error — hook is plain .mjs sem types; só a lógica pura importa aqui.
@@ -151,9 +154,10 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
   it("tarefa com skills, subagents ou browser não é tudo-ou-nada", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/not all-or-nothing/);
-    expect(text).toMatch(/inline \{prompt\}/);
+    expect(text).toMatch(/agent: \{ skill: "plugin:name" \}/);
+    expect(text).not.toMatch(/inline \{prompt\}/);
     expect(text).toMatch(/only steps that need an MCP server or a browser stay with you/i);
-    expect(text).toMatch(/files outside cwd/);
+    expect(text).toMatch(/mounted read-only/);
     expect(text).toMatch(/agent:.{0,3}<name>/);
   });
 
@@ -222,9 +226,44 @@ describe("decide — Bash code search", () => {
   });
 });
 
+const HOME = "/fakehome";
+const CWD = "/fakeproj";
+
+/** fs falso para o handoff: mapa caminho→conteúdo; diretórios derivados dos caminhos. */
+function fakeHost(files: Record<string, string>) {
+  const dirs = new Map<string, Map<string, boolean>>();
+  for (const f of Object.keys(files)) {
+    const parts = f.split("/").filter(Boolean);
+    for (let i = 0; i < parts.length; i++) {
+      const parent = "/" + parts.slice(0, i).join("/");
+      const m = dirs.get(parent) ?? new Map<string, boolean>();
+      m.set(parts[i], i < parts.length - 1);
+      dirs.set(parent, m);
+    }
+  }
+  return {
+    home: HOME,
+    readFileSync: (p: string) => {
+      if (!(p in files)) throw new Error("ENOENT " + p);
+      return files[p];
+    },
+    readdirSync: (p: string) => {
+      const m = dirs.get(p);
+      if (!m) throw new Error("ENOENT " + p);
+      return [...m].map(([name, isDir]) => ({ name, isDirectory: () => isDir }));
+    },
+  };
+}
+
+const agentFile = (tools?: string) => `---\nname: x\n${tools === undefined ? "" : `tools: ${tools}\n`}---\nBody`;
+const PLUGIN_AGENT = `${HOME}/.claude/plugins/cache/ivt/pit/1.0/agents/issue-investigator.md`;
+const CLEAN_SKILL = "---\nname: s\n---\nWrite clean prose.";
+const call = (tool_name: string, tool_input: object, files: Record<string, string>, extra: object = {}) =>
+  decide({ tool_name, tool_input, cwd: CWD, seen: new Set(["preload"]), ...extra }, fakeHost(files));
+
 describe("decide — Agent/Task/Skill handoff", () => {
   it.each(["Agent", "Task"])("nudges %s with subagent_type and named persona", (tool_name) => {
-    const res = decide({ tool_name, tool_input: { subagent_type: "pit:issue-investigator" }, seen: new Set(["preload"]) });
+    const res = decide({ tool_name, tool_input: { subagent_type: "pit:issue-investigator" }, seen: new Set(["preload"]) }, fakeHost({}));
     expect(res?.keys).toEqual(["agent-handoff"]);
     expect(res?.redirect).toBe(false);
     expect(res?.text).toContain("pit:issue-investigator");
@@ -233,8 +272,8 @@ describe("decide — Agent/Task/Skill handoff", () => {
     expect(res?.text).toMatch(/MCP servers or a browser/);
   });
 
-  it("nudges Skill with skill name and inline SKILL.md body", () => {
-    const res = decide({ tool_name: "Skill", tool_input: { skill: "ivt-core:api-design" }, seen: new Set(["preload"]) });
+  it("nudges Skill with skill name and inline SKILL.md body when the skill is not found", () => {
+    const res = decide({ tool_name: "Skill", tool_input: { skill: "ivt-core:api-design" }, seen: new Set(["preload"]) }, { ...fakeHost({}) });
     expect(res?.keys).toEqual(["skill-handoff"]);
     expect(res?.redirect).toBe(false);
     expect(res?.text).toContain("ivt-core:api-design");
@@ -257,6 +296,145 @@ describe("decide — Agent/Task/Skill handoff", () => {
   });
 });
 
+describe("decide — handoff vira redirect quando o worker assume o trabalho", () => {
+  it("plugin agent com só tools context-mode → redirect com a chamada exata", () => {
+    const files = { [PLUGIN_AGENT]: agentFile("Read, Bash, mcp__plugin_context-mode_context-mode__ctx_search") };
+    const res = call("Agent", { subagent_type: "pit:issue-investigator" }, files);
+    expect(res?.keys).toEqual(["agent-handoff"]);
+    expect(res?.redirect).toBe(true);
+    expect(res?.text).toContain('delegate(prompt, level, agent: "pit:issue-investigator")');
+    expect(res?.text).toMatch(/fast_delegate/);
+  });
+
+  it("agent de projeto sem prefixo de plugin também redireciona (Task)", () => {
+    const files = { [`${CWD}/.claude/agents/reviewer.md`]: agentFile("Read, Grep") };
+    expect(call("Task", { subagent_type: "reviewer" }, files)?.redirect).toBe(true);
+  });
+
+  it("filtro de plugin: mesmo nome em outro plugin não vale", () => {
+    const files = { [PLUGIN_AGENT]: agentFile("Read") };
+    const res = call("Agent", { subagent_type: "other:issue-investigator" }, files);
+    expect(res?.redirect).toBe(false);
+  });
+
+  it("agent com outra tool mcp__ → nudge", () => {
+    const files = { [PLUGIN_AGENT]: agentFile("Read, mcp__atlassian__getJiraIssue") };
+    const res = call("Agent", { subagent_type: "pit:issue-investigator" }, files);
+    expect(res?.redirect).toBe(false);
+    expect(res?.text).toMatch(/agent: "<subagent name>"/);
+  });
+
+  it.each(["Read, Agent", "Read, Task", "Read, mcp__Claude_Browser__navigate", "Read, mcp__claude-in-chrome__computer"])(
+    "agent com tools %s → nudge", (tools) => {
+      const files = { [PLUGIN_AGENT]: agentFile(tools) };
+      expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(false);
+    },
+  );
+
+  it("agent sem linha tools: herda tudo → nudge", () => {
+    const files = { [PLUGIN_AGENT]: agentFile() };
+    expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(false);
+  });
+
+  it("agent não encontrado → nudge", () => {
+    expect(call("Agent", { subagent_type: "ghost" }, {})?.redirect).toBe(false);
+  });
+
+  it.each(["", "a/b", "..", "x:..", "pit:"])("nome inválido %j → nudge", (subagent_type) => {
+    const files = { [PLUGIN_AGENT]: agentFile("Read") };
+    expect(call("Agent", { subagent_type }, files)?.redirect).toBe(false);
+  });
+
+  it("skill de projeto limpa → redirect com texto { skill }", () => {
+    const files = { [`${CWD}/.claude/skills/api-design/SKILL.md`]: CLEAN_SKILL };
+    const res = call("Skill", { skill: "api-design" }, files);
+    expect(res?.keys).toEqual(["skill-handoff"]);
+    expect(res?.redirect).toBe(true);
+    expect(res?.text).toContain('delegate(prompt, level, agent: { skill: "api-design" })');
+    expect(res?.text).toMatch(/read-only/);
+  });
+
+  it("skill de plugin limpa com filtro de prefixo → redirect", () => {
+    const files = { [`${HOME}/.claude/plugins/cache/ivt/ivt-core/2.0/skills/api-design/SKILL.md`]: CLEAN_SKILL };
+    expect(call("Skill", { skill: "ivt-core:api-design" }, files)?.redirect).toBe(true);
+    expect(call("Skill", { skill: "ivt-quality:api-design" }, files)?.redirect).toBe(false);
+  });
+
+  it.each(["use playwright to click", "call mcp__x__y", "launch with agent-browser", "Claude_Browser tab", "spawn via subagent_type", "use the Task tool"])(
+    "skill que menciona %j → nudge", (text) => {
+      const files = { [`${CWD}/.claude/skills/api-design/SKILL.md`]: `---\nname: s\n---\n${text}` };
+      const res = call("Skill", { skill: "api-design" }, files);
+      expect(res?.redirect).toBe(false);
+      expect(res?.text).toMatch(/agent: \{ prompt: "<SKILL\.md body>" \}/);
+    },
+  );
+
+  it("skill que cita só context-mode continua limpa", () => {
+    const files = { [`${CWD}/.claude/skills/s/SKILL.md`]: "use mcp__plugin_context-mode_context-mode__ctx_search" };
+    expect(call("Skill", { skill: "s" }, files)?.redirect).toBe(true);
+  });
+
+  it("sem cwd, pula raízes de projeto", () => {
+    const files = { [`${CWD}/.claude/skills/s/SKILL.md`]: CLEAN_SKILL };
+    const res = decide({ tool_name: "Skill", tool_input: { skill: "s" }, seen: new Set(["preload"]) }, fakeHost(files));
+    expect(res?.redirect).toBe(false);
+  });
+
+  it("raiz de home também vale e erros de fs são engolidos", () => {
+    const files = { [`${HOME}/.claude/skills/s/SKILL.md`]: CLEAN_SKILL };
+    expect(call("Skill", { skill: "s" }, files)?.redirect).toBe(true);
+  });
+
+  it("subagentes isentos continuam null", () => {
+    const files = { [`${CWD}/.claude/agents/claude-code-guide.md`]: agentFile("Read") };
+    expect(call("Agent", { subagent_type: "claude-code-guide" }, files)).toBeNull();
+  });
+
+  it("dedup: segunda chamada limpa vira null", () => {
+    const files = { [`${CWD}/.claude/skills/s/SKILL.md`]: CLEAN_SKILL };
+    const seen = new Set(["preload"]);
+    const first = decide({ tool_name: "Skill", tool_input: { skill: "s" }, cwd: CWD, seen }, fakeHost(files));
+    for (const k of first.keys) seen.add(k);
+    expect(decide({ tool_name: "Skill", tool_input: { skill: "s" }, cwd: CWD, seen }, fakeHost(files))).toBeNull();
+  });
+});
+
+describe("main — handoff em redirect/nudge (subprocess, HOME temporário)", () => {
+  function tempHome(): string {
+    const home = mkdtempSync(join(tmpdir(), "polyagent-hook-home-"));
+    const f = join(home, ".claude/plugins/cache/ivt/ivt-core/1/skills/api-design/SKILL.md");
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, CLEAN_SKILL);
+    return home;
+  }
+  const evt = (n: string) => ({ hook_event_name: "PreToolUse", session_id: `test-handoff-${n}-${process.pid}-${Date.now()}`, cwd: tmpdir(), tool_name: "Skill", tool_input: { skill: "ivt-core:api-design" } });
+
+  it("redirect mode nega uma skill limpa e depois deixa passar", () => {
+    const home = tempHome();
+    try {
+      const env = { ...process.env, HOME: home, POLYAGENT_HOOK_MODE: "redirect" };
+      const e = evt("r");
+      const out = JSON.parse(runHook(e, env)).hookSpecificOutput;
+      expect(out.permissionDecision).toBe("deny");
+      expect(out.permissionDecisionReason).toContain('agent: { skill: "ivt-core:api-design" }');
+      expect(runHook(e, env)).toBe("");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("nudge mode nunca nega", () => {
+    const home = tempHome();
+    try {
+      const out = JSON.parse(runHook(evt("n"), { ...process.env, HOME: home, POLYAGENT_HOOK_MODE: "nudge" })).hookSpecificOutput;
+      expect(out.permissionDecision).toBeUndefined();
+      expect(out.additionalContext).toMatch(/agent:/);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("PreToolUse hook modes — Bash search and Agent/Skill", () => {
   it("redirect mode denies first Bash search with fail-open reason, then passes", () => {
     const session_id = `test-bash-redirect-${process.pid}-${Date.now()}`;
@@ -276,9 +454,15 @@ describe("PreToolUse hook modes — Bash search and Agent/Skill", () => {
     expect(out.permissionDecision).toBeUndefined();
   });
 
-  it.each(["Agent", "Skill"])("redirect mode only nudges %s", (tool_name) => {
-    const evt = { hook_event_name: "PreToolUse", session_id: `test-${tool_name}-${process.pid}-${Date.now()}`, tool_name, tool_input: { subagent_type: "Explore", skill: "api-design" } };
-    const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "redirect" })).hookSpecificOutput;
+  it.each(["Agent", "Skill"])("redirect mode only nudges %s when the target is not found", (tool_name) => {
+    const evt = { hook_event_name: "PreToolUse", session_id: `test-${tool_name}-${process.pid}-${Date.now()}`, cwd: tmpdir(), tool_name, tool_input: { subagent_type: "Explore", skill: "api-design" } };
+    const home = mkdtempSync(join(tmpdir(), "polyagent-hook-empty-")); // nunca o ~/.claude real
+    let out: { additionalContext?: string; permissionDecision?: string };
+    try {
+      out = JSON.parse(runHook(evt, { ...process.env, HOME: home, POLYAGENT_HOOK_MODE: "redirect" })).hookSpecificOutput;
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
     expect(out.additionalContext).toMatch(/agent:/);
     expect(out.permissionDecision).toBeUndefined();
   });

@@ -16,6 +16,14 @@ describe("parseStream — como o host passou o agent ao worker", () => {
     expect(parseStream(stream).agentArgs).toEqual(["name", "inline", "none"]);
   });
 
+  it("distingue skill por nome de persona inline", () => {
+    const stream = [
+      toolUse("mcp__polyagent__delegate", { prompt: "x", level: 1, agent: { skill: "ivt-quality:security-audit" } }),
+      toolUse("mcp__polyagent__delegate", { prompt: "x", level: 1, agent: { prompt: "body" } }),
+    ].join("\n");
+    expect(parseStream(stream).agentArgs).toEqual(["skill", "inline"]);
+  });
+
   it("ignora o agent de tools que não são delegate/fast_delegate", () => {
     const stream = [
       toolUse("Agent", { subagent_type: "ivt-core:code-reviewer", prompt: "x" }),

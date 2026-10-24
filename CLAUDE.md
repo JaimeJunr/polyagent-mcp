@@ -65,7 +65,12 @@ the **pure logic is testable without spawning a worker process**:
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
   `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
   collisions pick the newest match by mtime. An inline `{prompt}` skips lookup. Only the markdown
-  body crosses into the worker, and names containing `/` or `..` are rejected.
+  body crosses into the worker, and names containing `/` or `..` are rejected. `{ skill: "plugin:name" }`
+  resolves `skills/<name>/SKILL.md` (project `.claude/skills`, `~/.claude/skills`, then `~/.claude/plugins`,
+  newest by mtime, plugin prefix filters the path): the body becomes the persona and the canonical skill
+  folder comes back as `mountRo`, which `delegate`/`fast_delegate` pass as `RunOpts.roBinds` — the one
+  exception to "no new bind", so the skill's `scripts/`/`references/` are readable (RO) in the sandbox.
+  Motivated by handoff 0/2 in `research/2026-09-30-adoption-handoff.md`.
 - `claudeMd.ts` — managed routing block in the user's global `~/.claude/CLAUDE.md` (override path
   with `POLYAGENT_CLAUDE_MD_PATH`), delimited by `<!-- polyagent-mcp:begin v=<version> -->` …
   `<!-- polyagent-mcp:end -->`. `renderPolyagentBlock` generates it from `TIERS` (levels never
@@ -303,7 +308,7 @@ points, all in `cli.ts`:
   engine)` is the impure half (mkdtemp + `existsSync` probing) — keep the fs/tmp side effects there.
 - **Only `cwd` is mounted — paths outside it are invisible.** A command touching a sibling path
   (additional working dir, adjacent monorepo) fails with `No such file or directory`. Mount extras
-  RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
+  RO per call via `RunOpts.roBinds` (skill folders), or RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
   the ones that exist and aren't the workspace, and `buildSandboxArgs` binds them **after** the HOME
   overlays but **before** the workspace, so the workspace stays the last (never-shadowed) bind.
 - **Mandatory, with no graceful fallback.** `SANDBOX_ON` is true unless `POLYAGENT_SANDBOX` is
@@ -498,9 +503,12 @@ uma vez para `explore` ou `read_slice`. A busca deve iniciar o **primeiro segmen
 após `&&`, uma nova pipeline pode iniciar com busca. `npm test | grep FAIL` e `ps aux | grep x`
 são filtros de saída e não disparam. Comando que também grava artefatos não é redirecionado;
 o nudge existente para `git commit`/`push`, `git worktree add`, `gh pr create` e `bkt pr create`
-tem prioridade. `Agent`/`Task` e `Skill` recebem apenas nudge, uma vez por sessão, explicando
-`delegate`/`fast_delegate` com `agent` para transportar persona ou corpo de `SKILL.md`;
-os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restrições testadas em
+tem prioridade. `Agent`/`Task` e `Skill` (uma vez por sessão) recebem **deny** em redirect quando o subagente/skill
+é encontrado (`<cwd>/.claude/{agents,skills}`, `~/.claude/...`, `~/.claude/plugins`) e NÃO precisa de
+MCP (exceto context-mode), browser nem subagents — o texto nomeia `delegate(prompt, level, agent: "<subagent>")`
+ou `agent: { skill: "plugin:name" }`; não achado, sem linha `tools:`, ou que precisa do host, cai no nudge
+de sempre (o nudge sozinho não mudou nada: handoff 0/2 em `research/2026-09-30-adoption-handoff.md`).
+Os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restrições testadas em
 `test/hook.test.ts`:
 
 - Pure decision in `decide(input, deps)` with injectable fs — that's what the tests exercise.
@@ -510,8 +518,7 @@ os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restriçõe
   (sem offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, e Bash de busca de código →
   `explore`/`read_slice` recebem **deny** uma vez. As chaves de dedup da sessão são salvas
   **antes** da emissão; a segunda chamada passa. O motivo termina em `FAILOPEN_SUFFIX` e informa
-  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit/Agent/Task/Skill nunca recebem
-  deny; Bash que grava artefatos mantém o nudge anterior.
+  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit nunca recebem deny (Agent/Task/Skill só nas condições acima); Bash que grava artefatos mantém o nudge anterior.
 - **PreToolUse dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`):
   every PreToolUse nudge/redirect fires at most once. A repeated fire is worse than none. This is why
   `Grep`/`Glob` can sit in the matcher — they collapse to a single preload reminder.
