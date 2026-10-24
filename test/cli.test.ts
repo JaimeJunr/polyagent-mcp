@@ -253,6 +253,8 @@ describe("buildSandboxArgs", () => {
     homeRw: ["/home/u/.gradle"],
     extraBinds: ["/mnt/extra"],
     roBinds: [],
+    shims: [],
+    realBins: [],
     extraEnv: [["HTTPS_PROXY", "http://proxy:8080"]],
   };
 

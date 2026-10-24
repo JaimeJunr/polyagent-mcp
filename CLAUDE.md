@@ -50,6 +50,8 @@ the **pure logic is testable without spawning a worker process**:
   `fast_delegate` and `fan_out` were deferred and never got called — the same adoption bug that
   motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
+  `delegate`/`fast_delegate` accept an optional `deny: string[]` (own `inputSchema`, not `routing`) —
+  see "`deny` blocks commands via shims" in the sandbox section;
   `fan_out` consensus can use the optional Jev agreement gate before its Codex arbiter; a Jev
   failure or low agreement keeps the existing arbiter path.
   `follow_up` feeds that id back as `RunOpts.resume` so a prior worker session continues without
@@ -311,6 +313,27 @@ points, all in `cli.ts`:
   RO per call via `RunOpts.roBinds` (skill folders), or RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
   the ones that exist and aren't the workspace, and `buildSandboxArgs` binds them **after** the HOME
   overlays but **before** the workspace, so the workspace stays the last (never-shadowed) bind.
+- **`deny` blocks commands via shims (`delegate`/`fast_delegate`, `RunOpts.deny`).** Each entry is a
+  command prefix (`"git push"`, `"rm"`); `parseDenyRules` rejects empty entries, a cmd outside
+  `/^[A-Za-z0-9._+-]+$/` (no slash), `sh`/`bash`/`dash` (the shim itself runs on `/bin/sh`) and args with
+  quotes/backslash/`$`/backtick (they are embedded in a shell script). `buildShimScript` emits the POSIX
+  `/bin/sh` shim: for `git` it skips global options (`-C`, `-c`, `--git-dir`, …) and resolves aliases via
+  `"$REAL" config --get alias.<sub>` (limits: alias read from the cwd/global config, and `git pull` merges
+  internally without calling `git merge`); block = stderr `polyagent: '<rule>' is blocked in this sandbox
+  (deny list)` + `exit 126`, otherwise `exec "$REAL" "$@"`. `buildSandboxSpec` (impure half) writes the
+  shims (0755) into a **separate** `cbx-shim-` dir — never in `isoHome`/`tmpDir`, which are RW inside the
+  sandbox and would let the worker rewrite the bind source — binds the real binary RO at
+  `/run/polyagent-real/<cmd>` and overlays **every** `resolveShimTargets` location with `--ro-bind`.
+  **Gotcha:** `--ro-bind /bin /bin` is a mount separate from `/usr/bin` even when `/bin` → `usr/bin`
+  on the host, so overlaying `/usr/bin/rm` alone leaves `/bin/rm` open; hence PATH dirs plus
+  `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin` all get the shim (a command found
+  nowhere is skipped, not an error). In `buildSandboxArgs` the real/shim binds come after `--tmpfs /run`
+  and the HOME overlays and before the workspace, which stays the last bind. It is a **guardrail
+  against accidents, not a security boundary** (the worker can still reach the binary some other
+  way); `denyNote` tells it up front what exits 126. `deny` needs bwrap: with `POLYAGENT_SANDBOX=off`
+  `runCursor` rejects (`DENY_NEEDS_SANDBOX`) instead of running unguarded, and `fallbackOpts` carries
+  `deny` to the retried engine. Verified live under real bwrap 2026-10-24 (`/bin/rm`, `/usr/bin/rm`,
+  `git -C . -c a=b push`, alias `git p` blocked; `git status`/`git init` pass).
 - **Mandatory, with no graceful fallback.** `SANDBOX_ON` is true unless `POLYAGENT_SANDBOX` is
   `off`/`0`/`false`/`no`/empty. With the sandbox on and `bwrap` missing from PATH, `sandboxPreflight()`
   (called in `index.ts` right before `server.connect`) throws naming the remedy (installing

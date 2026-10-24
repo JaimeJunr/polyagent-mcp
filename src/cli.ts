@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
 
@@ -136,6 +136,14 @@ export function evidenceNote(): string {
   return `\n\n[Evidence: report the DENOMINATOR, not just the result. If you wrote or ran a check, say HOW MANY candidates it actually scanned (e.g. "scanned 14 invocations across 6 files, 0 violations"). Scanning zero and finding zero problems looks identical to passing — if the count is 0, say so plainly. When declaring done, say WHAT was verified and HOW, never just "the tests pass".]`;
 }
 
+/** Nota anexada ao prompt quando há `deny`: o worker sabe de antemão o que o sandbox bloqueia e
+ *  não gasta turnos tentando (nem contornando) um comando que sai com 126. */
+export function denyNote(deny: string[] | undefined): string {
+  const list = (deny ?? []).map((entry) => entry.trim().split(/\s+/).join(" ")).filter(Boolean);
+  if (list.length === 0) return "";
+  return `\n\n[Blocked commands: ${list.map((entry) => `'${entry}'`).join(", ")} are blocked in this sandbox and will fail with exit 126; do not attempt them or work around them.]`;
+}
+
 /** Se truthy, loga o comando spawnado e espelha o stderr do child em tempo real. Debug. */
 export const DEBUG = ["1", "true", "yes"].includes((process.env.POLYAGENT_DEBUG ?? "").toLowerCase());
 
@@ -235,6 +243,141 @@ const SANDBOX_PROXY_ENV = [
   "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
 ];
 
+/** Regra de `deny`: comando + prefixo de args que o shim bloqueia. */
+export interface DenyRule {
+  cmd: string;
+  args: string[];
+}
+
+/** Comandos que o shim não pode substituir: ele próprio roda em /bin/sh. */
+const DENY_RESERVED_CMDS = ["sh", "bash", "dash", ".", ".."];
+const DENY_CMD_RE = /^[A-Za-z0-9._+-]+$/;
+/** Aspas, barra invertida, `$` e crase não entram no script do shim (embutido entre aspas simples). */
+const DENY_UNSAFE_ARG_RE = /['"\\$`]/;
+
+/**
+ * Valida e quebra as entradas de `deny` ("git push", "rm") em regras. Função pura. O cmd é um nome
+ * simples (sem barra: o shim cobre o nome nos dirs do PATH, não um path absoluto) e os args nunca
+ * carregam caracteres que quebrem o script de shell gerado em buildShimScript.
+ */
+export function parseDenyRules(deny: string[]): DenyRule[] {
+  return deny.map((entry) => {
+    const received = JSON.stringify(entry);
+    const [cmd, ...args] = entry.trim().split(/\s+/);
+    if (!cmd) throw new Error(`invalid deny entry: received ${received}, expected "<command> [args...]" (e.g. "git push")`);
+    if (!DENY_CMD_RE.test(cmd)) {
+      throw new Error(`invalid deny entry: received ${received}, expected "<command> [args...]" where command matches [A-Za-z0-9._+-]+ with no slash (e.g. "git push")`);
+    }
+    if (DENY_RESERVED_CMDS.includes(cmd)) {
+      throw new Error(`invalid deny entry: received ${received}, expected a command other than sh/bash/dash (the shim itself runs on /bin/sh)`);
+    }
+    if (args.some((arg) => DENY_UNSAFE_ARG_RE.test(arg))) {
+      throw new Error(`invalid deny entry: received ${received}, expected args without quotes, backslashes, '$' or backticks (e.g. "git push --force")`);
+    }
+    return { cmd, args };
+  });
+}
+
+/** Aspas simples POSIX: `'` vira `'\''`. */
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Opções globais do git que antecedem o subcomando (`git -C x -c a=b push`). Só as com valor
+ *  separado consomem dois tokens; o resto (`--opt=valor`, flags) consome um. */
+const GIT_GLOBAL_WITH_VALUE = "-C|-c|--git-dir|--work-tree|--namespace|--config-env|--attr-source|--super-prefix";
+const GIT_GLOBAL_SINGLE =
+  "-p|-P|--paginate|--no-pager|--bare|--no-replace-objects|--no-lazy-fetch|--no-optional-locks|--no-advice|" +
+  "--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--html-path|--man-path|--info-path|" +
+  "--exec-path|--exec-path=*|--git-dir=*|--work-tree=*|--namespace=*|--config-env=*|--attr-source=*|--super-prefix=*|--list-cmds=*";
+
+/**
+ * Gera o shim POSIX `/bin/sh` que substitui `cmd` no sandbox. Função pura. Bloqueia (stderr + exit 126)
+ * quando os tokens iniciais do argv — depois das opções globais e da resolução de alias, no caso do
+ * git — igualam os args de alguma regra; regra sem args bloqueia toda invocação. Fora disso faz
+ * `exec "$REAL" "$@"` com os args originais. Guardrail contra acidente, não fronteira de segurança.
+ *
+ * Limites conhecidos: o alias é lido da config do cwd/global (não de `-C <outro-repo>`), e o git
+ * chama internamente comandos que não passam por shim (`git pull` faz merge sem invocar `git merge`).
+ */
+export function buildShimScript(cmd: string, rules: DenyRule[], realPath: string): string {
+  const mine = rules.filter((rule) => rule.cmd === cmd);
+  const label = (rule: DenyRule) => [rule.cmd, ...rule.args].join(" ");
+  const lines = [
+    "#!/bin/sh",
+    "# gerado pelo polyagent-mcp (deny): guardrail contra acidentes, não uma fronteira de segurança.",
+    "set -f",
+    `REAL=${shQuote(realPath)}`,
+    `block() { printf '%s\\n' "polyagent: '$1' is blocked in this sandbox (deny list)" >&2; exit 126; }`,
+  ];
+  for (const rule of mine.filter((r) => r.args.length === 0)) lines.push(`block ${shQuote(label(rule))}`);
+  lines.push("match() {", "  :");
+  for (const rule of mine.filter((r) => r.args.length > 0)) {
+    const cond = rule.args.map((arg, i) => `[ "\${${i + 1}-}" = ${shQuote(arg)} ]`).join(" && ");
+    lines.push(`  if ${cond}; then block ${shQuote(label(rule))}; fi`);
+  }
+  lines.push("}");
+  if (cmd === "git") {
+    lines.push(
+      "check() {",
+      "  depth=0",
+      '  while [ "$depth" -lt 5 ]; do',
+      '    while [ "$#" -gt 0 ]; do',
+      '      case "$1" in',
+      `        ${GIT_GLOBAL_WITH_VALUE}) if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;`,
+      `        ${GIT_GLOBAL_SINGLE}) shift ;;`,
+      "        *) break ;;",
+      "      esac",
+      "    done",
+      '    match "$@"',
+      `    case "\${1-}" in ''|-*) return 0 ;; esac`,
+      '    als=$("$REAL" config --get "alias.$1" 2>/dev/null) || return 0',
+      '    [ -n "$als" ] || return 0',
+      "    shift",
+      '    case "$als" in',
+      "      '!'*)",
+      '        set -- ${als#!} "$@"',
+      '        if [ "${1-}" = git ]; then shift; else return 0; fi ;;',
+      '      *) set -- $als "$@" ;;',
+      "    esac",
+      "    depth=$((depth + 1))",
+      "  done",
+      "}",
+      'check "$@"',
+    );
+  } else {
+    lines.push('match "$@"');
+  }
+  lines.push('exec "$REAL" "$@"', "");
+  return lines.join("\n");
+}
+
+/** Dirs de sistema sempre sondados: o bind `--ro-bind /bin /bin` do sandbox é um mount separado de
+ *  /usr/bin (mesmo com /bin → usr/bin no host), então cada local precisa do seu overlay. */
+const SHIM_SYSTEM_DIRS = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"];
+/** Onde o binário real fica dentro do sandbox (o REAL do shim); /run é um tmpfs limpo. */
+const SHIM_REAL_DIR = "/run/polyagent-real";
+
+/**
+ * Lista todo `<dir>/<cmd>` existente nos dirs do PATH do sandbox + dirs de sistema (sem duplicar) e
+ * o realpath do primeiro achado, que vira o binário real. Null se o comando não existe em lugar
+ * nenhum — nada a bloquear. Função pura: o fs entra por parâmetro.
+ */
+export function resolveShimTargets(
+  cmd: string,
+  searchDirs: string[],
+  exists: (p: string) => boolean,
+  realpath: (p: string) => string,
+): { targets: string[]; real: string } | null {
+  const targets: string[] = [];
+  for (const dir of [...searchDirs, ...SHIM_SYSTEM_DIRS]) {
+    if (!dir.startsWith("/")) continue; // vazio/relativo no PATH não é um local fixo
+    const candidate = join(dir, cmd);
+    if (!targets.includes(candidate) && exists(candidate)) targets.push(candidate);
+  }
+  return targets.length === 0 ? null : { targets, real: realpath(targets[0]) };
+}
+
 export interface SandboxSpec {
   home: string;
   user: string;
@@ -256,6 +399,10 @@ export interface SandboxSpec {
   extraBinds: string[];
   /** Paths extras montados somente-leitura, depois dos extras RW e antes do workspace. */
   roBinds: string[];
+  /** Shims do `deny`: `file` (host) sobrepõe `target` dentro do sandbox, depois dos roBinds. */
+  shims: { file: string; target: string }[];
+  /** Binários reais dos shims, montados RO em `dest` (o REAL do shim), junto dos shims. */
+  realBins: { src: string; dest: string }[];
   extraEnv: Array<[string, string]>;
 }
 
@@ -273,6 +420,9 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   for (const p of spec.homeRw) args.push("--bind", p, p);
   for (const p of spec.extraBinds) args.push("--bind", p, p);
   for (const p of spec.roBinds) args.push("--ro-bind", p, p);
+  // depois do tmpfs /run e dos overlays do HOME (senão somem), antes do workspace (que fica por último)
+  for (const { src, dest } of spec.realBins) args.push("--ro-bind", src, dest);
+  for (const { file, target } of spec.shims) args.push("--ro-bind", file, target);
   args.push(spec.workspaceRo ? "--ro-bind" : "--bind", spec.workspace, spec.workspace);
   args.push(
     "--setenv", "HOME", spec.home,
@@ -305,6 +455,11 @@ function bwrapPath(): string | null {
 const BWRAP_MISSING =
   "polyagent-mcp: bwrap não encontrado no PATH. O sandbox é obrigatório — instale com 'sudo apt install bubblewrap', " +
   "ou desligue explicitamente com POLYAGENT_SANDBOX=off (nesse caso as tools read-only só aceitam codex).";
+
+/** `deny` sem sandbox: não há como bloquear comandos, e rodar sem a guarda seria silencioso. */
+const DENY_NEEDS_SANDBOX =
+  "polyagent-mcp: deny needs the bwrap sandbox to block commands, but POLYAGENT_SANDBOX=off disables it. " +
+  "Re-enable the sandbox or drop the deny list.";
 
 /**
  * Falha cedo (na inicialização do server) se o sandbox está ligado e o bwrap não existe. Antes,
@@ -897,10 +1052,19 @@ export function buildSandboxSpec(
   engine: Engine,
   workspaceRo = false,
   roBinds: string[] = [],
+  deny: DenyRule[] = [],
 ): { spec: SandboxSpec; cleanup: () => void } {
   const home = process.env.HOME ?? homedir();
   const isoHome = mkdtempSync(join(tmpdir(), "cbx-home-"));
   const tmpDir = mkdtempSync(join(tmpdir(), "cbx-tmp-"));
+  // Os shims moram num dir à parte, fora dos mounts: isoHome e tmpDir são RW dentro do sandbox, e o
+  // worker poderia reescrever o arquivo-fonte do bind ali. Só existe quando algum comando é achado.
+  let shimDir: string | undefined;
+  const cleanup = () => {
+    try { rmSync(isoHome, { recursive: true, force: true }); } catch { /* efêmero */ }
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* efêmero */ }
+    if (shimDir) try { rmSync(shimDir, { recursive: true, force: true }); } catch { /* efêmero */ }
+  };
   const abs = (rel: string) => join(home, rel);
   const engineHomeRw = SANDBOX_ENGINE_RW[engine].map(abs);
   // O filtro por existsSync, somado ao ~/.local RO da base, omite estado novo e gera uma falha
@@ -915,10 +1079,35 @@ export function buildSandboxSpec(
       if (extname(path) === "") mkdirSync(path, { recursive: true });
     } catch { /* falha de criação será filtrada abaixo */ }
   }
+  const path = process.env.PATH ?? "/usr/bin:/bin";
+  const shims: SandboxSpec["shims"] = [];
+  const realBins: SandboxSpec["realBins"] = [];
+  const isFile = (p: string): boolean => {
+    try { return statSync(p).isFile(); } catch { return false; }
+  };
+  const realpath = (p: string): string => {
+    try { return realpathSync(p); } catch { return p; }
+  };
+  try {
+    for (const cmd of new Set(deny.map((rule) => rule.cmd))) {
+      const found = resolveShimTargets(cmd, path.split(":"), isFile, realpath);
+      if (!found) continue; // comando inexistente: nada a bloquear
+      shimDir ??= mkdtempSync(join(tmpdir(), "cbx-shim-"));
+      const file = join(shimDir, cmd);
+      const dest = `${SHIM_REAL_DIR}/${cmd}`;
+      writeFileSync(file, buildShimScript(cmd, deny, dest), { mode: 0o755 });
+      chmodSync(file, 0o755); // o umask pode ter tirado o x
+      realBins.push({ src: found.real, dest });
+      for (const target of found.targets) shims.push({ file, target });
+    }
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
   const spec: SandboxSpec = {
     home,
     user: process.env.USER ?? userInfo().username,
-    path: process.env.PATH ?? "/usr/bin:/bin",
+    path,
     lang: process.env.LANG ?? "C.UTF-8",
     lcAll: process.env.LC_ALL ?? "C.UTF-8",
     isoHome,
@@ -940,13 +1129,11 @@ export function buildSandboxSpec(
     // só os que existem e não são o próprio workspace (esse já é o último bind)
     extraBinds: SANDBOX_EXTRA.filter((p) => p !== workspace && existsSync(p)),
     roBinds: roBinds.filter((p) => p !== workspace && existsSync(p)),
+    shims,
+    realBins,
     extraEnv: SANDBOX_PROXY_ENV
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k] as string]),
-  };
-  const cleanup = () => {
-    try { rmSync(isoHome, { recursive: true, force: true }); } catch { /* efêmero */ }
-    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* efêmero */ }
   };
   return { spec, cleanup };
 }
@@ -981,6 +1168,11 @@ export interface RunOpts {
   agentPrompt?: string;
   /** Paths do host montados somente-leitura no mesmo path dentro do sandbox. */
   roBinds?: string[];
+  /**
+   * Prefixos de comando bloqueados dentro do sandbox ("git push", "rm"): shims em /bin/sh sobrepõem
+   * o binário e saem com 126. Exige o bwrap; sem ele o run é recusado. Ver parseDenyRules.
+   */
+  deny?: string[];
   /**
    * Tool que originou o run. Não muda a execução: define a forma da sugestão no erro de cota
    * (parâmetro `engine` nas auxiliares, `level` no delegate, nenhuma onde a tool escolhe sozinha).
@@ -1713,7 +1905,8 @@ export function raceFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
  * Subconjunto de RunOpts seguro para retomar num OUTRO engine depois de uma falha de ambiente.
  * ALLOWLIST deliberada (não blocklist): um campo só atravessa pro fallback se listado aqui, então
  * uma opção nova ou esquecida em RunOpts nunca vaza por omissão. A persona (agentPrompt) e seus
- * arquivos somente-leitura (roBinds) atravessam juntos. Campos excluídos e o porquê:
+ * arquivos somente-leitura (roBinds) atravessam juntos. `deny` também: é restrição de segurança do
+ * chamador, então o retry em outro engine nunca pode soltá-la. Campos excluídos e o porquê:
  * - model/effort: escolha feita pro codex; o fallback usa o default do próprio engine.
  * - mode: vira `--ro-bind` do workspace em buildSandboxSpec, mas só o codex tem `-s read-only`
  *   pra honrar isso sem quebrar — grok guarda sessão indexada pelo cwd e falha ("Read-only file
@@ -1723,8 +1916,8 @@ export function raceFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
  *   o valor, o que dropa a imagem de entrada sem avisar — pior que falhar.
  */
 export function fallbackOpts(opts: RunOpts, engine: Engine): RunOpts {
-  const { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds } = opts;
-  return { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, engine };
+  const { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny } = opts;
+  return { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny, engine };
 }
 
 /** Roda o CLI do engine em modo headless e devolve o resultado parseado. */
@@ -1740,6 +1933,13 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
       : POLYAGENT_CURSOR_BIN;
     const workspace = runOpts.cwd ?? process.cwd();
 
+    // deny só tem efeito dentro do bwrap: sem ele o run é recusado em vez de rodar sem a guarda.
+    let denyRules: DenyRule[] = [];
+    if (runOpts.deny?.length) {
+      if (!SANDBOX_ON) return Promise.reject(new Error(DENY_NEEDS_SANDBOX));
+      try { denyRules = parseDenyRules(runOpts.deny); } catch (err) { return Promise.reject(err); }
+    }
+
     // O sandbox bwrap ($HOME isolado) é OBRIGATÓRIO para TODOS os engines — nenhum modelo roda fora
     // dele. Isola a config global de cada CLI (~/.cursor/rules, ~/.grok/config.toml, ~/.codex/config)
     // que carregava rules/MCP servers, inflando tokens.
@@ -1751,7 +1951,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     let args = engineArgs;
     let cleanup = () => {};
     if (bwrap) {
-      const built = buildSandboxSpec(workspace, engine, !!runOpts.mode, runOpts.roBinds);
+      const built = buildSandboxSpec(workspace, engine, !!runOpts.mode, runOpts.roBinds, denyRules);
       cleanup = built.cleanup;
       cmd = bwrap;
       args = [...buildSandboxArgs(built.spec), bin, ...engineArgs];

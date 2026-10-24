@@ -146,3 +146,33 @@ describe("tool surface (US-003)", () => {
     expect(indexSrc).toContain("session_id: ${sessionHandle} (pass to follow_up to continue; grade it with rate(session_id, score 1-5))");
   });
 });
+
+describe("deny (delegate/fast_delegate)", () => {
+  function registeredToolBlock(name: string): string {
+    const start = indexSrc.indexOf(`registerTool(\n  "${name}"`);
+    expect(start, name).toBeGreaterThan(-1);
+    const next = indexSrc.indexOf("registerTool(", start + "registerTool(".length);
+    return next === -1 ? indexSrc.slice(start) : indexSrc.slice(start, next);
+  }
+
+  it.each(["delegate", "fast_delegate"])("%s expõe deny no próprio inputSchema e repassa ao worker", (tool) => {
+    const block = registeredToolBlock(tool);
+    expect(block).toMatch(/deny: denySchema\.optional\(\)/);
+    expect(block).toMatch(/async \(\{[^)]*\bdeny\b[^)]*\}\)/);
+    expect(block).toContain("deny,");
+    expect(block).toContain("denyNote(deny)");
+    expect(block).toContain("not a security boundary");
+  });
+
+  it("deny não vai no objeto routing compartilhado", () => {
+    const routing = indexSrc.slice(indexSrc.indexOf("const routing = {"), indexSrc.indexOf("};", indexSrc.indexOf("const routing = {")));
+    expect(routing).not.toMatch(/\bdeny\b/);
+  });
+
+  it("README documenta deny em delegate e fast_delegate", () => {
+    for (const tool of ["delegate", "fast_delegate"]) {
+      const row = readme.split("\n").find((line) => line.startsWith(`| \`${tool}\` |`)) ?? "";
+      expect(row).toContain("`deny`");
+    }
+  });
+});
