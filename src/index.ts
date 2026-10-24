@@ -26,10 +26,12 @@ import {
 } from "./usage.js";
 import { scrubSecrets } from "./scrub.js";
 import {
-  askJev, JEV_MODEL, JEV_FANOUT_ENABLED, JEV_FANOUT_THRESHOLD, JEV_SHADOW_ENABLED,
+  askJev, JEV_MODEL, JEV_FANOUT_ENABLED, JEV_FANOUT_THRESHOLD, JEV_SHADOW_ENABLED, JEV_VERIFY_ENABLED,
   resolveOpenRouterKey, type AskJevParams,
 } from "./jev.js";
-import { fanOutAgreementText, footerSession, runFanOutConsensusGate, withDelegateShadow } from "./jevDecisions.js";
+import {
+  fanOutAgreementText, footerSession, runFanOutConsensusGate, withDelegateShadow, withDelegateVerify,
+} from "./jevDecisions.js";
 import {
   CLAUDE_MD_BOOT_SYNC, CLAUDE_MD_PATH, nodeClaudeMdFs, PACKAGE_VERSION, renderPolyagentBlock, syncClaudeMd,
 } from "./claudeMd.js";
@@ -49,6 +51,13 @@ const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 function askInternalJev(params: AskJevParams) {
   const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"));
   return askJev(params, { fetch: (url, init) => globalThis.fetch(url, init), key });
+}
+
+// POLYAGENT_JEV_VERIFY: grava um veredito shadow sobre o resultado de delegate/fast_delegate.
+function verifyingWorker<T>(work: () => Promise<T>, prompt: string): () => Promise<T> {
+  return JEV_VERIFY_ENABLED
+    ? () => withDelegateVerify(work, prompt, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
+    : work;
 }
 
 // Params de roteamento compartilhados.
@@ -239,9 +248,10 @@ server.registerTool(
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
       { model: tier.model, effort: tier.effort },
     );
+    const verified = verifyingWorker(work, prompt);
     return JEV_SHADOW_ENABLED
-      ? withDelegateShadow(work, prompt, level, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
-      : work();
+      ? withDelegateShadow(verified, prompt, level, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
+      : verified();
   },
 );
 
@@ -270,7 +280,7 @@ server.registerTool(
     const selectedModel = model ?? tier.model;
     const selectedEffort = effort ?? tier.effort;
     const resolved = agent ? resolveAgent(agent, cwd ?? process.cwd()) : undefined;
-    return formatRun(
+    return verifyingWorker(() => formatRun(
       "fast_delegate",
       tier.engine,
       () => runCursor({
@@ -290,7 +300,7 @@ server.registerTool(
       // — sem isso, o downgrade pro cursor ficava indistinguível de um roteamento nativo no log.
       { requestedLevel: 0, matchedRequest: FAST_CANDIDATES.some((c) => c.engine === tier.engine) },
       { model: selectedModel, effort: selectedEffort },
-    );
+    ), prompt)();
   },
 );
 

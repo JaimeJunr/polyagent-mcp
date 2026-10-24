@@ -9,22 +9,26 @@ describe("Jev internal feature flags", () => {
   it("keeps both paths off and threshold at 0.85 by default", async () => {
     vi.stubEnv("POLYAGENT_JEV_FANOUT", "");
     vi.stubEnv("POLYAGENT_JEV_SHADOW", "");
+    vi.stubEnv("POLYAGENT_JEV_VERIFY", "");
     vi.stubEnv("POLYAGENT_JEV_FANOUT_THRESHOLD", "");
     vi.resetModules();
     const config = await import("../src/jev.js");
     expect(config.JEV_FANOUT_ENABLED).toBe(false);
     expect(config.JEV_SHADOW_ENABLED).toBe(false);
+    expect(config.JEV_VERIFY_ENABLED).toBe(false);
     expect(config.JEV_FANOUT_THRESHOLD).toBe(0.85);
   });
 
   it("accepts 1/true/on and a valid threshold; rejects invalid threshold", async () => {
     vi.stubEnv("POLYAGENT_JEV_FANOUT", "true");
     vi.stubEnv("POLYAGENT_JEV_SHADOW", "on");
+    vi.stubEnv("POLYAGENT_JEV_VERIFY", "on");
     vi.stubEnv("POLYAGENT_JEV_FANOUT_THRESHOLD", "0.92");
     vi.resetModules();
     const enabled = await import("../src/jev.js");
     expect(enabled.JEV_FANOUT_ENABLED).toBe(true);
     expect(enabled.JEV_SHADOW_ENABLED).toBe(true);
+    expect(enabled.JEV_VERIFY_ENABLED).toBe(true);
     expect(enabled.JEV_FANOUT_THRESHOLD).toBe(0.92);
 
     vi.stubEnv("POLYAGENT_JEV_FANOUT", "1");

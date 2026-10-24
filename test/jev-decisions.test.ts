@@ -3,6 +3,7 @@ import { askJev, type AskJevParams, type JevFetchInit, type JevHttpResponse } fr
 import {
   askFanOutAgreement, CLARITY_CRITERIA, clarityDecision, delegateShadowRequest, fanOutAgreementRequest,
   fanOutAgreementText, footerSession, resolveFanOutGate, runFanOutConsensusGate, shadowDecision, withDelegateShadow,
+  delegateVerifyRequest, verifyDecision, withDelegateVerify,
 } from "../src/jevDecisions.js";
 import type { DecisionRecord } from "../src/usage.js";
 
@@ -309,5 +310,92 @@ describe("delegate Jev shadow", () => {
 describe("Jev rejects old numeric choices", () => {
   it.each(["1", "3", "5", "medium", "toString"])("rejects %s", (choice) => {
     expect(shadowDecision({ answers: { level: { type: "choice", choice, probabilities: {}, confidence: 0.8 } } }, "high", 1).choice).toBeNull();
+  });
+});
+
+describe("delegate result verifier (shadow)", () => {
+  const answers = (claims: number, denominator: number, evidence: number, addresses: number) => ({
+    claims_success: noul(claims), reports_denominator: noul(denominator),
+    evidence_shown: noul(evidence), addresses_task: noul(addresses),
+  });
+  const result = (a: Record<string, unknown>) => ({ answers: a, usage: { cost: 0 } }) as never;
+
+  it("sends task and result, keeps the verdict at the end of a long result and scrubs secrets", () => {
+    const request = delegateVerifyRequest(
+      "Rename foo in src/a.ts",
+      `${"x".repeat(30_000)} key sk-abcdefABCDEF0123456789xyz FINAL: 12 tests passed`,
+    );
+    const state = String(request.state);
+    expect(state).toContain("Rename foo in src/a.ts");
+    expect(state).toContain("FINAL: 12 tests passed");
+    expect(state).not.toContain("sk-abcdefABCDEF0123456789xyz");
+    expect(state.length).toBeLessThan(16_000);
+    expect(Object.keys(request.questions).sort())
+      .toEqual(["addresses_task", "claims_success", "evidence_shown", "reports_denominator"]);
+  });
+
+  it("labels a success claim with evidence as supported", () => {
+    const record = verifyDecision(result(answers(0.95, 0.9, 0.9, 0.8)), 400, "codex:1");
+    expect(record).toMatchObject({
+      name: "delegate_result_verify_shadow", choice: "supported", confidence: 0.8,
+      accepted: false, fallback: false, latencyMs: 400, cost: 0, session: "codex:1",
+    });
+    expect(record.probabilities).toEqual({
+      claims_success: 0.95, reports_denominator: 0.9, evidence_shown: 0.9, addresses_task: 0.8,
+    });
+  });
+
+  it("labels a success claim without evidence as unsupported (vacuous green)", () => {
+    const record = verifyDecision(result(answers(0.9, 0.1, 0.2, 0.9)), 400);
+    expect(record.choice).toBe("unsupported");
+    expect(record.confidence).toBeCloseTo(0.8);
+  });
+
+  it("labels a result that does not claim success as no_claim", () => {
+    expect(verifyDecision(result(answers(0.1, 0.5, 0.5, 0.5)), 1).choice).toBe("no_claim");
+  });
+
+  it("records null choice on Jev error or a missing answer", () => {
+    expect(verifyDecision(new Error("down"), 5)).toMatchObject({ choice: null, confidence: null, cost: null });
+    expect(verifyDecision(result({ claims_success: noul(0.9) }), 5).choice).toBeNull();
+  });
+
+  it("returns the worker result without waiting for the verifier, then logs with the session", async () => {
+    const logs: DecisionRecord[] = [];
+    const pending: Promise<unknown>[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const value = toolResult("done, 3 files changed\n---\nsession_id: codex:abc");
+    const returned = await withDelegateVerify(async () => value, "task", {
+      ask: async () => { await gate; return result(answers(0.9, 0.9, 0.9, 0.9)); },
+      log: (decision) => logs.push(decision),
+      sessionOf: footerSession,
+      background: (task) => pending.push(task),
+    });
+    expect(returned).toBe(value);
+    expect(logs).toEqual([]);
+    release();
+    await Promise.all(pending);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ choice: "supported", session: "codex:abc" });
+  });
+
+  it("skips the verifier when the worker fails or returns an error result", async () => {
+    let asked = 0;
+    const deps = { ask: async () => { asked++; return result({}); }, log: () => {}, background: () => {} };
+    await expect(withDelegateVerify(async () => { throw new Error("boom"); }, "t", deps)).rejects.toThrow("boom");
+    await withDelegateVerify(async () => ({ ...toolResult("failed"), isError: true }), "t", deps);
+    expect(asked).toBe(0);
+  });
+
+  it("never throws into the tool when the verifier or the log fails", async () => {
+    const pending: Promise<unknown>[] = [];
+    const value = toolResult("ok");
+    await expect(withDelegateVerify(async () => value, "t", {
+      ask: async () => { throw new Error("jev down"); },
+      log: () => { throw new Error("log down"); },
+      background: (task) => pending.push(task),
+    })).resolves.toBe(value);
+    await expect(Promise.all(pending)).resolves.toBeDefined();
   });
 });

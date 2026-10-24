@@ -240,7 +240,15 @@ idea): a second record, `delegate_prompt_clarity_shadow`, is `clear` only when e
 ≥ 0.5 and stores per-criterion `probabilities`. Both shadow records carry the worker handle in
 `decision.session` (read from the `format()` footer) — never in the top-level `sessionId`, which
 would steal the `ratingStats` join from the worker's own entry. `askJev` rejects a response missing
-any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. For `fan_out` agreement, each scrubbed
+any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. `POLYAGENT_JEV_VERIFY=1`
+(off by default) runs `withDelegateVerify` around `delegate` and `fast_delegate`: after a successful
+worker result it asks four noul questions (`claims_success`, `reports_denominator`,
+`evidence_shown`, `addresses_task`) over the scrubbed prompt plus the head+tail-clipped result, and
+logs `delegate_result_verify_shadow` (`supported`/`unsupported`/`no_claim`, with `session`). It is
+**not awaited** — it never delays the tool response — and skips worker errors and `isError` results.
+It checks what `evidenceNote` only asks for: a success claim with no denominator or evidence. Smoke on
+Elephant 1 (2026-10-24): 6/6 hand cases right after rewording `claims_success` (success "regardless of
+whether that work matches the task") and `addresses_task` ("a finding of nothing still counts"). For `fan_out` agreement, each scrubbed
 worker output keeps roughly one-quarter head and three-quarters tail within its character budget,
 including an elision marker, because verdicts live at the end and head-only clipping caused 24/24
 false skips in the benchmark. Both paths redact credential-shaped

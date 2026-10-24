@@ -14,6 +14,7 @@ const fanOutThresholdEnv = process.env.POLYAGENT_JEV_FANOUT_THRESHOLD;
 const fanOutThreshold = Number(fanOutThresholdEnv);
 export const JEV_FANOUT_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_FANOUT);
 export const JEV_SHADOW_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_SHADOW);
+export const JEV_VERIFY_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_VERIFY);
 export const JEV_FANOUT_THRESHOLD = fanOutThresholdEnv?.trim()
   && Number.isFinite(fanOutThreshold) && fanOutThreshold >= 0 && fanOutThreshold <= 1
   ? fanOutThreshold : 0.85;
