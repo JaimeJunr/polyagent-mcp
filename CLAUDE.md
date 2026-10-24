@@ -220,8 +220,14 @@ The `est $/task (AA)` column uses model/effort costs from `src/costs.ts`, source
 
 The HTTP boundary lives in `src/jev.ts`, separate from `cli.ts` and its process-spawn boundary.
 Jev is not an engine and is not part of `TIERS` or `FAST_CANDIDATES`. Key resolution checks
-`OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`. It is a
-pay-per-token OpenRouter call. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
+`OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`.
+"Jev" names the integration, not the model: `JEV_MODEL` (`resolveJevModel`, env
+`POLYAGENT_JEV_MODEL`) defaults to `baseten/elephant-1:free` — free, same `/v1/systemone` schema.
+Bench 2026-10-24 (`research/2026-10-24-modelos-decisao-gratis.md`): `fan_out` gate tied (0 false
+skips at 0.85), shadow exact 24/25 vs 19/25 for `typesafe/jev-1.13`. Trade-offs: 16K context (Jev
+32K) and the OpenRouter `:free` limit (20 req/min, 50/day; 1000/day with ≥ US$10 credit) — a
+429 is just a Jev error, so the existing fallbacks apply. `POLYAGENT_JEV_MODEL=typesafe/jev-1.13`
+brings back the pay-per-token Jev. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
 Two internal uses are off by default. `POLYAGENT_JEV_FANOUT=1` asks Jev whether at least two
 successful `fan_out` consensus workers substantially agree; probability at or above
 `POLYAGENT_JEV_FANOUT_THRESHOLD` (default 0.85) returns the first successful output and worker
@@ -241,8 +247,8 @@ false skips in the benchmark. Both paths redact credential-shaped
 strings and use bounded task/output
 text and `logDecision` in `src/usage.ts`: JSONL entries have `tool:"decide"`, `engine:"jev"`,
 zero returned chars, and a `decision` object with candidates, choice, confidence, acceptance,
-fallback, latency, optional cost, and the requested level for shadow. Jev calls cost OpenRouter
-tokens; enable these flags deliberately. `src/jevDecisions.ts` keeps request/verdict logic pure
+fallback, latency, optional cost, and the requested level for shadow. With the free default the
+calls cost nothing but spend the daily `:free` quota; enable these flags deliberately. `src/jevDecisions.ts` keeps request/verdict logic pure
 and injects Jev/log dependencies for orchestration tests.
 
 ### The sandbox (default-on, mandatory for ALL engines, in `cli.ts`)

@@ -4,6 +4,7 @@ import {
   askJev,
   buildJevRequest,
   parseJevResponse,
+  resolveJevModel,
   resolveOpenRouterKey,
   type JevFetchInit,
   type JevHttpResponse,
@@ -191,5 +192,16 @@ describe("askJev", () => {
       { state: "state", questions },
       { fetch: fake.fetch, key: "secret-key" },
     )).rejects.toThrow(`Jev request failed (429): ${"x".repeat(300)}`);
+  });
+});
+
+describe("resolveJevModel", () => {
+  it("defaults to Elephant 1 free (research/2026-10-24-modelos-decisao-gratis.md)", () => {
+    expect(resolveJevModel({})).toBe("baseten/elephant-1:free");
+    expect(resolveJevModel({ POLYAGENT_JEV_MODEL: "" })).toBe("baseten/elephant-1:free");
+  });
+
+  it("lets POLYAGENT_JEV_MODEL bring Jev back", () => {
+    expect(resolveJevModel({ POLYAGENT_JEV_MODEL: "typesafe/jev-1.13" })).toBe("typesafe/jev-1.13");
   });
 });
