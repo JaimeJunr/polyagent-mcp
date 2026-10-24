@@ -1,0 +1,198 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index fd06c09..3b62328 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -487,7 +487,9 @@ as tools removidas `plan`/`build`. A renomeação do arquivo exige atualizar cam
+ em `settings.json`. A variável
+ `POLYAGENT_HOOK_MODE` = `off` | `nudge` | `redirect` (padrão **`redirect`**): `off` não emite nada;
+ `nudge` usa `additionalContext` sem bloqueio; `redirect` retorna `permissionDecision: "deny"`
+-via `denyRedirect()` para WebSearch/WebFetch, Read grande e Bash de busca de código. Em Bash,
++via `denyRedirect()` para WebSearch/WebFetch, Read grande, Bash de busca de código e a primeira
++Edit/Write/MultiEdit cujo `file_path` esteja dentro de `cwd`. Fora de `cwd`, ou sem `cwd`/`file_path`,
++edições mantêm apenas o nudge: o sandbox do worker só alcança o workspace. Em Bash,
+ buscas read-only com `grep`/`rg`/`egrep`/`fgrep`/`ag`/`ack`/`find` ou `git grep` redirecionam
+ uma vez para `explore` ou `read_slice`. A busca deve iniciar o **primeiro segmento da pipeline**;
+ após `&&`, uma nova pipeline pode iniciar com busca. `npm test | grep FAIL` e `ps aux | grep x`
+@@ -503,10 +505,16 @@ os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restriçõe
+   a script.
+ - **Modo redirect (padrão):** WebSearch/WebFetch → `web_lookup`, Read integral grande
+   (sem offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, e Bash de busca de código →
+-  `explore`/`read_slice` recebem **deny** uma vez. As chaves de dedup da sessão são salvas
++  `explore`/`read_slice` recebem **deny** uma vez. Edit/Write/MultiEdit dentro de `cwd` também
++  recebem **deny** uma vez, com a chave compartilhada `edit-delegate`, para encaminhar a
++  implementação a `delegate(prompt, level)` ou `fast_delegate(prompt)`; uma edição rápida
++  pode ser repetida e será permitida. O eval de adoção de 2026-09-30 mostrou que nudges não
++  mudavam esse comportamento; o deny único já levou Bash grep de 0/3 a 3/3.
++  As chaves de dedup da sessão são salvas
+   **antes** da emissão; a segunda chamada passa. O motivo termina em `FAILOPEN_SUFFIX` e informa
+-  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit/Agent/Task/Skill nunca recebem
+-  deny; Bash que grava artefatos mantém o nudge anterior.
++  que o modelo pode tentar novamente. Grep/Glob/Agent/Task/Skill nunca recebem deny;
++  Edit/Write/MultiEdit fora de `cwd` ou sem os caminhos mantêm apenas nudge, assim como Bash
++  que grava artefatos.
+ - **PreToolUse dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`):
+   every PreToolUse nudge/redirect fires at most once. A repeated fire is worse than none. This is why
+   `Grep`/`Glob` can sit in the matcher — they collapse to a single preload reminder.
+diff --git a/hooks/prefer-polyagent.mjs b/hooks/prefer-polyagent.mjs
+index 111d99b..c4f1a98 100755
+--- a/hooks/prefer-polyagent.mjs
++++ b/hooks/prefer-polyagent.mjs
+@@ -19,7 +19,7 @@
+  *  - Preload once: the first qualifying nudge of a session also carries the
+  *    one-time reminder to run ToolSearch, because these MCP tools are deferred
+  *    and lose to the always-loaded native Read/Grep until their schemas load.
+- *  - Fail-open: web, Read grande e Bash de busca podem ser bloqueados só uma vez; os demais
++ *  - Fail-open: web, Read grande, Bash de busca e edição dentro de cwd podem ser bloqueados só uma vez; os demais
+  *    casos apenas injetam `additionalContext`. Agent/Task/Skill nunca são bloqueados:
+  *    o worker não tem MCP nem browser, então a tool nativa às vezes é a certa.
+  *  - Never breaks the tool: any error → print nothing, exit 0.
+@@ -30,7 +30,7 @@
+  */
+ import { readFileSync, statSync, writeFileSync } from "node:fs";
+ import { tmpdir } from "node:os";
+-import { join } from "node:path";
++import { join, resolve, sep } from "node:path";
+ import { pathToFileURL } from "node:url";
+ 
+ const PARSED_MIN_LINES = Number(process.env.POLYAGENT_HOOK_MIN_LINES);
+@@ -154,6 +154,20 @@ const EDIT_DELEGATE_TEXT =
+   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
+   "Keep editing inline only for a quick one-off you're already positioned for.";
+ 
++const EDIT_REDIRECT_TEXT =
++  "polyagent available: self-contained implementation (feature, bugfix, multi-file edit, test, rename) " +
++  "should go to delegate(prompt, level) or fast_delegate(prompt) — the worker edits, runs the checks " +
++  "and the host reviews the result. If this is a quick one-off edit you are already positioned for, " +
++  "retry and it will be allowed.";
++
++/** Contenção lexical em cwd; o separador impede confundir /a/bc com /a/b. */
++function isWorkspaceFile(cwd, filePath) {
++  if (typeof cwd !== "string" || !cwd || typeof filePath !== "string" || !filePath) return false;
++  const workspace = resolve(cwd);
++  const prefix = workspace.endsWith(sep) ? workspace : workspace + sep;
++  return resolve(workspace, filePath).startsWith(prefix);
++}
++
+ const PROMPT_ROUTE_HINTS = {
+   fan_out:
+     "This request asks for independent opinions or a comparison — polyagent fan_out runs them in parallel and can reconcile them (mode consensus); skip it if the task turns out simple.",
+@@ -323,8 +337,15 @@ function baseDecision(input, { stat, read, minLines }, seen) {
+   // Edit/Write/MultiEdit → o agente vai implementar ele mesmo. 1×/sessão: reposiciona
+   // delegate(level) como executor padrão de tarefa self-contained. O dedup evita cutucar
+   // toda edição — o orquestrador ainda edita inline quando faz sentido.
++  // O eval de 2026-09-30 motivou deny único; fora de cwd o worker não alcança o alvo.
+   if (tool === "Edit" || tool === "Write" || tool === "MultiEdit") {
+-    return seen.has("edit-delegate") ? null : { key: "edit-delegate", text: EDIT_DELEGATE_TEXT };
++    if (seen.has("edit-delegate")) return null;
++    const redirect = isWorkspaceFile(input.cwd, ti.file_path);
++    return {
++      key: "edit-delegate",
++      text: redirect && HOOK_MODE === "redirect" ? EDIT_REDIRECT_TEXT : EDIT_DELEGATE_TEXT,
++      redirect,
++    };
+   }
+ 
+   // Grep/Glob disparam muito — por isso só o lembrete de preload, 1× por sessão.
+@@ -461,7 +482,7 @@ async function main() {
+     process.exit(0);
+   }
+   const seen = loadSeen(path);
+-  const res = decide({ tool_name: data?.tool_name, tool_input: data?.tool_input, seen });
++  const res = decide({ cwd: data?.cwd, tool_name: data?.tool_name, tool_input: data?.tool_input, seen });
+   if (!res) process.exit(0);
+   for (const k of res.keys) seen.add(k);
+   saveSeen(path, seen);
+diff --git a/test/hook.test.ts b/test/hook.test.ts
+index ef18976..8641627 100644
+--- a/test/hook.test.ts
++++ b/test/hook.test.ts
+@@ -315,6 +315,89 @@ describe("decide — Edit/Write (execução self-contained → delegate)", () =>
+   });
+ });
+ 
++// O eval de 2026-09-30 mostrou que nudges não mudavam a implementação local;
++// o deny único levou a adoção de Bash grep de 0/3 a 3/3 e agora cobre a primeira edição.
++describe("decide — primeira edição dentro do workspace", () => {
++  it.each(["Edit", "Write", "MultiEdit"])("%s dentro de cwd → redirect com preload e dedup entre ferramentas", (tool_name) => {
++    const seen = new Set<string>();
++    const first = decide({ cwd: "/a/b", tool_name, tool_input: { file_path: "/a/b/src/new.ts" }, seen });
++    expect(first.redirect).toBe(true);
++    expect(first.keys).toEqual(["edit-delegate", "preload"]);
++    expect(first.text).toMatch(/delegate\(prompt, level\)/);
++    expect(first.text).toMatch(/fast_delegate\(prompt\)/);
++    expect(first.text).toMatch(/feature.*bugfix.*multi-file edit.*test.*rename/s);
++    expect(first.text).toMatch(/worker edits.*runs the checks.*host reviews/s);
++    expect(first.text).toMatch(/quick one-off.*retry.*allowed/s);
++    for (const key of first.keys) seen.add(key);
++    for (const next of ["Edit", "Write", "MultiEdit"]) {
++      expect(decide({ cwd: "/a/b", tool_name: next, tool_input: { file_path: "/a/b/other.ts" }, seen })).toBeNull();
++    }
++  });
++
++  it.each([
++    ["/a/b", "src/new.ts"],
++    ["/a/b/", "/a/b/new.ts"],
++    ["/a/./b", "/a/b/src/../new.ts"],
++    ["/a/b", "../b/new.ts"],
++    ["/", "/new.ts"],
++  ])("normaliza cwd=%s e file_path=%s → redirect", (cwd, file_path) => {
++    expect(decide({ cwd, tool_name: "Write", tool_input: { file_path }, seen: new Set(["preload"]) }).redirect).toBe(true);
++  });
++
++  it.each([
++    ["/a/b", "/a/bc/new.ts"],
++    ["/a/b", "/home/user/.claude/memory.md"],
++    ["/a/b", "/home/user/.claude/settings.json"],
++    ["/a/b", "/tmp/scratchpad.md"],
++    ["/a/b", "../outside.ts"],
++    ["/a/b", "/a/b/../outside.ts"],
++    [undefined, "/a/b/new.ts"],
++    ["", "/a/b/new.ts"],
++    ["/a/b", undefined],
++    ["/a/b", ""],
++  ])("cwd=%s e file_path=%s fora ou ausente → apenas nudge", (cwd, file_path) => {
++    const res = decide({ cwd, tool_name: "Edit", tool_input: { file_path }, seen: new Set(["preload"]) });
++    expect(res.redirect).toBe(false);
++    expect(res.keys).toEqual(["edit-delegate"]);
++    expect(res.text).toContain("Keep editing inline only for a quick one-off you're already positioned for.");
++  });
++});
++
++describe("PreToolUse — modos da primeira edição", () => {
++  it.each(["Edit", "Write", "MultiEdit"])("redirect nega %s uma vez, termina com FAILOPEN_SUFFIX e permite outra edição", (tool_name) => {
++    const evt = { hook_event_name: "PreToolUse", session_id: `test-edit-redirect-${tool_name}-${process.pid}-${Date.now()}`, cwd: "/a/b", tool_name, tool_input: { file_path: "/a/b/new.ts" } };
++    const env = { ...process.env, POLYAGENT_HOOK_MODE: "redirect" };
++    const out = JSON.parse(runHook(evt, env)).hookSpecificOutput;
++    expect(out.permissionDecision).toBe("deny");
++    expect(out.permissionDecisionReason).toMatch(/delegate\(prompt, level\).*fast_delegate\(prompt\)/s);
++    expect(out.permissionDecisionReason).toMatch(/ — If that polyagent tool isn't loaded yet, run the ToolSearch preload first; if you genuinely need this native tool's raw result, just call it again and it will be allowed \(this redirect fires only once\)\.$/);
++    expect(runHook({ ...evt, tool_name: "Write", tool_input: { file_path: "/a/b/other.ts" } }, env)).toBe("");
++  });
++
++  it.each(["Edit", "Write", "MultiEdit"])("nudge mantém o texto anterior para %s dentro de cwd", (tool_name) => {
++    const evt = { hook_event_name: "PreToolUse", session_id: `test-edit-nudge-${tool_name}-${process.pid}-${Date.now()}`, cwd: "/a/b", tool_name, tool_input: { file_path: "/a/b/new.ts" } };
++    const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "nudge" })).hookSpecificOutput;
++    expect(out.permissionDecision).toBeUndefined();
++    expect(out.additionalContext).toBe(decide({ tool_name, tool_input: evt.tool_input }).text);
++  });
++
++  it.each(["Edit", "Write", "MultiEdit"])("off não emite nada para %s dentro de cwd", (tool_name) => {
++    const evt = { hook_event_name: "PreToolUse", session_id: `test-edit-off-${tool_name}-${process.pid}-${Date.now()}`, cwd: "/a/b", tool_name, tool_input: { file_path: "/a/b/new.ts" } };
++    expect(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "off" })).toBe("");
++  });
++
++  it.each([
++    { cwd: "/a/b", file_path: "/tmp/scratchpad.md" },
++    { cwd: undefined, file_path: "/a/b/new.ts" },
++    { cwd: "/a/b", file_path: undefined },
++  ])("redirect mantém nudge para alvo externo ou ausente: %j", ({ cwd, file_path }) => {
++    const evt = { hook_event_name: "PreToolUse", session_id: `test-edit-outside-${process.pid}-${Date.now()}`, cwd, tool_name: "Edit", tool_input: { file_path } };
++    const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "redirect" })).hookSpecificOutput;
++    expect(out.permissionDecision).toBeUndefined();
++    expect(out.additionalContext).toBe(decide({ tool_name: "Edit", tool_input: evt.tool_input }).text);
++  });
++});
++
+ describe("subagentStartContext — contexto injetado no subagente", () => {
+   it("retorna a preferência polyagent para um subagente comum", () => {
+     const text = subagentStartContext("general-purpose");
