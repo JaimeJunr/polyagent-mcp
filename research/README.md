@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-10-24 | [Custo efetivo por plano e chineses no low](2026-10-24-custo-efetivo-plano.md) | Sem medição, níveis mantidos: Luna segue o mais barato por tarefa (AA); fora do AA o DeepSeek V4.1 Flash empata no preço por token; tabela de créditos do Codex põe o Luna 20–25× abaixo do Sol; GLM é o único plano com tokens publicados (~US$0,03–0,09/1M); Kimi K3.1 Pro como candidato ao high |
 | 2026-10-24 | [Skill por nome + deny em Agent/Skill](2026-10-24-handoff-skill-hook.md) | **Aplicada e medida:** handoff 0/2 → 4/4. `agent: { skill }` monta a pasta da skill RO; o host foi direto ao `delegate` com a skill; o deny único em `Agent` levou ao `delegate` com o nome do subagent |
 | 2026-10-23 | [Bloquear a primeira edição não faz o host delegar](2026-10-23-edit-redirect.md) | **Negativo, não aplicado:** deny único na 1ª `Edit`/`Write` dentro do `cwd`; eval 14/18 → 12/18, implementação 3/4 → 2/4; o host repete a edição ou foge por `sed` no Bash; patch guardado em `2026-10-23-edit-redirect.patch` |
 | 2026-10-23 | [Três níveis nomeados no delegate](2026-10-23-tres-niveis.md) | Decisão do dono: low=Luna max, middle=Sol 6.1 medium, high=Opus 5.5 high; quebra da entrada numérica; custos $0,07 → $0,21 → $1,82; evidência AA, ratings locais e critérios de reavaliação |
