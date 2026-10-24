@@ -62,7 +62,7 @@ export function renderPolyagentBlock(version: string): string {
 - polyagent spawns each engine CLI itself (\`codex exec\`, \`claude -p\`): an MCP server named \`codex\` failing to connect says nothing about polyagent. Call the tool; do not guess it is down.
 - Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own. Hand them over through \`delegate\`'s \`agent\` param:
   - subagent: \`agent: "<name>"\` (resolved from \`.claude/agents\` and plugins);
-  - skill: an inline \`{prompt}\` holding its SKILL.md body, \`agent: { prompt: "<SKILL.md body>" }\`. Only that text crosses: files outside cwd (a skill's \`scripts/\` or \`references/\`) stay invisible, so paste what the worker needs. Skills in the repo's own \`.claude/skills\` sit inside cwd and are readable.
+  - skill: \`agent: { skill: "<plugin:name>" }\` (e.g. \`{ skill: "ivt-quality:security-audit" }\`). Its SKILL.md becomes the persona and its folder (\`scripts/\`, \`references/\`) is mounted read-only for the worker.
   - A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest.
 
 ### fan_out: call it instead of judging alone

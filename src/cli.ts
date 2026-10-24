@@ -254,6 +254,8 @@ export interface SandboxSpec {
   homeRw: string[];
   /** paths extras montados RW (POLYAGENT_SANDBOX_EXTRA), antes do workspace. */
   extraBinds: string[];
+  /** Paths extras montados somente-leitura, depois dos extras RW e antes do workspace. */
+  roBinds: string[];
   extraEnv: Array<[string, string]>;
 }
 
@@ -270,6 +272,7 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   for (const p of spec.homeRo) args.push("--ro-bind", p, p);
   for (const p of spec.homeRw) args.push("--bind", p, p);
   for (const p of spec.extraBinds) args.push("--bind", p, p);
+  for (const p of spec.roBinds) args.push("--ro-bind", p, p);
   args.push(spec.workspaceRo ? "--ro-bind" : "--bind", spec.workspace, spec.workspace);
   args.push(
     "--setenv", "HOME", spec.home,
@@ -893,6 +896,7 @@ export function buildSandboxSpec(
   workspace: string,
   engine: Engine,
   workspaceRo = false,
+  roBinds: string[] = [],
 ): { spec: SandboxSpec; cleanup: () => void } {
   const home = process.env.HOME ?? homedir();
   const isoHome = mkdtempSync(join(tmpdir(), "cbx-home-"));
@@ -935,6 +939,7 @@ export function buildSandboxSpec(
     ].filter((p) => existsSync(p)),
     // só os que existem e não são o próprio workspace (esse já é o último bind)
     extraBinds: SANDBOX_EXTRA.filter((p) => p !== workspace && existsSync(p)),
+    roBinds: roBinds.filter((p) => p !== workspace && existsSync(p)),
     extraEnv: SANDBOX_PROXY_ENV
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k] as string]),
@@ -974,6 +979,8 @@ export interface RunOpts {
    * Resolvida no host por resolveAgent (src/agents.ts). Cross-engine — não é exclusiva do claude.
    */
   agentPrompt?: string;
+  /** Paths do host montados somente-leitura no mesmo path dentro do sandbox. */
+  roBinds?: string[];
   /**
    * Tool que originou o run. Não muda a execução: define a forma da sugestão no erro de cota
    * (parâmetro `engine` nas auxiliares, `level` no delegate, nenhuma onde a tool escolhe sozinha).
@@ -1720,7 +1727,8 @@ export function raceFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
 /**
  * Subconjunto de RunOpts seguro para retomar num OUTRO engine depois de uma falha de ambiente.
  * ALLOWLIST deliberada (não blocklist): um campo só atravessa pro fallback se listado aqui, então
- * uma opção nova ou esquecida em RunOpts nunca vaza por omissão. Campos excluídos e o porquê:
+ * uma opção nova ou esquecida em RunOpts nunca vaza por omissão. A persona (agentPrompt) e seus
+ * arquivos somente-leitura (roBinds) atravessam juntos. Campos excluídos e o porquê:
  * - model/effort: escolha feita pro codex; o fallback usa o default do próprio engine.
  * - mode: vira `--ro-bind` do workspace em buildSandboxSpec, mas só o codex tem `-s read-only`
  *   pra honrar isso sem quebrar — grok guarda sessão indexada pelo cwd e falha ("Read-only file
@@ -1730,8 +1738,8 @@ export function raceFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
  *   o valor, o que dropa a imagem de entrada sem avisar — pior que falhar.
  */
 export function fallbackOpts(opts: RunOpts, engine: Engine): RunOpts {
-  const { prompt, cwd, timeoutMs, force, web, agentPrompt } = opts;
-  return { prompt, cwd, timeoutMs, force, web, agentPrompt, engine };
+  const { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds } = opts;
+  return { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, engine };
 }
 
 /** Roda o CLI do engine em modo headless e devolve o resultado parseado. */
@@ -1758,7 +1766,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     let args = engineArgs;
     let cleanup = () => {};
     if (bwrap) {
-      const built = buildSandboxSpec(workspace, engine, !!runOpts.mode);
+      const built = buildSandboxSpec(workspace, engine, !!runOpts.mode, runOpts.roBinds);
       cleanup = built.cleanup;
       cmd = bwrap;
       args = [...buildSandboxArgs(built.spec), bin, ...engineArgs];

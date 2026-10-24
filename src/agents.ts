@@ -4,11 +4,11 @@
  * BODY é o system prompt. Aqui resolvemos o agent NO HOST (fora do sandbox) e extraímos só o body
  * como string portável, que cada engine injeta pelo seu canal aditivo (claude --append-system-prompt,
  * grok --rules, codex -c developer_instructions). Assim a feature NÃO é exclusiva do claude e o
- * sandbox continua com o $HOME vazio (a persona viaja como argumento, sem bind novo).
+ * sandbox continua com o $HOME vazio. Skills também levam sua pasta como bind somente-leitura.
  */
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 
 /** Persona resolvida: o body markdown vira system prompt portável cross-engine. */
 export interface ResolvedAgent {
@@ -16,10 +16,12 @@ export interface ResolvedAgent {
   name?: string;
   /** Modelo sugerido pelo frontmatter — advisory (o level/model explícito do delegate vence). */
   model?: string;
+  /** Diretório canônico da skill, montado somente-leitura no worker. */
+  mountRo?: string;
 }
 
-/** Entrada do param `agent`: um nome (resolve no host) ou um objeto inline (usa direto, sem FS). */
-export type AgentInput = string | { prompt: string; name?: string; model?: string };
+/** Entrada do param `agent`: nome de agent, persona inline ou nome de skill. */
+export type AgentInput = string | { prompt: string; name?: string; model?: string } | { skill: string };
 
 /** Roots onde procurar arquivos de agent (.md), na ordem. Extra via POLYAGENT_AGENT_PATHS (`:`). */
 export function agentRoots(cwd: string): string[] {
@@ -85,6 +87,61 @@ function newest(files: string[]): string {
     .sort((a, b) => b[1] - a[1])[0][0];
 }
 
+/** Busca limitada aos layouts `skills/<base>/SKILL.md`, sem descer em diretórios ocultos. */
+function findSkillFiles(root: string, base: string, depth = 6, acc: string[] = []): string[] {
+  let entries: import("node:fs").Dirent[];
+  try { entries = readdirSync(root, { withFileTypes: true }); } catch { return acc; }
+  for (const e of entries) {
+    const full = join(root, e.name);
+    if ((e.isFile() || e.isSymbolicLink()) && e.name === "SKILL.md" &&
+      basename(root) === base && basename(dirname(root)) === "skills") acc.push(full);
+    else if (e.isDirectory() && depth > 0 && !e.name.startsWith(".")) findSkillFiles(full, base, depth - 1, acc);
+  }
+  return acc;
+}
+
+/** Resolve a skill no host e transporta a persona junto do diretório de arquivos auxiliares. */
+function resolveSkill(input: string, cwd: string): ResolvedAgent {
+  const colon = input.lastIndexOf(":");
+  const base = input.slice(colon + 1);
+  const plugin = colon >= 0 ? input.slice(0, colon) : undefined;
+  if (!base || base.includes("/") || base.includes("..")) {
+    throw new Error(`invalid skill name: received ${JSON.stringify(input)}, expected a plain name or 'plugin:name'`);
+  }
+  const home = process.env.HOME ?? homedir();
+  const roots = [
+    { path: join(cwd, ".claude", "skills"), parent: cwd, recursive: false },
+    { path: join(home, ".claude", "skills"), parent: home, recursive: false },
+    { path: join(home, ".claude", "plugins"), parent: home, recursive: true },
+  ];
+  for (const root of roots) {
+    let canonicalRoot: string;
+    try {
+      canonicalRoot = realpathSync(root.path);
+      if (!isInside(canonicalRoot, realpathSync(root.parent))) continue;
+    } catch { continue; }
+    const files = root.recursive ? findSkillFiles(root.path, base) : [join(root.path, base, "SKILL.md")];
+    const containedFiles = files.filter((file) => {
+      if (plugin !== undefined && !file.split(sep).includes(plugin)) return false;
+      try {
+        return isInside(realpathSync(file), canonicalRoot) && isInside(realpathSync(dirname(file)), canonicalRoot);
+      } catch { return false; }
+    });
+    if (!containedFiles.length) continue;
+    try {
+      const file = newest(containedFiles);
+      const parsed = parseAgentFile(readFileSync(file, "utf8"));
+      const skillDir = realpathSync(dirname(file));
+      return {
+        prompt: `[Skill ${input}: its folder ${skillDir} is mounted read-only; read scripts/ and references/ from there.]\n\n${parsed.prompt}`,
+        name: parsed.name ?? base,
+        mountRo: skillDir,
+      };
+    } catch { continue; }
+  }
+  throw new Error(`skill '${input}' not found. Searched ${roots.map((root) => root.path).join(", ")} (plugins: **/skills/${base}/SKILL.md).`);
+}
+
 /**
  * Resolve um agent para persona portável. Objeto inline → usa direto. Nome (ex "pit:issue-investigator"
  * ou "code-reviewer") → busca `<base>.md` (base = parte após ":") nos roots e extrai o body. Lança se
@@ -93,6 +150,7 @@ function newest(files: string[]): string {
  */
 export function resolveAgent(input: AgentInput, cwd: string): ResolvedAgent {
   if (typeof input !== "string") {
+    if ("skill" in input) return resolveSkill(input.skill, cwd);
     if (!input.prompt?.trim()) {
       throw new Error(`invalid agent: object needs a non-empty 'prompt', received ${JSON.stringify(input)}`);
     }
