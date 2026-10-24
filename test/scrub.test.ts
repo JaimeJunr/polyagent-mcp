@@ -27,6 +27,18 @@ describe("scrubSecrets", () => {
     expect(text).not.toContain(key);
   });
 
+  it("redacts an unlabeled OpenRouter key and keeps the surrounding text", () => {
+    const key = "sk-or-v1-" + "0123456789abcdef".repeat(4);
+    const { text, redacted } = scrubSecrets(`{"openrouter": {"key": "${key}"}} then retry`);
+    expect(redacted).toBe(true);
+    expect(text).toBe('{"openrouter": {"key": "[REDACTED]"}} then retry');
+  });
+
+  it("leaves short sk-or mentions in prose alone", () => {
+    const text = "OpenRouter keys start with sk-or-v1- followed by hex.";
+    expect(scrubSecrets(text)).toEqual({ text, redacted: false });
+  });
+
   it("redacts a bearer token", () => {
     const { text, redacted } = scrubSecrets("Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345");
     expect(redacted).toBe(true);

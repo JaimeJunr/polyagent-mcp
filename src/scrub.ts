@@ -11,6 +11,8 @@ const CREDENTIAL_PATTERNS: RegExp[] = [
   /AKIA[0-9A-Z]{16}/g, // AWS access key id
   /\bghp_[A-Za-z0-9]{36}\b/g, // GitHub PAT clássico
   /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, // GitHub PAT fine-grained
+  // OpenRouter: o hífen de `sk-or-v1-` quebra o padrão OpenAI e o hex minúsculo escapa do de entropia.
+  /\bsk-or-v1-[0-9a-f]{64}\b/g,
   /\bsk-[A-Za-z0-9]{20,}\b/g, // chave estilo OpenAI
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, // token Slack
   /Bearer\s+[A-Za-z0-9\-_.]{20,}/g, // bearer token
