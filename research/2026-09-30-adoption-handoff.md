@@ -87,3 +87,5 @@ código (0/3 → 3/3) é grande e bate com o mecanismo; os outros números são 
 - Candidatos a correção, a medir contra esta linha de base: nudge do hook em `Agent`/`Skill`
   (hoje fora do matcher) apontando o param `agent` do `delegate`; nudge em `Bash` de leitura
   (`grep`/`rg`/`find`) apontando `explore`.
+- Bloquear uma vez a primeira `Edit`/`Write` (2026-10-23): não ajudou, 14/18 → 12/18. Ver
+  [o estudo](2026-10-23-edit-redirect.md).
