@@ -103,7 +103,9 @@ describe("tool surface (US-003)", () => {
     expect(fanOut).toContain("fanOutAgreementText(first.res.text, footer");
     const delegate = registeredToolBlock("delegate");
     expect(delegate).toContain("JEV_SHADOW_ENABLED");
-    expect(delegate).toContain("withDelegateShadow(work, prompt, level");
+    expect(delegate).toContain("const verified = verifyingWorker(work, prompt);");
+    expect(delegate).toContain("withDelegateShadow(verified, prompt, level");
+    expect(registeredToolBlock("fast_delegate")).toContain("return verifyingWorker(() => formatRun(");
   });
 
   it("alwaysLoad inclui as cinco core, fast_delegate, fan_out e rate", () => {

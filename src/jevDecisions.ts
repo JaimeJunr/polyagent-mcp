@@ -173,12 +173,112 @@ export function shadowDecision(result: JevResult | Error, requestedLevel: Level,
   };
 }
 
+// Verificador do resultado do worker (research/2026-10-24-usos-modelo-decisao.md, ideia 1): ataca o
+// verde vazio que o `evidenceNote` só pede ao worker. Shadow: só grava; o limiar de 0,5 é do código.
+const VERIFY_PROMPT_CHARS = 3_000;
+// Elephant 1 tem 16K tokens; ~12K chars de resultado deixa folga para prompt e perguntas.
+const VERIFY_RESULT_CHARS = 12_000;
+const VERIFY_QUESTIONS = {
+  claims_success: {
+    type: "noul",
+    instructions: "Does the worker result claim success for the work it did — done, fixed, implemented, tests pass or check passed — regardless of whether that work matches the task?",
+  },
+  reports_denominator: {
+    type: "noul",
+    instructions: "Does the result state how many items its checks actually covered (tests run, files scanned, cases checked), so an empty or vacuous check would be visible?",
+  },
+  evidence_shown: {
+    type: "noul",
+    instructions: "Is the success claim backed by concrete evidence in the result itself — command output, test counts, file:line references or a diff — rather than a bare assertion?",
+  },
+  addresses_task: {
+    type: "noul",
+    instructions: "Does the result carry out or answer the specific task given to the worker — a finding of nothing (e.g. zero issues) still counts — rather than reporting work on a different task?",
+  },
+} as const satisfies AskJevParams["questions"];
+const VERIFY_KEYS = Object.keys(VERIFY_QUESTIONS) as (keyof typeof VERIFY_QUESTIONS)[];
+
+export function delegateVerifyRequest(prompt: string, resultText: string): AskJevParams {
+  const task = clipHeadTail(scrubSecrets(prompt).text, VERIFY_PROMPT_CHARS);
+  // Head+tail: o veredito do worker fica no fim, como no gate do fan_out.
+  const result = clipHeadTail(scrubSecrets(resultText).text, VERIFY_RESULT_CHARS);
+  return { state: `Task given to the worker:\n${task}\n\nWorker result:\n${result}`, questions: VERIFY_QUESTIONS };
+}
+
+export function verifyDecision(result: JevResult | Error, latencyMs: number, session?: string): DecisionRecord {
+  const answers = result instanceof Error ? undefined : result.answers;
+  const probabilities: Record<string, number> = {};
+  for (const key of VERIFY_KEYS) {
+    const answer = answers?.[key];
+    if (answer?.type !== "noul" || !Number.isFinite(answer.noul) || answer.noul < 0 || answer.noul > 1) break;
+    probabilities[key] = answer.noul;
+  }
+  const valid = Object.keys(probabilities).length === VERIFY_KEYS.length;
+  let choice: string | null = null;
+  let confidence: number | null = null;
+  if (valid) {
+    const support = Math.min(probabilities.evidence_shown, probabilities.addresses_task);
+    if (probabilities.claims_success < 0.5) {
+      choice = "no_claim";
+      confidence = 1 - probabilities.claims_success;
+    } else {
+      choice = support >= 0.5 ? "supported" : "unsupported";
+      confidence = support >= 0.5 ? support : 1 - support;
+    }
+  }
+  return {
+    name: "delegate_result_verify_shadow",
+    candidates: ["supported", "unsupported", "no_claim"],
+    choice,
+    confidence,
+    accepted: false,
+    fallback: false,
+    latencyMs,
+    cost: result instanceof Error ? null : result.usage?.cost ?? null,
+    ...(valid ? { probabilities } : {}),
+    ...(session ? { session } : {}),
+  };
+}
+
+/** Junta o texto de um resultado de tool MCP; `undefined` quando é erro ou não tem texto. */
+function successText(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || (value as { isError?: unknown }).isError) return undefined;
+  const content = (value as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content.map((part) => (part as { text?: unknown } | null)?.text)
+    .filter((t): t is string => typeof t === "string").join("\n");
+  return text || undefined;
+}
+
 interface DecisionDeps {
   ask: (request: AskJevParams) => Promise<JevResult>;
   log: (decision: DecisionRecord) => void;
   now?: () => number;
   timeoutMs?: number;
   sessionOf?: (workerValue: unknown) => string | undefined;
+  /** Recebe a tarefa shadow que roda depois do retorno; testes usam para aguardar o log. */
+  background?: (task: Promise<void>) => void;
+}
+
+export async function withDelegateVerify<T>(work: () => Promise<T>, prompt: string, deps: DecisionDeps): Promise<T> {
+  const value = await work();
+  const text = successText(value);
+  if (text === undefined) return value;
+  const now = deps.now ?? Date.now;
+  const started = now();
+  // Não aguardado: o verificador nunca atrasa o retorno do worker ao host.
+  const task = Promise.resolve()
+    .then(() => deps.ask(delegateVerifyRequest(prompt, text)))
+    .then((result) => result as JevResult | Error, (error: unknown) => asError(error) as JevResult | Error)
+    .then((result) => {
+      try {
+        deps.log(verifyDecision(result, now() - started, deps.sessionOf?.(value)));
+      } catch {
+        // A observação shadow não pode derrubar nada.
+      }
+    });
+  deps.background?.(task);
+  return value;
 }
 
 function asError(reason: unknown): Error {
