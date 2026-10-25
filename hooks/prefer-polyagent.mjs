@@ -4,7 +4,7 @@
  * token-expensive native tools, at the moment of the call (text alone in
  * CLAUDE.md loses to structural friction; a call-time reminder wins).
  *
- * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill" no PreToolUse,
+ * Configure "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task" no PreToolUse,
  * UserPromptSubmit para dicas por intenção, e entradas SessionStart/SubagentStart.
  * Veja o README.
  *
@@ -12,7 +12,7 @@
  *  - Cheap: only emits a nudge when it actually pays off (large whole-file
  *    Read, native web call, or the first exploration tool of a session).
  *    Never fires on small/surgical reads. Desde 2026-09-30 também: busca de
- *    código via Bash (grep/rg/find no início da pipeline) e Agent/Task/Skill —
+ *    código via Bash (grep/rg/find no início da pipeline) e Agent/Task —
  *    as duas fugas medidas no eval de adoção (research/2026-09-30-adoption-handoff.md).
  *  - Dedup por sessão cobre nudge/redirect de PreToolUse, usando session_id no tmp.
  *    UserPromptSubmit avalia cada prompt isoladamente e não usa dedup.
@@ -20,8 +20,8 @@
  *    one-time reminder to run ToolSearch, because these MCP tools are deferred
  *    and lose to the always-loaded native Read/Grep until their schemas load.
  *  - Fail-open: web, Read grande e Bash de busca podem ser bloqueados só uma vez; os demais
- *    casos apenas injetam `additionalContext`. Agent/Task/Skill: em redirect, deny único
- *    SÓ quando o subagent/skill é encontrado e não precisa de MCP, browser nem subagents
+ *    casos apenas injetam `additionalContext`. Agent/Task: em redirect, deny único
+ *    SÓ quando o subagent é encontrado e não precisa de MCP, browser nem subagents
  *    (o worker consegue assumir o trabalho); caso contrário, só nudge. O nudge sozinho
  *    não mudou nada (handoff 0/2, research/2026-09-30-adoption-handoff.md).
  *  - Never breaks the tool: any error → print nothing, exit 0.
@@ -127,7 +127,7 @@ export function isBashCodeSearch(command) {
   });
 }
 
-/** Monta o handoff de Agent/Task/Skill sem I/O. */
+/** Monta o handoff de Agent/Task sem I/O. */
 export function agentSkillNudge(tool, toolInput) {
   const ti = toolInput ?? {};
   const boundary = "Keep the native tool only when this step needs MCP servers or a browser; workers have neither.";
@@ -137,20 +137,12 @@ export function agentSkillNudge(tool, toolInput) {
     return "polyagent workers can take this subagent" + (name ? ` (${name})` : "") +
       ": delegate or fast_delegate accepts agent: \"<subagent name>\" to carry its persona. " + boundary;
   }
-  if (tool === "Skill") {
-    const skill = typeof ti.skill === "string" ? ti.skill.slice(0, 120) : "";
-    return "polyagent workers can take this skill" + (skill ? ` (${skill})` : "") +
-      ": delegate or fast_delegate accepts agent: { prompt: \"<SKILL.md body>\" } to carry its instructions. " + boundary;
-  }
   return null;
 }
 
 // ---- Handoff com redirect: só quando o worker realmente assume o trabalho ----
 
 const HANDOFF_MAX_DEPTH = 6;
-// Skill que cita MCP (exceto context-mode), browser ou subagents precisa do host.
-const SKILL_NEEDS_HOST_RE =
-  /mcp__(?!plugin_context-mode_)|playwright|agent-browser|Claude_Browser|claude-in-chrome|subagent_type|\b(?:Task|Agent) tool\b/i;
 
 /** `plugin:nome` → { plugin, base }; null se vazio, com '/' ou '..'. */
 function splitHandoffName(raw) {
@@ -217,19 +209,6 @@ export function findSubagentFile(subagentType, cwd, deps) {
   return findHandoffFile(direct, `${d.home}/.claude/plugins`, accept, d);
 }
 
-/** Texto do SKILL.md (`skills/<base>/SKILL.md`), ou null se não achar. */
-export function findSkillFile(skill, cwd, deps) {
-  const n = splitHandoffName(skill);
-  if (!n) return null;
-  const d = handoffDeps(deps);
-  const direct = [
-    ...(cwd ? [`${cwd}/.claude/skills/${n.base}/SKILL.md`] : []),
-    `${d.home}/.claude/skills/${n.base}/SKILL.md`,
-  ];
-  const accept = (p) => p.endsWith(`/skills/${n.base}/SKILL.md`) && (!n.plugin || p.includes(`/${n.plugin}/`));
-  return findHandoffFile(direct, `${d.home}/.claude/plugins`, accept, d);
-}
-
 /** true = manter a tool nativa (precisa de MCP, browser ou subagents; ou não achou o arquivo). */
 export function subagentNeedsHost(text) {
   if (typeof text !== "string") return true;
@@ -242,19 +221,9 @@ export function subagentNeedsHost(text) {
   );
 }
 
-export function skillNeedsHost(text) {
-  return typeof text !== "string" || SKILL_NEEDS_HOST_RE.test(text);
-}
-
 /** Texto de redirect quando o worker pode assumir o handoff; null se deve ficar o nudge. */
 export function handoffRedirectText(tool, toolInput, cwd, deps) {
   const ti = toolInput ?? {};
-  if (tool === "Skill") {
-    const skill = typeof ti.skill === "string" ? ti.skill.slice(0, 120) : "";
-    if (skillNeedsHost(findSkillFile(skill, cwd, deps))) return null;
-    return `polyagent worker can run this skill (${skill}) now: delegate(prompt, level, agent: { skill: "${skill}" }) ` +
-      "(or fast_delegate). The worker gets its SKILL.md as persona and the skill folder mounted read-only.";
-  }
   const name = typeof ti.subagent_type === "string" ? ti.subagent_type.slice(0, 120) : "";
   if (subagentNeedsHost(findSubagentFile(name, cwd, deps))) return null;
   return `polyagent worker can run this subagent (${name}) now: delegate(prompt, level, agent: "${name}") ` +
@@ -433,10 +402,10 @@ function baseDecision(input, { stat, read, minLines, handoff }, seen) {
     return seen.has("bash-search") ? null : { key: "bash-search", text: BASH_SEARCH_TEXT, redirect: true };
   }
 
-  // Handoff de persona/skill: deny único (redirect) só se o worker assume o trabalho;
+  // Handoff de subagent: deny único (redirect) só se o worker assume o trabalho;
   // senão só nudge. Isentos (claude-code-guide, statusline-setup) → null.
-  if (tool === "Agent" || tool === "Task" || tool === "Skill") {
-    const key = tool === "Skill" ? "skill-handoff" : "agent-handoff";
+  if (tool === "Agent" || tool === "Task") {
+    const key = "agent-handoff";
     if (seen.has(key)) return null;
     const nudgeText = agentSkillNudge(tool, ti);
     if (!nudgeText) return null;

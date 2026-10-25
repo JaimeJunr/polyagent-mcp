@@ -589,7 +589,7 @@ points, all in `cli.ts`:
 ## The hook (`hooks/prefer-polyagent.mjs`)
 
 Distribuído separadamente do servidor: o host configura o hook no `settings.json` com matcher
-`PreToolUse` `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill`, além de
+`PreToolUse` `Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task`, além de
 entradas `UserPromptSubmit`, `SessionStart` e `SubagentStart`, todas apontando para
 `hooks/prefer-polyagent.mjs`. O hook orienta o agente para o alias `polyagent` e não menciona
 as tools removidas `plan`/`build`. A renomeação do arquivo exige atualizar caminhos antigos
@@ -602,12 +602,17 @@ uma vez para `explore` ou `read_slice`. A busca deve iniciar o **primeiro segmen
 após `&&`, uma nova pipeline pode iniciar com busca. `npm test | grep FAIL` e `ps aux | grep x`
 são filtros de saída e não disparam. Comando que também grava artefatos não é redirecionado;
 o nudge existente para `git commit`/`push`, `git worktree add`, `gh pr create` e `bkt pr create`
-tem prioridade. `Agent`/`Task` e `Skill` (uma vez por sessão) recebem **deny** em redirect quando o subagente/skill
-é encontrado (`<cwd>/.claude/{agents,skills}`, `~/.claude/...`, `~/.claude/plugins`) e NÃO precisa de
-MCP (exceto context-mode), browser nem subagents — o texto nomeia `delegate(prompt, level, agent: "<subagent>")`
-ou `agent: { skill: "plugin:name" }`; não achado, sem linha `tools:`, ou que precisa do host, cai no nudge
-de sempre (o nudge sozinho não mudou nada: handoff 0/2 em `research/2026-09-30-adoption-handoff.md`).
-Os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restrições testadas em
+tem prioridade. `Agent`/`Task` (uma vez por sessão) recebem **deny** em redirect quando o subagente é
+encontrado (`<cwd>/.claude/agents`, `~/.claude/...`, `~/.claude/plugins`) e NÃO precisa de MCP
+(exceto context-mode), browser nem subagents — o texto nomeia
+`delegate(prompt, level, agent: "<subagent>")`; não achado, sem linha `tools:`, ou que precisa do host,
+cai no nudge de sempre (o nudge sozinho não mudou nada: handoff 0/2 em
+`research/2026-09-30-adoption-handoff.md`).
+Desde 2026-10-25, o hook não inclui nem trata a tool nativa `Skill`: o deny fazia o host empurrar
+até skills básicas para um worker. Usar `Skill` nativamente é válido; `delegate` ainda aceita
+`agent: { skill: "plugin:name" }` quando o chamador escolhe esse handoff, sem incentivo do hook.
+`Agent`/`Task` continuam com o comportamento de handoff descrito acima. Os auxiliares
+`claude-code-guide` e `statusline-setup` são isentos. Restrições testadas em
 `test/hook.test.ts`:
 
 - Pure decision in `decide(input, deps)` with injectable fs — that's what the tests exercise.
@@ -617,7 +622,7 @@ Os auxiliares `claude-code-guide` e `statusline-setup` são isentos. Restriçõe
   (sem offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, e Bash de busca de código →
   `explore`/`read_slice` recebem **deny** uma vez. As chaves de dedup da sessão são salvas
   **antes** da emissão; a segunda chamada passa. O motivo termina em `FAILOPEN_SUFFIX` e informa
-  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit nunca recebem deny (Agent/Task/Skill só nas condições acima); Bash que grava artefatos mantém o nudge anterior.
+  que o modelo pode tentar novamente. Grep/Glob/Edit/Write/MultiEdit nunca recebem deny (Agent/Task só nas condições acima); Bash que grava artefatos mantém o nudge anterior.
 - **PreToolUse dedup per session** (keyed by `session_id` in an `os.tmpdir()` file, mode `0600`):
   every PreToolUse nudge/redirect fires at most once. A repeated fire is worse than none. This is why
   `Grep`/`Glob` can sit in the matcher — they collapse to a single preload reminder.

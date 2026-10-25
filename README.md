@@ -122,7 +122,7 @@ have their own approval settings — consult the host.
 | `POLYAGENT_JEV_VERIFY` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Judges each successful `delegate`/`fast_delegate` result in the background: does it claim success, report how many items its checks covered, show evidence, and address the task? Logs a `delegate_result_verify_shadow` decision; never delays or changes the result. One decision-model call per worker result. |
 | `POLYAGENT_JEV_MODEL` | `baseten/elephant-1:free` | Decision model for `decide` and the two Jev flags (any `/v1/systemone` model). `typesafe/jev-1.13` restores the paid Jev; see `research/2026-10-24-modelos-decisao-gratis.md`. |
 | `OPENROUTER_API_KEY` | _(unset)_ | Key for `decide` and the Jev flags. Fallbacks, in order: `.openrouter.key` in `~/.local/share/opencode/auth.json`, then the system keyring item stored by `secret-request --keyring openrouter --env OPENROUTER_API_KEY` (read with `secret-tool`). |
-| `POLYAGENT_HOOK_MODE` | `redirect` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task/Skill emitem apenas nudge. |
+| `POLYAGENT_HOOK_MODE` | `redirect` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task emitem apenas nudge. Skill não é tratada pelo hook desde 2026-10-25: o deny empurrava até skills básicas para um worker; usar Skill nativamente é válido. |
 | `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
 
 The three Jev flags are on by default (without an OpenRouter key each one falls back to the plain path) and pass truncated worker output or task text through the credential scrubber before sending it to OpenRouter.
@@ -218,7 +218,7 @@ emitem nudges sem bloqueio. Configure no `settings.json` do host Claude Code:
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task|Skill",
+        "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task",
         "hooks": [
           { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
         ]
@@ -249,10 +249,13 @@ redirect is one-shot and fail-open (a second identical call is allowed through).
 >   `npm test | grep FAIL` e `ps aux | grep x` não disparam. Comandos que também gravam artefatos
 >   não são redirecionados. O nudge existente de `git commit`/`push`, `git worktree add`,
 >   `gh pr create`, `gh issue create`, `bkt pr create` tem prioridade.
-> - **`Agent`/`Task` e `Skill`** → nudge uma vez por sessão para `delegate`/`fast_delegate` com
->   `agent: "<subagent name>"` ou `agent: { prompt: "<SKILL.md body>" }`. A ferramenta nativa fica
->   para etapas que exigem MCP servers ou browser. Helpers `claude-code-guide` e
+> - **`Agent`/`Task`** → nudge uma vez por sessão para `delegate`/`fast_delegate` com
+>   `agent: "<subagent name>"`. A ferramenta nativa fica para etapas que exigem MCP servers ou
+>   browser. Helpers `claude-code-guide` e
 >   `statusline-setup` são isentos.
+> - **`Skill`** não é tratada pelo hook desde 2026-10-25: o deny fazia o host empurrar até skills
+>   básicas para um worker, embora usar a tool nativa seja válido. `delegate` ainda aceita
+>   `agent: { skill: "plugin:name" }` quando o chamador escolhe esse handoff; o hook não o sugere.
 > - **`Edit`/`Write`/`MultiEdit`** → once per session, reminds that a *self-contained* task
 >   (feature, bugfix, mechanical multi-file change, build fix) can go **whole** to `delegate(prompt, level)`
 >   — the selected worker edits with full access — instead of the orchestrator implementing
