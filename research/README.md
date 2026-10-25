@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-10-25 | [Reserva por nível do delegate](2026-10-25-reserva-por-nivel.md) | **Aplicada:** segundo melhor em outra engine com custo próximo — low → Haiku 5.5 xhigh (41/$0,12), middle → Haiku 5.5 max (43/$0,21), high → Sol 6.1 max (52/$0,72); os três rodaram ao vivo; Kimi K3.1 Pro (55) fora porque o CLI não está instalado |
 | 2026-10-24 | [Onde usar melhor os modelos de decisão](2026-10-24-usos-modelo-decisao.md) | Produtos (jev-mcp, JevAgentHarness, jev-agent-kit), a categoria além do Jev (OpenAI Decisions, Microsoft-Decision-1, Mercury, Decider, Span-01, d1) e papers (AutoMix, cascata, abstenção); **aplicado:** verificador do resultado do worker em shadow (`POLYAGENT_JEV_VERIFY`), smoke 6/6 no Elephant |
 | 2026-10-24 | [Modelos de decisão gratuitos no lugar do Jev](2026-10-24-modelos-decisao-gratis.md) | Mesmo bench do Jev contra Mercury Decide, Elephant 1 e Mammoth 1 (`:free`, mesmo `/v1/systemone`): gate de `fan_out` empata (0 false skip a 0,85); shadow Jev 76% vs Elephant 96%, Mammoth 92%, Mercury 88%; **aplicada:** default virou Elephant 1 |
 | 2026-10-24 | [OpenShell e o `deny` de comandos](2026-10-24-openshell-deny.md) | Não adotar o OpenShell (sem lista de comandos, container por chamada, OAuth de assinatura não confirmado, alpha); `deny` vira shim sobreposto ao binário no bwrap, medido ao vivo; lacunas: rede livre e `~/.local` inteiro montado |

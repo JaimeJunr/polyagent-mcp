@@ -90,3 +90,70 @@ describe("health visibility through registered tool handlers", () => {
     expect(await call("fast_delegate", { prompt: "task" })).not.toContain("[engine:");
   });
 });
+
+const { QuotaError, TIERS, LEVELS } = await import("../src/cli.js");
+describe("reserve retry through registered handlers", () => {
+  beforeEach(() => { writeFileSync(log, ""); });
+
+  it.each(LEVELS)("delegate %s logs primary quota and reserve success exactly once", async (level) => {
+    const { primary, reserve } = TIERS[level];
+    run.mockRejectedValueOnce(new QuotaError("quota_exhausted", primary.engine, "primary quota"));
+    const text = await call("delegate", {
+      prompt: "task", level, cwd: dir, agent: { prompt: "persona" }, deny: ["git push"],
+      timeout_ms: 54321, model: "custom-primary", effort: "custom-effort",
+    });
+    expect(run.mock.calls).toHaveLength(2);
+    const [first, second] = run.mock.calls.map(([opts]) => opts);
+    expect(second).toEqual({ ...first, engine: reserve.engine, model: reserve.model, effort: reserve.effort });
+    expect(text).toContain(`[note: ${primary.engine} quota exhausted — reran on reserve ${reserve.engine} ${reserve.model} ${reserve.effort}]`);
+    expect(text).toContain(`session_id: ${reserve.engine}:worker-session`);
+    expect(readUsage()).toMatchObject([
+      { engine: primary.engine, model: "custom-primary", effort: "custom-effort", outcome: "quota", matchedRequest: true },
+      { engine: reserve.engine, model: reserve.model, effort: reserve.effort, outcome: "success", matchedRequest: false },
+    ]);
+    expect(readUsage()).toHaveLength(2);
+    expect(engineHealthReport(readUsage(), Date.now())[primary.engine].cause).toBe("quota");
+  });
+
+  it.each(["rate_limited", "other", "explicit"])("delegate does not retry %s and logs its single attempt", async (kind) => {
+    const err = kind === "other" ? new Error("auth expired") : new QuotaError(kind === "rate_limited" ? "rate_limited" : "quota_exhausted", "codex", "primary failure");
+    run.mockRejectedValueOnce(err);
+    await expect(call("delegate", { prompt: "task", level: "low", ...(kind === "explicit" ? { engine: "codex" } : {}) })).rejects.toBe(err);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(readUsage()).toHaveLength(1);
+  });
+
+  it("delegate logs both quota failures and preserves the reserve error", async () => {
+    const reserveError = new QuotaError("quota_exhausted", "claude", "reserve quota");
+    run.mockRejectedValueOnce(new QuotaError("quota_exhausted", "codex", "primary quota"))
+      .mockRejectedValueOnce(reserveError);
+    await expect(call("delegate", { prompt: "task", level: "low" })).rejects.toBe(reserveError);
+    expect(reserveError.message).toMatch(/codex quota exhausted.*reserve claude failed/);
+    expect(run.mock.calls).toHaveLength(2);
+    expect(readUsage()).toMatchObject([
+      { engine: "codex", outcome: "quota", matchedRequest: true },
+      { engine: "claude", outcome: "quota", matchedRequest: false },
+    ]);
+    expect(readUsage()).toHaveLength(2);
+  });
+
+  it("fan_out retries each worker independently and logs four attempts without duplicates", async () => {
+    run.mockImplementation(async (opts: RunOpts) => {
+      if (opts.engine === "codex") throw new QuotaError("quota_exhausted", "codex", "primary quota");
+      return { text: "worker output", engine: opts.engine, sessionId: "worker-session" };
+    });
+    try {
+      const text = await call("fan_out", { prompt: "same task", levels: ["low", "middle"], mode: "race", cwd: dir });
+      await vi.waitFor(() => expect(readUsage().filter((entry) => entry.outcome)).toHaveLength(4));
+      expect(run.mock.calls).toHaveLength(4);
+      const attempts = readUsage().filter((entry) => entry.outcome);
+      expect(attempts.filter((entry) => entry.engine === "codex" && entry.outcome === "quota" && entry.matchedRequest)).toHaveLength(2);
+      expect(attempts.filter((entry) => entry.engine === "claude" && entry.outcome === "success" && entry.matchedRequest === false)).toHaveLength(2);
+      expect(attempts.filter((entry) => entry.engine === "claude").map((entry) => entry.effort).sort()).toEqual(["max", "xhigh"]);
+      expect(text).toContain("quota exhausted — reran on reserve claude claude-haiku-5-5");
+      expect(run.mock.calls.every(([opts]) => opts.prompt === "same task" && opts.cwd === dir && opts.tool === "fan_out")).toBe(true);
+    } finally {
+      run.mockImplementation(async (opts: RunOpts) => ({ text: "worker output", engine: opts.engine, sessionId: "worker-session" }));
+    }
+  });
+});

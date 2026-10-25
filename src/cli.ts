@@ -1054,9 +1054,11 @@ export type BridgeTool =
   | AuxTool | "delegate" | "fast_delegate" | "fan_out" | "generate_image" | "follow_up";
 
 /**
- * Erro de cota/rate limit. Nunca dispara retry automático: só a falha de AMBIENTE do codex
+ * Erro de cota/rate limit. No runCursor, só a falha de AMBIENTE do codex
  * (isCodexEnvError) entra no FALLBACK_ENGINE_ORDER. Trocar de engine por conta própria diante de
  * cota gastaria a próxima assinatura sem o usuário decidir; diante de rate limit, nem resolveria.
+ * Exceção decidida pelo dono em 2026-10-25: runWithReserve permite um rerun na reserva do nível
+ * para delegate sem engine explícita e workers fan_out, só em quota_exhausted (nunca rate_limited).
  */
 export class QuotaError extends Error {
   constructor(
@@ -1852,10 +1854,11 @@ export interface Tier {
   effort?: string;
 }
 
-/** Entrada da matriz de tiers: engine/modelo preferido + o id equivalente no cursor (fallback). */
+/** Entrada da matriz de tiers: titular, reserva em outra assinatura e id equivalente no cursor (fallback). */
 interface TierEntry {
   primary: Tier;
-  /** Modelo cursor-agent equivalente, usado só quando CURSOR_ENABLED e a engine preferida falta. */
+  reserve: Tier;
+  /** Modelo cursor-agent equivalente, usado só quando CURSOR_ENABLED e titular/reserva estão indisponíveis. */
   cursorModel: string;
 }
 
@@ -1887,9 +1890,22 @@ export function legacyLevel(value: unknown): unknown {
  * Cursor permanece legado e opt-in: conservam-se os ids dos três tiers retidos, sem refresh.
  */
 export const TIERS: Record<Level, TierEntry> = {
-  low: { primary: { engine: "codex", model: "gpt-6-luna", effort: "max" }, cursorModel: "gpt-5.6-luna-max-fast" },
-  middle: { primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" }, cursorModel: "gpt-5.6-sol-xhigh-fast" },
-  high: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" }, cursorModel: "gpt-6-astra-max-fast" },
+  // Reservas em outra assinatura: decisão do dono em research/2026-10-25-reserva-por-nivel.md.
+  low: {
+    primary: { engine: "codex", model: "gpt-6-luna", effort: "max" },
+    reserve: { engine: "claude", model: "claude-haiku-5-5", effort: "xhigh" },
+    cursorModel: "gpt-5.6-luna-max-fast",
+  },
+  middle: {
+    primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" },
+    reserve: { engine: "claude", model: "claude-haiku-5-5", effort: "max" },
+    cursorModel: "gpt-5.6-sol-xhigh-fast",
+  },
+  high: {
+    primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" },
+    reserve: { engine: "codex", model: "gpt-6.1-sol", effort: "max" },
+    cursorModel: "gpt-6-astra-max-fast",
+  },
 };
 
 /** Threshold compartilhado com o relatório; LATENCY_FLOOR deve permanecer acima dele. */
@@ -2018,8 +2034,9 @@ export function resolveFastTier(
 /**
  * Roteia o nível nomeado (low/middle/high) para (engine, modelo, effort). Usa a engine preferida do nível se instalada
  * E saudável (quando `health` é passado — ver computeEngineHealth em src/usage.ts). Se faltar ou
- * estiver unhealthy: cai para o cursor-agent equivalente SÓ quando CURSOR_ENABLED E o próprio cursor
- * está saudável; senão lança erro claro. `has`/`cursorEnabled`/`health` são injetados para teste.
+ * estiver unhealthy: tenta a reserva instalada e saudável antes do cursor-agent equivalente,
+ * que só entra quando CURSOR_ENABLED E o próprio cursor está instalado e saudável; senão lança erro claro.
+ * `has`/`cursorEnabled`/`health` são injetados para teste.
  * `health` omitido preserva o comportamento anterior (toda engine é tratada como saudável).
  */
 export function resolveTier(
@@ -2033,16 +2050,46 @@ export function resolveTier(
   const healthy = (e: Engine): boolean => engineHealthy(e, health);
   if (has(entry.primary.engine) && healthy(entry.primary.engine)) return entry.primary;
   const skipped = [skippedEngine(entry.primary.engine, has, health)];
-  if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: entry.cursorModel, skipped };
-  if (cursorEnabled && !healthy("cursor")) skipped.push(skippedEngine("cursor", has, health));
-  const blocked = skipped.filter((entry) => entry.cause !== "missing");
-  const reason = has(entry.primary.engine)
-    ? `is unhealthy: ${healthBlockMessage(blocked)}`
-    : `is not installed${blocked.length ? `; fallback unhealthy: ${healthBlockMessage(blocked)}` : ""}`;
+  if (has(entry.reserve.engine) && healthy(entry.reserve.engine)) return { ...entry.reserve, skipped };
+  skipped.push(skippedEngine(entry.reserve.engine, has, health));
+  if (cursorEnabled && has("cursor") && healthy("cursor")) return { engine: "cursor", model: entry.cursorModel, skipped };
+  if (cursorEnabled) skipped.push(skippedEngine("cursor", has, health));
   throw new Error(
-    `delegate level ${level} needs the '${entry.primary.engine}' CLI, which ${reason}. ` +
-    "Install it, pick another level, or set POLYAGENT_ENABLE_CURSOR=1 to fall back to cursor-agent.",
+    `delegate level ${level} needs the '${entry.primary.engine}' CLI or reserve '${entry.reserve.engine}' CLI; unavailable (missing or unhealthy): ${healthBlockMessage(skipped)}. ` +
+    "Install a CLI, pick another level, or set POLYAGENT_ENABLE_CURSOR=1 to fall back to cursor-agent.",
   );
+}
+
+/**
+ * Exceção autorizada pelo dono em research/2026-10-25-reserva-por-nivel.md: cota esgotada
+ * no titular permite UMA tentativa na reserva. Rate limit não melhora trocando de assinatura;
+ * engine explícita preserva a escolha do chamador. Sem recursão, a reserva nunca dispara outra.
+ * `run` recebe cada tentativa e a nota de sucesso para formatar/logar uma vez por execução;
+ * a falha primária precisa chegar ao health antes do retry. Nenhum I/O ou spawn vive aqui.
+ */
+export async function runWithReserve<T>(
+  level: Level,
+  opts: RunOpts,
+  run: (opts: RunOpts, note?: string) => Promise<T>,
+  explicitEngine = false,
+): Promise<T> {
+  try {
+    return await run(opts);
+  } catch (err) {
+    const { primary, reserve } = TIERS[level];
+    if (explicitEngine || (opts.tool !== "delegate" && opts.tool !== "fan_out")
+      || opts.engine !== primary.engine || !(err instanceof QuotaError)
+      || err.kind !== "quota_exhausted" || err.engine !== primary.engine) throw err;
+    const note = `[note: ${primary.engine} quota exhausted — reran on reserve ${reserve.engine} ${reserve.model} ${reserve.effort}]`;
+    try {
+      return await run({ ...opts, engine: reserve.engine, model: reserve.model, effort: reserve.effort }, note);
+    } catch (reserveError) {
+      // Preserva classe/kind/engine para quem classifica a falha; só acrescenta o contexto do titular.
+      const failure = reserveError instanceof Error ? reserveError : new Error(String(reserveError));
+      failure.message = `${primary.engine} quota exhausted; reserve ${reserve.engine} failed: ${failure.message}`;
+      throw failure;
+    }
+  }
 }
 
 export interface DelegateResolution {
@@ -2227,7 +2274,8 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
   /**
    * Converte a falha crua em erro acionável quando a causa é cota/rate limit. Distinto de
    * isCodexEnvError de propósito: só a falha de AMBIENTE entra no FALLBACK_ENGINE_ORDER automático;
-   * cota nunca retenta sozinha — quem decide a troca (e gasta a próxima assinatura) é o usuário.
+   * cota não retenta neste boundary — quem decide a troca (e gasta a próxima assinatura) é o usuário.
+   * A exceção do dono em 2026-10-25 vive acima, em runWithReserve, só para delegate/fan_out por nível.
    */
   const asQuotaError = (err: unknown, failedEngine: Engine): unknown => {
     if (!(err instanceof ProcessError)) return err;

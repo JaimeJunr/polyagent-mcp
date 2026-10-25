@@ -171,7 +171,10 @@ and a fresh connection already lists tools on initialize.
 All three defaults use subscriptions (codex + claude), with AA quota proxies
 $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, AA 38),
 middle=GPT-6.1 Sol medium (codex, AA 48), high=Claude Opus 5.5 high (claude, AA 54).
-Decision and evidence: `research/2026-10-23-tres-niveis.md`. The five-level ladder made the host
+Reserves (owner decision 2026-10-25, `research/2026-10-25-reserva-por-nivel.md`):
+low → claude `claude-haiku-5-5` xhigh; middle → claude `claude-haiku-5-5` max;
+high → codex `gpt-6.1-sol` max. Each reserve uses the other subscription.
+Decision and evidence for primaries: `research/2026-10-23-tres-niveis.md`. The five-level ladder made the host
 keep choosing among the cheapest options; three names simplify that choice. Sol xhigh and Opus
 max are no longer delegate levels; explicit model/effort overrides and historical costs remain.
 
@@ -181,11 +184,14 @@ The alias `opus` still resolves to the old `claude-opus-5` — use the full id.
 **Custo:** high é caro e compartilha a assinatura Claude do host Claude Code. Low/middle dão
 conta da maior parte do trabalho, implementação inclusa. Escalar para high só depois de um nível
 barato falhar ou para raciocínio de fronteira/veredito caro. Codex concentra low/middle: cota
-esgotada nele derruba os dois. Claude concentra high e o host: cota esgotada afeta ambos juntos,
-enquanto low/middle continuam disponíveis. Grok continua fora da matriz padrão.
+esgotada nele afeta os dois titulares, que passam à reserva Claude. Claude concentra high e o
+host: cota esgotada afeta ambos juntos, enquanto high pode passar à reserva Codex.
+Grok continua fora da matriz padrão.
 `resolveTier(level, has, cursorEnabled)` uses the preferred healthy CLI when present. If it is
-missing or unhealthy, it falls back to the retained tier's legacy Cursor model only when
-`cursorEnabled` is true and Cursor is healthy; otherwise it throws naming the missing/unhealthy CLI.
+missing or unhealthy, it tries the level reserve when installed and healthy, recording the primary
+in `skipped`; then the retained tier's legacy Cursor model only when `cursorEnabled` is true and
+Cursor is installed and healthy. If all are unavailable, the error names primary and reserve with
+their causes.
 The Cursor ids were preserved from the retained tiers, without refreshing them.
 
 `fast_delegate` has no level. `resolveFastTier(has, cursorEnabled, health)` picks the first installed,
@@ -324,9 +330,15 @@ points, all in `cli.ts`:
   `cursor` under `CURSOR_ENABLED`), dropping the codex-specific `model`/`effort` and appending a
   `[note: codex unavailable ...]` suffix to the result. This is host-agnostic by design — it isn't an
   orca-specific patch, since any host that mismanages `CODEX_HOME` hits the same failure. Non-env
-  codex errors (auth, rate limit, bad prompt) are NOT retried — they propagate as-is.
-  Cota esgotada e rate limit continuam **sem retry automático** — só a falha de ambiente cai no
-  `FALLBACK_ENGINE_ORDER`. Mas não propagam mais crus: `classifyQuotaError({stdout, stderr,
+  codex errors (auth, rate limit, bad prompt) are NOT retried by `runCursor` — they propagate as-is.
+  Cota esgotada e rate limit continuam **sem retry automático no `runCursor`** — só a falha de
+  ambiente cai no `FALLBACK_ENGINE_ORDER`. Exceção aprovada pelo dono em 2026-10-25:
+  `delegate` sem `engine` explícita e cada worker de `fan_out` fazem um único rerun na reserva
+  do nível quando o titular lança `QuotaError` com `quota_exhausted`; nunca em `rate_limited`
+  ou outros erros. Mantêm prompt/opções, trocam engine/model/effort pelos da reserva e registram
+  ambas as tentativas (titular com outcome `quota`, reserva com `matchedRequest:false`).
+  A reserva não dispara outro retry; sucesso anexa a nota da troca, falha nomeia ambas as engines.
+  Mas não propagam mais crus: `classifyQuotaError({stdout, stderr,
   exitCode}, engine)` lê primeiro os campos JSON estruturados de **stdout** (é lá que o sinal vive) e
   só depois aplica regex sobre as mensagens extraídas, devolvendo `quota_exhausted` | `rate_limited`
   | `null`. `runCursor` converte o acerto em `QuotaError` com mensagem acionável — `quotaCandidates`

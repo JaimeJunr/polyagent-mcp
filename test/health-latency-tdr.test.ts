@@ -20,7 +20,9 @@ describe("regressão: latência sozinha nunca derruba uma engine abaixo do thres
     ];
     const health = computeEngineHealth(records, NOW, WINDOW, TIMEOUT);
     expect(resolveTier("high", all, false, health)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
-    expect(() => resolveTier("high", all, false, { codex: 1, claude: 0 })).toThrow(/claude.*unhealthy/);
+    expect(resolveTier("high", all, false, { codex: 1, claude: 0 })).toEqual({
+      engine: "codex", model: "gpt-6.1-sol", effort: "max", skipped: [{ engine: "claude", cause: "failures" }],
+    });
   });
 
   it("sucesso de 22min (topo da faixa real observada) continua saudável", () => {

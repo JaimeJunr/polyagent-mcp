@@ -115,7 +115,7 @@ describe("health-aware routing visibility", () => {
   it("names quota, local deadline and reset command in all blocked resolver errors", () => {
     const eligible = usage.healthLocalTime(NOW + WINDOW);
     for (const run of [
-      () => cli.resolveTier("low", () => true, false, state()),
+      () => cli.resolveTier("low", (e) => e !== "claude", false, state()),
       () => cli.resolveFastTier((e) => e === "codex", false, state()),
       () => cli.resolveReadTool("web_lookup", {}, {}, (e) => e === "codex", false, state(), true),
     ]) {
@@ -126,7 +126,7 @@ describe("health-aware routing visibility", () => {
   });
 
   it("reports a blocked Cursor fallback even when the primary CLI is missing", () => {
-    const run = () => cli.resolveTier("low", (e) => e !== "codex", true, report([record("quota", 0, "cursor")]));
+    const run = () => cli.resolveTier("low", (e) => e === "cursor", true, report([record("quota", 0, "cursor")]));
     expect(run).toThrow("cursor (quota");
     expect(run).toThrow(usage.healthLocalTime(NOW + WINDOW));
     expect(run).toThrow("bridge_stats reset_health");
@@ -135,7 +135,7 @@ describe("health-aware routing visibility", () => {
   it("names failures and timeouts separately in blocked routing errors", () => {
     for (const [outcome, cause] of [["failure", "failures"], ["timeout", "timeouts"]] as const) {
       const state = report([record(outcome)]);
-      const run = () => cli.resolveTier("low", () => true, false, state);
+      const run = () => cli.resolveTier("low", (e) => e !== "claude", false, state);
       expect(run).toThrow(cause);
       expect(run).toThrow(usage.healthLocalTime(NOW + WINDOW + 1));
       expect(run).toThrow("bridge_stats reset_health");

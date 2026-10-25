@@ -8,7 +8,7 @@ import { z } from "zod";
 import {
   runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote, denyNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
-  resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
+  resolveDelegate, runWithReserve, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
   lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS, engineSwitchLine,
   type SkippedEngine,
@@ -172,32 +172,38 @@ async function runFanOutWorker(
   level: Level,
   tier: { engine: Engine; model?: string; effort?: string; skipped?: SkippedEngine[] },
 ): Promise<{ level: Level; tier: typeof tier; res: CliResult }> {
-  const started = Date.now();
-  const receipt = { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) };
-  try {
-    const res = await runCursor({ prompt, cwd, engine: tier.engine, model: tier.model, effort: tier.effort, force: true, tool: "fan_out" });
-    const sessionId = res.sessionId
-      ? formatSessionHandle(res.engine ?? tier.engine, res.sessionId)
-      : undefined;
-    logUsage("fan_out", 0, receipt, {
-      engine: res.engine ?? tier.engine,
-      model: tier.model,
-      effort: tier.effort,
-      sessionId,
-      outcome: "success",
-      durationMs: Date.now() - started,
-    });
-    return { level, tier, res };
-  } catch (err) {
-    logUsage("fan_out", 0, receipt, {
-      engine: tier.engine,
-      model: tier.model,
-      effort: tier.effort,
-      outcome: classifyOutcome(err),
-      durationMs: Date.now() - started,
-    });
-    throw err;
-  }
+  return runWithReserve(level, {
+    prompt, cwd, engine: tier.engine, model: tier.model, effort: tier.effort, force: true, tool: "fan_out",
+  }, async (opts, note) => {
+    const attempt = { ...tier, engine: opts.engine!, model: opts.model, effort: opts.effort };
+    const started = Date.now();
+    const receipt = { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, attempt.engine) };
+    try {
+      const output = await runCursor(opts);
+      const res = note ? { ...output, text: `${output.text}\n${note}` } : output;
+      const sessionId = res.sessionId
+        ? formatSessionHandle(res.engine ?? attempt.engine, res.sessionId)
+        : undefined;
+      logUsage("fan_out", 0, receipt, {
+        engine: res.engine ?? attempt.engine,
+        model: attempt.model,
+        effort: attempt.effort,
+        sessionId,
+        outcome: "success",
+        durationMs: Date.now() - started,
+      });
+      return { level, tier: attempt, res };
+    } catch (err) {
+      logUsage("fan_out", 0, receipt, {
+        engine: attempt.engine,
+        model: attempt.model,
+        effort: attempt.effort,
+        outcome: classifyOutcome(err),
+        durationMs: Date.now() - started,
+      });
+      throw err;
+    }
+  });
 }
 
 server.registerTool(
@@ -240,29 +246,32 @@ server.registerTool(
     // Resolve o agent no host (fora do sandbox): a persona vira string injetada por engine. O `model`
     // do frontmatter é advisory — o `model` explícito e o do tier vencem.
     const resolved = agent ? resolveAgent(agent, cwd ?? process.cwd()) : undefined;
-    const work = () => formatRun(
+    // O helper envolve formatRun por tentativa: a cota do titular fica registrada e a reserva
+    // ganha seu próprio receipt, sem logar de novo a mesma falha fora do helper.
+    const work = () => runWithReserve(level, {
+      prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote() + denyNote(deny),
+      cwd,
+      engine: tier.engine,
+      model: tier.model,
+      effort: tier.effort,
+      agentPrompt: withTerseStyle(resolved?.prompt),
+      roBinds: resolved?.mountRo ? [resolved.mountRo] : undefined,
+      deny,
+      force: true,
+      timeoutMs: timeout_ms,
+      tool: "delegate",
+    }, (opts, note) => formatRun(
       "delegate",
-      tier.engine,
+      opts.engine!,
       async () => {
-        const res = await runCursor({
-          prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote() + denyNote(deny),
-          cwd,
-          engine: tier.engine,
-          model: tier.model,
-          effort: tier.effort,
-          agentPrompt: withTerseStyle(resolved?.prompt),
-          roBinds: resolved?.mountRo ? [resolved.mountRo] : undefined,
-          deny,
-          force: true,
-          timeoutMs: timeout_ms,
-          tool: "delegate",
-        });
-        return { ...res, text: appendDelegateRiskHint(res.text, level) };
+        const res = await runCursor(opts);
+        const text = appendDelegateRiskHint(res.text, level);
+        return { ...res, text: note ? `${text}\n${note}` : text };
       },
-      { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
-      { model: tier.model, effort: tier.effort },
+      { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, opts.engine!) },
+      { model: opts.model, effort: opts.effort },
       tier.skipped,
-    );
+    ), engineParam !== undefined);
     const verified = verifyingWorker(work, prompt);
     return JEV_SHADOW_ENABLED
       ? withDelegateShadow(verified, prompt, level, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
