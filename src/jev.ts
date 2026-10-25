@@ -231,6 +231,7 @@ export function parseJevResponse(json: unknown, questions: JevQuestions): JevRes
 export function resolveOpenRouterKey(
   env: Readonly<Record<string, string | undefined>>,
   readFile: JevReadFile,
+  readKeyring?: () => string | undefined,
 ): string {
   if (env.OPENROUTER_API_KEY) return env.OPENROUTER_API_KEY;
 
@@ -246,8 +247,13 @@ export function resolveOpenRouterKey(
     // A chave ausente, um arquivo inexistente ou JSON inválido têm a mesma instrução acionável.
   }
 
+  // Por último: o chaveiro do sistema exige spawn, então só quando env e arquivo não têm a chave.
+  const fromKeyring = readKeyring?.();
+  if (fromKeyring) return fromKeyring;
+
   throw new Error(
-    "OpenRouter key missing: set OPENROUTER_API_KEY or add .openrouter.key to ~/.local/share/opencode/auth.json.",
+    "OpenRouter key missing: set OPENROUTER_API_KEY, add .openrouter.key to ~/.local/share/opencode/auth.json, "
+      + "or store it in the system keyring with the secret-request skill (--keyring openrouter --env OPENROUTER_API_KEY).",
   );
 }
 

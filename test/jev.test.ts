@@ -131,6 +131,44 @@ describe("resolveOpenRouterKey", () => {
     expect(pathRead).toBe("/home/test/.local/share/opencode/auth.json");
   });
 
+  it("falls back to the system keyring after env and auth.json", () => {
+    let asked = 0;
+    const key = resolveOpenRouterKey(
+      { HOME: "/home/test" },
+      () => {
+        throw new Error("ENOENT");
+      },
+      () => {
+        asked++;
+        return "keyring-key";
+      },
+    );
+    expect(key).toBe("keyring-key");
+    expect(asked).toBe(1);
+  });
+
+  it("does not touch the keyring when env or auth.json has the key", () => {
+    const keyring = () => {
+      throw new Error("must not read the keyring");
+    };
+    expect(resolveOpenRouterKey({ OPENROUTER_API_KEY: "env-key" }, () => "{}", keyring)).toBe("env-key");
+    expect(resolveOpenRouterKey(
+      { HOME: "/home/test" },
+      () => JSON.stringify({ openrouter: { key: "file-key" } }),
+      keyring,
+    )).toBe("file-key");
+  });
+
+  it("names the keyring option when every source is empty", () => {
+    expect(() => resolveOpenRouterKey(
+      { HOME: "/home/test" },
+      () => {
+        throw new Error("ENOENT");
+      },
+      () => undefined,
+    )).toThrow(/keyring/);
+  });
+
   it("explains both key options when neither is available", () => {
     expect(() => resolveOpenRouterKey(
       { HOME: "/home/test" },

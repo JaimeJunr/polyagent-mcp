@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
@@ -1722,6 +1722,24 @@ export function parseOutput(engine: Engine, raw: string): CliResult {
 }
 
 /** true se `bin` é um path existente ou um nome encontrável no PATH. */
+// Atributos com que a skill `secret-request --keyring openrouter` grava a chave (keyring_store.py):
+// o servidor lê o mesmo item, então a chave colada uma vez no formulário serve aos dois.
+export const OPENROUTER_KEYRING_ATTRS = [
+  "service", "ivt-secret-request", "ns", "openrouter", "env", "OPENROUTER_API_KEY",
+] as const;
+// Chaveiro trancado abre prompt de destravar; sem ninguém olhando, desiste rápido e cai no fallback.
+const KEYRING_TIMEOUT_MS = 5_000;
+
+/** `secret-tool lookup <attrs>`; `undefined` em item ausente, saída vazia, erro ou timeout. */
+export function lookupKeyringSecret(attrs: readonly string[], bin = "secret-tool"): string | undefined {
+  const proc = spawnSync(bin, ["lookup", ...attrs], {
+    encoding: "utf8", timeout: KEYRING_TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (proc.error || proc.status !== 0) return undefined;
+  const value = proc.stdout.trim();
+  return value || undefined;
+}
+
 export function binExists(bin: string): boolean {
   if (bin.includes("/")) return existsSync(bin);
   for (const dir of (process.env.PATH ?? "").split(":")) {
