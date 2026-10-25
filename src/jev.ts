@@ -9,7 +9,9 @@ export function resolveJevModel(env: NodeJS.ProcessEnv): string {
 }
 export const JEV_MODEL = resolveJevModel(process.env);
 export const JEV_URL = process.env.POLYAGENT_JEV_URL || "https://openrouter.ai/api/v1/systemone";
-const jevEnabled = (value: string | undefined): boolean => /^(1|true|on)$/i.test(value ?? "");
+// Ligadas por padrão (2026-10-24): o dono é o único usuário do MCP e flag desligada fica esquecida.
+// Desliga com 0/false/off/no; sem chave do OpenRouter cada caminho cai no fallback de sempre.
+const jevEnabled = (value: string | undefined): boolean => !/^(0|false|off|no)$/i.test(value?.trim() ?? "");
 const fanOutThresholdEnv = process.env.POLYAGENT_JEV_FANOUT_THRESHOLD;
 const fanOutThreshold = Number(fanOutThresholdEnv);
 export const JEV_FANOUT_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_FANOUT);

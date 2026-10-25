@@ -228,11 +228,13 @@ skips at 0.85), shadow exact 24/25 vs 19/25 for `typesafe/jev-1.13`. Trade-offs:
 32K) and the OpenRouter `:free` limit (20 req/min, 50/day; 1000/day with ≥ US$10 credit) — a
 429 is just a Jev error, so the existing fallbacks apply. `POLYAGENT_JEV_MODEL=typesafe/jev-1.13`
 brings back the pay-per-token Jev. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
-Two internal uses are off by default. `POLYAGENT_JEV_FANOUT=1` asks Jev whether at least two
+Three internal uses are **on by default** since 2026-10-24 (the owner is the only MCP user and an
+opt-in flag gets forgotten); `0`/`false`/`off`/`no` disables each. Without an OpenRouter key every
+call fails fast and takes the existing fallback. `POLYAGENT_JEV_FANOUT` asks Jev whether at least two
 successful `fan_out` consensus workers substantially agree; probability at or above
 `POLYAGENT_JEV_FANOUT_THRESHOLD` (default 0.85) returns the first successful output and worker
 session handles without the Codex arbiter. A low probability, malformed answer, missing key, or
-Jev error or a 5-second timeout runs the existing arbiter. `POLYAGENT_JEV_SHADOW=1` asks Jev for a `delegate` level in
+Jev error or a 5-second timeout runs the existing arbiter. `POLYAGENT_JEV_SHADOW` asks Jev for a `delegate` level in
 parallel after starting the worker; it records the suggestion but never changes the requested
 level, and waits at most 5 seconds after the worker finishes. The same Jev call also carries three
 noul prompt-clarity criteria (`names_target`, `defines_done`, `single_task`, from the Jev prompt-gate
@@ -240,8 +242,8 @@ idea): a second record, `delegate_prompt_clarity_shadow`, is `clear` only when e
 ≥ 0.5 and stores per-criterion `probabilities`. Both shadow records carry the worker handle in
 `decision.session` (read from the `format()` footer) — never in the top-level `sessionId`, which
 would steal the `ratingStats` join from the worker's own entry. `askJev` rejects a response missing
-any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. `POLYAGENT_JEV_VERIFY=1`
-(off by default) runs `withDelegateVerify` around `delegate` and `fast_delegate`: after a successful
+any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. `POLYAGENT_JEV_VERIFY`
+runs `withDelegateVerify` around `delegate` and `fast_delegate`: after a successful
 worker result it asks four noul questions (`claims_success`, `reports_denominator`,
 `evidence_shown`, `addresses_task`) over the scrubbed prompt plus the head+tail-clipped result, and
 logs `delegate_result_verify_shadow` (`supported`/`unsupported`/`no_claim`, with `session`). It is
@@ -256,7 +258,7 @@ strings and use bounded task/output
 text and `logDecision` in `src/usage.ts`: JSONL entries have `tool:"decide"`, `engine:"jev"`,
 zero returned chars, and a `decision` object with candidates, choice, confidence, acceptance,
 fallback, latency, optional cost, and the requested level for shadow. With the free default the
-calls cost nothing but spend the daily `:free` quota; enable these flags deliberately. `src/jevDecisions.ts` keeps request/verdict logic pure
+calls cost nothing but spend the daily `:free` quota (about two calls per `delegate`: shadow + verify). `src/jevDecisions.ts` keeps request/verdict logic pure
 and injects Jev/log dependencies for orchestration tests.
 
 ### The sandbox (default-on, mandatory for ALL engines, in `cli.ts`)

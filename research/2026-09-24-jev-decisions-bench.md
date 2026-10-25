@@ -92,3 +92,7 @@ com `decision.session` para cruzar com `rate`. Smoke no Jev real: prompt vago 0,
 (unclear), três tarefas misturadas 0,53/0,21/0,11 (unclear), prompt com arquivo e teste
 0,99/0,98/0,97 (clear); ~0,5 s e US$ 0,00002 por chamada. Reavaliar: prompts `unclear` têm nota
 `rate` menor? Só com essa correlação considerar avisar ou bloquear antes do worker.
+
+**Ligadas por padrão (2026-10-24):** a pedido do dono, as três flags (`FANOUT`, `SHADOW`, `VERIFY`)
+viraram opt-out, com o Elephant 1 como modelo. O bench de 2026-10-24 manteve 0 false skip a 0,85 no
+gate do `fan_out` (`2026-10-24-modelos-decisao-gratis.md`).
