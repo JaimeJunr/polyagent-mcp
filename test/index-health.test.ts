@@ -157,3 +157,48 @@ describe("reserve retry through registered handlers", () => {
     }
   });
 });
+
+describe("codex environment fallback usage through registered handlers", () => {
+  const fallbackFrom = { engine: "codex" as const, cause: "read-only file system", stderr: "Read-only file system", durationMs: 7 };
+  beforeEach(() => { writeFileSync(log, ""); });
+
+  it.each([
+    ["delegate", { prompt: "task", level: "low" }],
+    ["web_lookup", { query: "documentation" }],
+    ["follow_up", { session_id: "codex:old", question: "continue" }],
+  ])("%s logs codex failure once without stealing the fallback session rating", async (name, args) => {
+    run.mockResolvedValueOnce({ text: "ok", engine: "claude", sessionId: "retry-session", fallbackFrom } as any);
+    expect(await call(name as string, args as any)).toContain("session_id: claude:retry-session");
+    const entries = readUsage();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ engine: "codex", outcome: "failure", outChars: 0, error: "Read-only file system", durationMs: 7 });
+    expect(entries[0]).not.toHaveProperty("sessionId");
+    expect(entries[1]).toMatchObject({ engine: "claude", outcome: "success", sessionId: "claude:retry-session" });
+    expect(entries[1]).not.toHaveProperty("model");
+    expect(engineHealthReport(entries, Date.now()).codex).toMatchObject({ score: 0, cause: "failures" });
+    expect(await call("bridge_stats")).toContain("codex | 0.00 | failures |");
+    const { aggregate, ratingStats } = await import("../src/usage.js");
+    expect(aggregate(entries)[name as string].calls).toBe(2);
+    expect(ratingStats([...entries, { ts: Date.now(), tool: "rate", outChars: 0, ratedSessionId: "claude:retry-session", score: 5 }])[`claude|-|-|${name}`].calls).toBe(1);
+  });
+
+  it("logs both failures against their actual engines when the retry also fails", async () => {
+    const error = Object.assign(new Error("claude agent exited 1: retry failed"), { engine: "claude", fallbackFrom });
+    run.mockRejectedValueOnce(error);
+    await expect(call("delegate", { prompt: "task", level: "low" })).rejects.toBe(error);
+    expect(run.mock.calls).toHaveLength(1);
+    expect(readUsage()).toMatchObject([
+      { engine: "codex", outcome: "failure", error: "Read-only file system" },
+      { engine: "claude", outcome: "failure" },
+    ]);
+    expect(readUsage()).toHaveLength(2);
+  });
+
+  it("fan_out logs each codex attempt once even when its result is formatted again", async () => {
+    run.mockResolvedValueOnce({ text: "ok", engine: "grok", sessionId: "retry-session", fallbackFrom } as any);
+    await call("fan_out", { prompt: "task", levels: ["low", "middle"], mode: "race" });
+    await vi.waitFor(() => expect(readUsage().filter((e) => e.outcome)).toHaveLength(3));
+    expect(run.mock.calls).toHaveLength(2);
+    expect(readUsage().filter((e) => e.engine === "codex" && e.outcome === "failure")).toHaveLength(1);
+  });
+});

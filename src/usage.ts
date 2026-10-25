@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { scrubSecrets } from "./scrub.js";
 import type { Level } from "./cli.js";
 import { estimateCostPerTask } from "./costs.js";
 
@@ -63,6 +64,8 @@ export interface UsageEntry {
   outcome?: "success" | "failure" | "timeout" | "quota" | "reset";
   /** Duração do run em ms. Usado por computeEngineHealth para penalizar latência alta. */
   durationMs?: number;
+  /** Diagnóstico opcional redigido e limitado a 500 caracteres. */
+  error?: string;
   /** Handle avaliado por um registro com tool="rate". */
   ratedSessionId?: string;
   /** Nota inteira de 1 a 5 de um registro com tool="rate". */
@@ -92,6 +95,8 @@ export interface UsageRun {
   sessionId?: string;
   outcome?: UsageEntry["outcome"];
   durationMs?: number;
+  /** Diagnóstico opcional redigido e limitado a 500 caracteres. */
+  error?: string;
 }
 
 /**
@@ -109,14 +114,17 @@ export function classifyOutcome(error: unknown): "failure" | "timeout" | "quota"
 
 /** Monta o UsageEntry. Função pura — separada de logUsage para ser testável sem tocar o filesystem. */
 export function buildUsageEntry(tool: string, outChars: number, tier?: TierReceipt, run?: UsageRun): UsageEntry {
-  return { ts: Date.now(), tool, outChars, ...tier, ...run };
+  return {
+    ts: Date.now(), tool, outChars, ...tier, ...run,
+    ...(run?.error !== undefined ? { error: scrubSecrets(run.error).text.slice(-500) } : {}),
+  };
 }
 
 /** Registra uma chamada no JSONL. No-op se POLYAGENT_LOG não estiver setada. */
 export function logUsage(tool: string, outChars: number, tier?: TierReceipt, run?: UsageRun): void {
   if (!USAGE_LOG) return;
-  const entry = buildUsageEntry(tool, outChars, tier, run);
   try {
+    const entry = buildUsageEntry(tool, outChars, tier, run);
     appendFileSync(USAGE_LOG, JSON.stringify(entry) + "\n");
   } catch {
     // logging é best-effort; nunca derruba a chamada real.

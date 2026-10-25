@@ -6,13 +6,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote, denyNote,
+  runCursor as runCli, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote, denyNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, runWithReserve, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
   lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS, engineSwitchLine,
   type SkippedEngine,
-  type CliResult, type Engine, type Level,
+  type CliResult, type Engine, type Level, type RunOpts, type FallbackFailure,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
 import {
@@ -97,6 +97,34 @@ const denySchema = z.array(z.string());
 const denyDescription =
   "Commands to block inside the worker's sandbox: a command plus the args that identify it, e.g. ['git push', 'rm', 'make db-up', 'npx prisma migrate', 'python manage.py migrate', 'docker compose down']. Outside git the args match as an ordered subsequence of the call's tokens (so `make -j4 db-up` and `docker compose -f x.yml down` are caught; `db-up2` is not); git matches the subcommand after its global options. Only commands on PATH are caught, not scripts run by path (`bin/rails`, `./manage.py`) nor indirect runs (`npm run migrate`). A matching call fails with exit 126 and the worker is told up front. A guardrail against accidents, not a security boundary (the worker could still reach the binary some other way). Requires the bwrap sandbox: refused when POLYAGENT_SANDBOX=off.";
 
+/** Registra a tentativa codex uma única vez, inclusive quando o retry também falha. */
+async function runCursor(opts: RunOpts): Promise<CliResult> {
+  try {
+    const result = await runCli(opts);
+    logFallbackAttempt(opts, result.fallbackFrom);
+    return result;
+  } catch (err) {
+    logFallbackAttempt(opts, (err as Partial<FallbackFailure> | null)?.fallbackFrom);
+    throw err;
+  }
+}
+
+function logFallbackAttempt(opts: RunOpts, attempt: CliResult["fallbackFrom"]): void {
+  if (!attempt) return;
+  // Sem sessionId: o join de rate pertence exclusivamente à engine que respondeu.
+  logUsage(opts.tool ?? "delegate", 0, undefined, {
+    engine: attempt.engine, outcome: "failure", durationMs: attempt.durationMs,
+    model: opts.model, effort: opts.effort, error: attempt.stderr,
+  });
+}
+
+/** Modelo/esforço do codex não descrevem o default usado pela engine do retry. */
+function actualRunMetadata(
+  engine: Engine, actual: Engine | undefined, metadata?: Pick<UsageRun, "model" | "effort">,
+): UsageRun {
+  return actual && actual !== engine ? { engine: actual } : { model: metadata?.model, effort: metadata?.effort, engine };
+}
+
 /**
  * Formata o resultado do Cursor: passa o texto pelo egress scrubber (scrubSecrets) antes do footer
  * de session_id, loga os chars devolvidos ao contexto (custo real) e — quando algo foi redigido —
@@ -120,7 +148,10 @@ function format(
   const selectedEngine = res.engine ?? run?.engine;
   const switchLine = selectedEngine ? engineSwitchLine(selectedEngine as Engine, skipped) : "";
   const text = scrubbed + (switchLine ? `\n${switchLine}` : "") + footer;
-  const usageRun = sessionHandle ? { ...run, sessionId: sessionHandle } : run;
+  const actualRun = res.fallbackFrom
+    ? { ...(run ?? { outcome: "success" as const }), engine: res.engine, model: undefined, effort: undefined }
+    : run;
+  const usageRun = sessionHandle ? { ...actualRun, sessionId: sessionHandle } : actualRun;
   logUsage(tool, text.length, tier, usageRun);
   if (redacted) logUsage("blocked_exfil", text.length);
   return { content: [{ type: "text", text }] };
@@ -149,17 +180,15 @@ async function formatRun(
   try {
     const res = await work();
     return format(tool, res, receipt, {
-      ...metadata,
-      engine: res.engine ?? engine,
+      ...actualRunMetadata(engine, res.engine, metadata),
       outcome: "success",
-      durationMs: Date.now() - started,
+      durationMs: Date.now() - started - (res.fallbackFrom?.durationMs ?? 0),
     }, skipped);
   } catch (err) {
     logUsage(tool, 0, receipt, {
-      ...metadata,
-      engine,
+      ...actualRunMetadata(engine, (err as Partial<FallbackFailure> | null)?.engine, metadata),
       outcome: classifyOutcome(err),
-      durationMs: Date.now() - started,
+      durationMs: Date.now() - started - ((err as Partial<FallbackFailure> | null)?.fallbackFrom?.durationMs ?? 0),
     });
     throw err;
   }
@@ -185,9 +214,7 @@ async function runFanOutWorker(
         ? formatSessionHandle(res.engine ?? attempt.engine, res.sessionId)
         : undefined;
       logUsage("fan_out", 0, receipt, {
-        engine: res.engine ?? attempt.engine,
-        model: attempt.model,
-        effort: attempt.effort,
+        ...actualRunMetadata(attempt.engine, res.engine, attempt),
         sessionId,
         outcome: "success",
         durationMs: Date.now() - started,
@@ -195,9 +222,7 @@ async function runFanOutWorker(
       return { level, tier: attempt, res };
     } catch (err) {
       logUsage("fan_out", 0, receipt, {
-        engine: attempt.engine,
-        model: attempt.model,
-        effort: attempt.effort,
+        ...actualRunMetadata(attempt.engine, (err as Partial<FallbackFailure> | null)?.engine, attempt),
         outcome: classifyOutcome(err),
         durationMs: Date.now() - started,
       });
@@ -577,8 +602,7 @@ server.registerTool(
           });
         } catch (err) {
           logUsage("fan_out", 0, undefined, {
-            engine: arbiterTier.engine,
-            model: arbiterTier.model,
+            ...actualRunMetadata(arbiterTier.engine, (err as Partial<FallbackFailure> | null)?.engine, arbiterTier),
             outcome: classifyOutcome(err),
             durationMs: Date.now() - arbiterStarted,
           });

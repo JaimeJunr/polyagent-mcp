@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   aggregate,
   buildDecisionEntry,
@@ -457,5 +457,33 @@ describe("named level receipts", () => {
   it("keeps fast_delegate's neutral receipt", () => {
     expect(buildUsageEntry("fast_delegate", 10, { requestedLevel: 0, matchedRequest: true }))
       .toMatchObject({ requestedLevel: 0, matchedRequest: true });
+  });
+});
+
+
+describe("usage error diagnostics", () => {
+  it("scrubs credentials before clipping error diagnostics to 500 characters", () => {
+    const entry = buildUsageEntry("delegate", 0, undefined, {
+      engine: "codex", outcome: "failure", error: `Read-only file system sk-${"a".repeat(600)} ${"detail ".repeat(100)}`,
+    });
+    expect(entry.error).toHaveLength(500);
+    expect(entry.error).not.toContain("a".repeat(20));
+    const short = buildUsageEntry("delegate", 0, undefined, { error: `Read-only file system sk-${"b".repeat(30)}` });
+    expect(short.error).toBe("Read-only file system [REDACTED]");
+  });
+
+  it("omits diagnostics when none are supplied", () => {
+    expect(buildUsageEntry("explore", 1, undefined, { engine: "claude" })).not.toHaveProperty("error");
+  });
+
+  it("keeps logging non-throwing for disabled and unwritable paths", async () => {
+    for (const path of ["", "/dev/null/usage.jsonl"]) {
+      vi.stubEnv("POLYAGENT_LOG", path);
+      vi.resetModules();
+      const { logUsage } = await import("../src/usage.js");
+      expect(() => logUsage("delegate", 0, undefined, { engine: "codex", error: "Read-only file system" })).not.toThrow();
+    }
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });

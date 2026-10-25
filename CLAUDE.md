@@ -323,14 +323,19 @@ points, all in `cli.ts`:
   adds `process.env.CODEX_HOME` to `homeRw` for the codex engine whenever it's set and the directory
   exists. Even so, treat any codex environment failure as possibly host-specific and recoverable: see
   `isCodexEnvError`/`FALLBACK_ENGINE_ORDER` below.
-- **`isCodexEnvError(stderr)` + `FALLBACK_ENGINE_ORDER` retry codex failures on another engine.**
-  `runCursor` catches a codex exit whose stderr matches `isCodexEnvError` (CODEX_HOME pointing at a
-  deleted directory, or the in-process app-server failing to init on a read-only path) and retries the
-  *same prompt* once on the next available engine in `FALLBACK_ENGINE_ORDER` (`grok` → `claude`, plus
-  `cursor` under `CURSOR_ENABLED`), dropping the codex-specific `model`/`effort` and appending a
-  `[note: codex unavailable ...]` suffix to the result. This is host-agnostic by design — it isn't an
-  orca-specific patch, since any host that mismanages `CODEX_HOME` hits the same failure. Non-env
-  codex errors (auth, rate limit, bad prompt) are NOT retried by `runCursor` — they propagate as-is.
+- **`isCodexEnvError(stderr)` + `FALLBACK_ENGINE_ORDER` recuperam falhas de ambiente do codex.**
+  `runCursor` retenta o mesmo prompt uma única vez na primeira engine instalada e compatível
+  (`grok` → `claude`, mais `cursor` sob `CURSOR_ENABLED`), descartando model/effort do codex.
+  `codexFallbackCandidates` filtra `explore`/`read_slice`/`web_lookup` por `meetsAuxRequirements`:
+  busca web só pode cair no Claude; sem sandbox nenhuma alternativa preserva read-only, então
+  relança o erro original. Nessas três tools, `fallbackOpts` preserva `mode` e o workspace RO.
+  A nota usa `codexEnvCause` para distinguir CODEX_HOME ausente, filesystem read-only e falha do
+  app-server, com trecho de stderr em uma linha (até 200 caracteres), redigido antes do corte.
+  `fallbackFrom` carrega causa, stderr redigido (até 500 caracteres) e duração, inclusive quando
+  o retry falha. O boundary de chamada em `index.ts` grava a tentativa codex uma única vez com
+  `outcome: "failure"` e `error`, sem `sessionId` para preservar o join de `ratingStats`; assim
+  o health aprende a falha. A tentativa seguinte pertence à engine efetiva. `logUsage` segue
+  best-effort, nunca lança. Erros codex fora de ambiente não disparam esse retry.
   Cota esgotada e rate limit continuam **sem retry automático no `runCursor`** — só a falha de
   ambiente cai no `FALLBACK_ENGINE_ORDER`. Exceção aprovada pelo dono em 2026-10-25:
   `delegate` sem `engine` explícita e cada worker de `fan_out` fazem um único rerun na reserva
@@ -347,8 +352,8 @@ points, all in `cli.ts`:
   forma da sugestão pela superfície da tool: `engine:"<x>"` nas quatro auxiliares, `level:"<name>"` (menor
   nível cuja engine primária sobrou) no `delegate`, nenhuma em `fast_delegate`/`fan_out`, a lista
   restrita a codex/grok em `generate_image` (as duas com tool de imagem própria), e "presa à sessão"
-  em `follow_up`. É por isso que `RunOpts.tool` existe: ela não
-  muda a execução, só a forma do erro. `rate_limited` pede espera e **nunca** sugere troca de engine.
+  em `follow_up`. `RunOpts.tool` também restringe o fallback de ambiente, além de definir a
+  forma do erro. `rate_limited` pede espera e **nunca** sugere troca de engine.
   Um padrão que não casa devolve `null` e a falha propaga crua — classificar errado é pior que não
   classificar: o `ralph.sh` tratou `OAuth session expired` como cota e mascarou um bug do bridge que
   queimava a credencial do usuário (ADENDO 3 do spike). Fonte dos padrões, com origem e confiança
