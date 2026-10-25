@@ -364,9 +364,12 @@ points, all in `cli.ts`:
 - **`buildSandboxArgs(spec)` is pure and unit-tested** (like `buildCursorArgs`). Bind order is
   load-bearing: `isoHome` mounts the empty `$HOME` **before** the HOME-subpath overlays (auth/
   toolchain), and the `workspace` bind is **last**, salvo a exceção RO abaixo.
-  Exceção (2026-10-25): após um workspace RO, os binds RW com destino descendente estrito
-  dele são repetidos na ordem original; isso preserva o estado gravável da engine e evita
-  `could not create PATH aliases: Read-only file system (os error 30)` quando cwd=$HOME.
+  Exceção (2026-10-25): após um workspace RO, todo mount (RO, RW e `--tmpfs`) com destino
+  descendente estrito dele é repetido na ordem original, menos `systemRo`. Isso preserva o
+  estado gravável da engine (`could not create PATH aliases: Read-only file system (os error 30)`
+  com cwd=$HOME) e, com cwd=`/` ou `/home`, recoloca os overlays RO depois do isoHome repetido
+  (só os RW deixavam `~/.local` de fora: `bwrap: execvp codex: No such file or directory`).
+  `systemRo` não se repete: sob `/` RO já aparece igual, e repetir aborta onde `/bin` é symlink.
   `buildSandboxSpec(workspace,
   engine)` is the impure half (mkdtemp + `existsSync` probing) — keep the fs/tmp side effects there.
 - **Binário da engine fora dos binds padrão:** `buildSandboxSpec` resolve o primeiro executável

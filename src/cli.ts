@@ -540,14 +540,18 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   args.push(spec.workspaceRo ? "--ro-bind" : "--bind", spec.workspace, spec.workspace);
   if (spec.workspaceRo) {
     const workspace = spec.workspace.replace(/\/+$/, "");
-    for (let i = 0; i < workspaceBindAt; i++) {
-      if (args[i] !== "--bind") continue;
-      const destination = args[i + 2].replace(/\/+$/, "");
+    // systemRo abre os args e não é repetido: sob um "/" RO ele já aparece igual ao host, e
+    // repetir quebra o bwrap onde /bin é symlink ("Can't mount on symlink destination /bin").
+    for (let i = spec.systemRo.length * 3; i < workspaceBindAt; i++) {
+      const width = args[i] === "--tmpfs" ? 2 : args[i] === "--bind" || args[i] === "--ro-bind" ? 3 : 0;
+      if (!width) continue;
+      const destination = args[i + width - 1].replace(/\/+$/, "");
+      // Repete TODO mount interno (RO, RW e tmpfs), não só os RW: com cwd=/ ou /home o isoHome
+      // é interno e, sem os overlays RO depois dele, ~/.local some ("execvp codex: No such file").
       // Só descendente estrito: repetir um destino igual ao workspace (isoHome em cwd=$HOME,
       // tmpDir em cwd=/tmp) trocaria o workspace RO inteiro por um dir vazio e gravável.
-      if (destination.startsWith(`${workspace}/`)) {
-        args.push(...args.slice(i, i + 3));
-      }
+      if (destination.startsWith(`${workspace}/`)) args.push(...args.slice(i, i + width));
+      i += width - 1;
     }
   }
   args.push(

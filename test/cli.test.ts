@@ -407,13 +407,14 @@ describe("buildSandboxArgs", () => {
     ]);
   });
 
-  it("restaura overlays HOME e extras RW contidos no workspace RO na ordem original", () => {
+  it("restaura overlays HOME (RO e RW) e extras contidos no workspace RO na ordem original", () => {
     const homeRw = ["/home/u/.codex", "/home/u/.config/orca/account/home", "/home/u/.claude/.credentials.json"];
     const extraBinds = ["/home/u/extra", "/mnt/outside", "/home/u/extra/nested"];
     const args = buildSandboxArgs({ ...spec, workspace: spec.home, workspaceRo: true, homeRw, extraBinds });
     const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
-    expect(binds.slice(-6)).toEqual([
+    expect(binds.slice(-8)).toEqual([
       ["--ro-bind", spec.home, spec.home],
+      ...spec.homeRo.map((p) => ["--ro-bind", p, p]),
       ...homeRw.map((p) => ["--bind", p, p]),
       ...[extraBinds[0], extraBinds[2]].map((p) => ["--bind", p, p]),
     ]);
@@ -427,7 +428,25 @@ describe("buildSandboxArgs", () => {
   ])("não repete o bind $label cujo destino é o próprio workspace RO", ({ workspace }) => {
     const args = buildSandboxArgs({ ...spec, home: "/home/u", tmpDir: "/isolated/tmp", workspace, workspaceRo: true, homeRw: [], extraBinds: [] });
     const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
-    expect(binds.at(-1)).toEqual(["--ro-bind", workspace, workspace]);
+    const at = binds.findIndex((b) => b[0] === "--ro-bind" && b[1] === workspace);
+    const norm = (p: string) => p.replace(/\/+$/, "");
+    expect(binds.slice(at + 1).filter((b) => norm(b[2]) === norm(workspace))).toEqual([]);
+  });
+
+  // 2026-10-25: com cwd=/ ou /home, repetir só os binds RW recriava o isoHome vazio por cima
+  // do HOME sem os overlays RO (~/.local) e o codex sumia: "bwrap: execvp codex: No such file".
+  it.each(["/", "/home", "/home/"])("repete todos os mounts internos, na ordem, após workspace RO ancestral do HOME (%s)", (workspace) => {
+    const args = buildSandboxArgs({ ...spec, workspace, workspaceRo: true });
+    const at = args.findIndex((arg, i) => arg === "--ro-bind" && args[i + 1] === workspace) + 2;
+    const replay = args.slice(at + 1, args.indexOf("--setenv"));
+    const isoAt = replay.indexOf(spec.isoHome);
+    expect(isoAt).toBeGreaterThan(0);
+    expect(replay.indexOf("/home/u/.local")).toBeGreaterThan(isoAt);
+    expect(replay.indexOf("/home/u/.gradle")).toBeGreaterThan(isoAt);
+    if (workspace === "/") expect(replay.join(" ")).toContain("--tmpfs /run");
+    // systemRo já aparece igual sob o "/" RO; repetir quebra o bwrap onde /bin é symlink
+    // ("Can't mount on symlink destination /bin", medido em 2026-10-25).
+    for (const p of spec.systemRo) expect(replay).not.toContain(p);
   });
 
   it("mantém o workspace read-write quando workspaceRo é false", () => {
