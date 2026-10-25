@@ -40,6 +40,11 @@ describe("renderPolyagentSkill", () => {
 });
 
 describe("syncSkill", () => {
+  it("mostra o level como string JSON entre aspas", () => {
+    expect(SKILL).toContain('{"level": "<name>"}');
+    for (const l of ["low", "middle", "high"]) expect(SKILL).toContain(`\`"${l}"\``);
+  });
+
   it("install creates the skill file under <root>/polyagent/SKILL.md", () => {
     const fs = new FakeSkillFs();
     expect(syncSkill(ROOT, "install", SKILL, fs).action).toBe("created");

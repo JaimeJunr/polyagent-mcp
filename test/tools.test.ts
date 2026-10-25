@@ -51,6 +51,14 @@ describe("tool surface (US-003)", () => {
     );
   });
 
+  it("a descrição do param level manda passar o nome como string JSON entre aspas", () => {
+    // host mandou {"level": middle} sem aspas várias vezes: JSON inválido, recusado antes de chegar ao server
+    const desc = indexSrc.match(/level: z\.enum\(LEVELS\)\s*\.describe\("((?:[^"\\]|\\.)*)"/)?.[1] ?? "";
+    expect(desc).toContain('{\\"level\\": \\"<name>\\"}');
+    for (const l of ["low", "middle", "high"]) expect(desc).toContain(`\\"${l}\\"`);
+    expect(desc).toMatch(/quoted JSON string/);
+  });
+
   it("a descrição do param agent ensina a passar uma skill por nome com arquivos RO", () => {
     const desc = indexSrc.match(/const agentDescription =\s*"([^"]*)"/)?.[1] ?? "";
     expect(desc).toContain("To hand over a skill, pass { skill: 'plugin:name' } (e.g. { skill: 'ivt-quality:security-audit' }): its SKILL.md becomes the persona and its folder (scripts/, references/) is mounted read-only in the worker sandbox.");

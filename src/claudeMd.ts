@@ -59,7 +59,7 @@ export function renderPolyagentBlock(version: string): string {
 ## polyagent-mcp routing
 
 - Reading and locating: \`explore\` (map/search the repo), \`read_slice\` (a slice of a known file), \`run_filtered\` (noisy command, keep the signal), \`web_lookup\` (docs/web). Native Read only right before an Edit of that file.
-- Execution: \`delegate(prompt, level)\` for self-contained work (features, bugfixes, multi-file edits, builds, commits, PRs); \`fast_delegate\` when speed matters more than the level. Levels: ${tierLine()}. AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work; high is expensive and shares the Claude Code subscription. Pick the lowest level that can do it.
+- Execution: \`delegate(prompt, level)\` for self-contained work (features, bugfixes, multi-file edits, builds, commits, PRs); \`fast_delegate\` when speed matters more than the level. \`level\` is a quoted string: \`"low"\`, \`"middle"\` or \`"high"\`, never a bare name without quotes. Levels: ${tierLine()}. AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work; high is expensive and shares the Claude Code subscription. Pick the lowest level that can do it.
 - Worker prompts must stand alone: say where to work, how to verify it is done, and ask for one task per call.
 - Grade worker results with \`rate(session_id, 1-5)\`.
 - polyagent spawns each engine CLI itself (\`codex exec\`, \`claude -p\`): an MCP server named \`codex\` failing to connect says nothing about polyagent. Call the tool; do not guess it is down.

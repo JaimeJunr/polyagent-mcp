@@ -96,6 +96,10 @@ also passes.
 
 ${tierLines()}
 
+Pass the name as a quoted JSON string: \`{"level": "<name>"}\` with \`"low"\`, \`"middle"\` or \`"high"\`. A bare name
+without quotes is invalid JSON and the host
+rejects the call before it reaches polyagent.
+
 AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Start at the lowest level that can do it; low and
 middle cover most implementation. Go to high only after a cheaper level failed, or for a frontier verdict
 (hard debugging, cross-file impact, merge/no-merge). High shares the Claude Code subscription with you.
