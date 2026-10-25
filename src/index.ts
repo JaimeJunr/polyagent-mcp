@@ -203,7 +203,7 @@ server.registerTool(
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
       level: z.enum(LEVELS)
-        .describe("Required difficulty name: low=GPT-6 Luna max (codex, $0.07/task), middle=GPT-6.1 Sol medium (codex, $0.21), high=Claude Opus 5.5 high (claude, $1.82). AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do."),
+        .describe("Required difficulty name, a quoted JSON string: \"low\", \"middle\" or \"high\" ({\"level\": \"<name>\"}; a bare low, middle or high without quotes is invalid JSON and the call fails before reaching the server). low=GPT-6 Luna max (codex, $0.07/task), middle=GPT-6.1 Sol medium (codex, $0.21), high=Claude Opus 5.5 high (claude, $1.82). AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do."),
       engine: z
         .string()
         .optional()

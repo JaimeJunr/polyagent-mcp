@@ -39,6 +39,13 @@ describe("renderPolyagentBlock", () => {
   });
 });
 
+describe("renderPolyagentBlock — level como string", () => {
+  it("mostra o level entre aspas para o host não mandar JSON inválido", () => {
+    for (const l of ["low", "middle", "high"]) expect(BLOCK).toContain(`\`"${l}"\``);
+    expect(BLOCK).toMatch(/quoted string/);
+  });
+});
+
 describe("renderPolyagentBlock — os dois motivos falsos para não usar o polyagent", () => {
   it("diz que um MCP server chamado codex fora do ar não afeta o polyagent", () => {
     expect(BLOCK).toMatch(/MCP server named `codex`/);
