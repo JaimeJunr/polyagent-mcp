@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,28 @@ import { describe, expect, it, vi } from "vitest";
 const HAS_BWRAP = (process.env.PATH ?? "").split(":").some((dir) => existsSync(join(dir, "bwrap")));
 
 describe.skipIf(!HAS_BWRAP)("engine binary em bwrap real", () => {
+  it("mantém subdiretório RW gravável dentro de workspace RO e bloqueia escrita no restante", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "sandbox-live-ro-"));
+    const state = join(workspace, "state");
+    mkdirSync(state);
+    const { buildSandboxSpec, buildSandboxArgs } = await import("../src/cli.js");
+    const built = buildSandboxSpec(workspace, "codex", true);
+    try {
+      const result = spawnSync("bwrap", [
+        ...buildSandboxArgs({ ...built.spec, extraBinds: [state] }),
+        "/bin/sh", "-c", 'printf state > state/allowed || exit 10; if (printf workspace > blocked); then exit 11; fi',
+      ], { encoding: "utf8", timeout: 10_000 });
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toMatch(/Read-only file system/);
+      expect(readFileSync(join(state, "allowed"), "utf8")).toBe("state");
+      expect(existsSync(join(workspace, "blocked"))).toBe(false);
+    } finally {
+      built.cleanup();
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it.each([false, true])("executa por nome um CLI fora dos binds padrão e reproduz execvp sem o bind da instalação (symlink=%s)", async (symlink) => {
     const installation = mkdtempSync(join(tmpdir(), "engine-live-install-"));
     const targetInstallation = mkdtempSync(join(tmpdir(), "engine-live-target-"));

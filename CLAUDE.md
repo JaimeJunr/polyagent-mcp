@@ -363,7 +363,11 @@ points, all in `cli.ts`:
   claude vêm do fonte/doc e seguem sendo hipótese.
 - **`buildSandboxArgs(spec)` is pure and unit-tested** (like `buildCursorArgs`). Bind order is
   load-bearing: `isoHome` mounts the empty `$HOME` **before** the HOME-subpath overlays (auth/
-  toolchain), and the `workspace` bind is **last** so it's never shadowed. `buildSandboxSpec(workspace,
+  toolchain), and the `workspace` bind is **last**, salvo a exceção RO abaixo.
+  Exceção (2026-10-25): após um workspace RO, os binds RW com destino descendente estrito
+  dele são repetidos na ordem original; isso preserva o estado gravável da engine e evita
+  `could not create PATH aliases: Read-only file system (os error 30)` quando cwd=$HOME.
+  `buildSandboxSpec(workspace,
   engine)` is the impure half (mkdtemp + `existsSync` probing) — keep the fs/tmp side effects there.
 - **Binário da engine fora dos binds padrão:** `buildSandboxSpec` resolve o primeiro executável
   no PATH do host e seu realpath via `resolveEngineBinary` (sondagens de fs injetáveis). Para cada

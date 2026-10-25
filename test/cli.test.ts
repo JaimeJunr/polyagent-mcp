@@ -376,6 +376,60 @@ describe("buildSandboxArgs", () => {
     expect(args.slice(lastBind, lastBind + 3)).toEqual(["--ro-bind", "/repo", "/repo"]);
   });
 
+  it.each(["/home/jaime", "/home/jaime/"])("restaura overlay RW após workspace RO igual ao HOME (%s)", (workspace) => {
+    const home = "/home/jaime";
+    const overlay = `${home}/.codex`;
+    const args = buildSandboxArgs({ ...spec, home, workspace, workspaceRo: true, homeRw: [overlay] });
+    const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
+    expect(binds.slice(-2)).toEqual([
+      ["--ro-bind", workspace, workspace],
+      ["--bind", overlay, overlay],
+    ]);
+  });
+
+  it.each([
+    { workspace: "/repo", workspaceRo: true },
+    { workspace: "/home/jaime", workspaceRo: false },
+    { workspace: "/home/ja", workspaceRo: true },
+  ])("preserva a ordem sem restauração RW em $workspace (RO=$workspaceRo)", ({ workspace, workspaceRo }) => {
+    const home = "/home/jaime";
+    const overlay = `${home}/.codex`;
+    const args = buildSandboxArgs({ ...spec, home, workspace, workspaceRo, homeRw: [overlay] });
+    const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
+    expect(binds).toEqual([
+      ...spec.systemRo.map((p) => ["--ro-bind", p, p]),
+      ["--bind", spec.isoHome, home],
+      ["--bind", spec.tmpDir, "/tmp"],
+      ...spec.homeRo.map((p) => ["--ro-bind", p, p]),
+      ["--bind", overlay, overlay],
+      ...spec.extraBinds.map((p) => ["--bind", p, p]),
+      [workspaceRo ? "--ro-bind" : "--bind", workspace, workspace],
+    ]);
+  });
+
+  it("restaura overlays HOME e extras RW contidos no workspace RO na ordem original", () => {
+    const homeRw = ["/home/u/.codex", "/home/u/.config/orca/account/home", "/home/u/.claude/.credentials.json"];
+    const extraBinds = ["/home/u/extra", "/mnt/outside", "/home/u/extra/nested"];
+    const args = buildSandboxArgs({ ...spec, workspace: spec.home, workspaceRo: true, homeRw, extraBinds });
+    const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
+    expect(binds.slice(-6)).toEqual([
+      ["--ro-bind", spec.home, spec.home],
+      ...homeRw.map((p) => ["--bind", p, p]),
+      ...[extraBinds[0], extraBinds[2]].map((p) => ["--bind", p, p]),
+    ]);
+  });
+
+  // Repetir um bind de destino igual ao workspace (isoHome em cwd=$HOME, tmpDir em cwd=/tmp)
+  // trocaria o workspace RO inteiro por um diretório vazio e gravável.
+  it.each([
+    { workspace: "/home/u", label: "isoHome" },
+    { workspace: "/tmp/", label: "tmpDir" },
+  ])("não repete o bind $label cujo destino é o próprio workspace RO", ({ workspace }) => {
+    const args = buildSandboxArgs({ ...spec, home: "/home/u", tmpDir: "/isolated/tmp", workspace, workspaceRo: true, homeRw: [], extraBinds: [] });
+    const binds = args.flatMap((arg, i) => arg === "--bind" || arg === "--ro-bind" ? [args.slice(i, i + 3)] : []);
+    expect(binds.at(-1)).toEqual(["--ro-bind", workspace, workspace]);
+  });
+
   it("mantém o workspace read-write quando workspaceRo é false", () => {
     const args = buildSandboxArgs(spec);
     const setenv = args.indexOf("--setenv");

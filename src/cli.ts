@@ -490,7 +490,7 @@ export interface SandboxSpec {
   isoHome: string;
   /** dir montado como /tmp dentro do sandbox (RW, efêmero). */
   tmpDir: string;
-  /** cwd do run — sempre o último bind pra nunca ser sobreposto. */
+  /** cwd do run — último bind, exceto pela restauração de binds RW internos quando RO. */
   workspace: string;
   /** monta o workspace como somente leitura quando true. */
   workspaceRo: boolean;
@@ -517,7 +517,10 @@ export interface SandboxSpec {
 /**
  * Monta os args do `bwrap` (sem o binário nem o comando alvo). Função pura — testável.
  * Ordem crítica: `isoHome` monta o $HOME vazio ANTES dos binds de subpaths do HOME
- * (senão o overlay de auth/toolchain some), e o `workspace` é o último bind.
+ * (senão o overlay de auth/toolchain some), seguido de instalações RO, extras e workspace.
+ * Exceção (2026-10-25): após workspace RO, repetimos os binds RW internos na ordem original.
+ * Com cwd=$HOME, o workspace escondia ~/.codex RW: "could not create PATH aliases:
+ * Read-only file system (os error 30)". O restante do workspace continua RO.
  */
 export function buildSandboxArgs(spec: SandboxSpec): string[] {
   const args: string[] = [];
@@ -529,11 +532,24 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   for (const p of spec.engineRoBinds ?? []) args.push("--ro-bind", p, p);
   for (const p of spec.extraBinds) args.push("--bind", p, p);
   for (const p of spec.roBinds) args.push("--ro-bind", p, p);
-  // depois do tmpfs /run e dos overlays do HOME (senão somem), antes do workspace (que fica por último)
+  // depois do tmpfs /run e dos overlays do HOME (senão somem), antes do workspace
   for (const { src, dest } of spec.realBins) args.push("--ro-bind", src, dest);
   for (const { file, target } of spec.shims) args.push("--ro-bind", file, target);
   if (spec.shimDir) args.push("--ro-bind", spec.shimDir, SHIM_PATH_DIR);
+  const workspaceBindAt = args.length;
   args.push(spec.workspaceRo ? "--ro-bind" : "--bind", spec.workspace, spec.workspace);
+  if (spec.workspaceRo) {
+    const workspace = spec.workspace.replace(/\/+$/, "");
+    for (let i = 0; i < workspaceBindAt; i++) {
+      if (args[i] !== "--bind") continue;
+      const destination = args[i + 2].replace(/\/+$/, "");
+      // Só descendente estrito: repetir um destino igual ao workspace (isoHome em cwd=$HOME,
+      // tmpDir em cwd=/tmp) trocaria o workspace RO inteiro por um dir vazio e gravável.
+      if (destination.startsWith(`${workspace}/`)) {
+        args.push(...args.slice(i, i + 3));
+      }
+    }
+  }
   args.push(
     "--setenv", "HOME", spec.home,
     "--setenv", "USER", spec.user,
