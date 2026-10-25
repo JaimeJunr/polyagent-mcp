@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { scrubSecrets } from "./scrub.js";
 import { HEALTH_THRESHOLD, healthLocalTime, type EngineHealth, type HealthCause } from "./usage.js";
 import { accessSync, constants, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -21,6 +22,15 @@ export function isCodexEnvError(stderr: string): boolean {
     && stderr.includes("does not exist")) return true;
   return stderr.includes("failed to initialize in-process app-server client")
     || stderr.includes("Read-only file system");
+}
+
+/** Resume a causa real sem confundir inicialização com diretório ausente. */
+export function codexEnvCause(stderr: string): string {
+  if ((stderr.includes("Error finding codex home") || stderr.includes("CODEX_HOME points to"))
+    && stderr.includes("does not exist")) return "CODEX_HOME points to a missing directory";
+  if (stderr.includes("Read-only file system")) return "read-only file system";
+  if (stderr.includes("failed to initialize in-process app-server client")) return "in-process app-server failed to initialize";
+  return "codex environment failure";
 }
 
 /**
@@ -670,6 +680,25 @@ function meetsAuxRequirements(tool: AuxTool, engine: Engine, sandboxOn: boolean)
   const cap = ENGINE_CAPABILITIES[engine];
   if (req.webSearch && !cap.webSearch) return false;
   return !(req.readOnly && !cap.engineReadOnly && !sandboxOn);
+}
+
+/** Filtra a retentativa pela disponibilidade e pelo contrato das três tools de leitura. */
+export function codexFallbackCandidates(
+  tool: BridgeTool | undefined,
+  has: (engine: Engine) => boolean,
+  cursorEnabled: boolean,
+  sandboxOn: boolean,
+): Engine[] {
+  const candidates = [
+    ...FALLBACK_ENGINE_ORDER.filter((engine) => engine !== "codex"),
+    ...(cursorEnabled ? ["cursor" as const] : []),
+  ];
+  return candidates.filter((engine) => has(engine) && (!isReadTool(tool)
+    || meetsAuxRequirements(tool, engine, sandboxOn)));
+}
+
+function isReadTool(tool: BridgeTool | undefined): tool is ReadTool {
+  return tool === "explore" || tool === "read_slice" || tool === "web_lookup";
 }
 
 /** Prefixo do par de env de cada tool: <prefixo>_ENGINE e <prefixo>_MODEL. */
@@ -1324,7 +1353,7 @@ export interface RunOpts {
    */
   deny?: string[];
   /**
-   * Tool que originou o run. Não muda a execução: define a forma da sugestão no erro de cota
+   * Tool que originou o run. Restringe os candidatos do fallback de ambiente e define a sugestão no erro de cota
    * (parâmetro `engine` nas auxiliares, `level` no delegate, nenhuma onde a tool escolhe sozinha).
    */
   tool?: BridgeTool;
@@ -1545,10 +1574,25 @@ export function buildArgs(engine: Engine, opts: RunOpts, sandboxed = false): str
   return buildCursorArgs(opts);
 }
 
+/** Tentativa codex perdida no retry: diagnóstico redigido, sem handle de sessão. */
+export interface FallbackAttempt {
+  engine: "codex";
+  cause: string;
+  stderr: string;
+  durationMs: number;
+}
+
+/** A falha do retry mantém a identidade da engine e o diagnóstico da tentativa original. */
+export interface FallbackFailure extends Error {
+  engine: Engine;
+  fallbackFrom: FallbackAttempt;
+}
+
 export interface CliResult {
   text: string;
   sessionId?: string;
   engine?: Engine;
+  fallbackFrom?: FallbackAttempt;
 }
 
 /**
@@ -2178,16 +2222,18 @@ export function raceFirstSuccess<T>(promises: Promise<T>[]): Promise<T> {
  * arquivos somente-leitura (roBinds) atravessam juntos. `deny` também: é restrição de segurança do
  * chamador, então o retry em outro engine nunca pode soltá-la. Campos excluídos e o porquê:
  * - model/effort: escolha feita pro codex; o fallback usa o default do próprio engine.
- * - mode: vira `--ro-bind` do workspace em buildSandboxSpec, mas só o codex tem `-s read-only`
- *   pra honrar isso sem quebrar — grok guarda sessão indexada pelo cwd e falha ("Read-only file
- *   system") tentando criar a sessão se o cwd virou somente-leitura. Foi exatamente este bug.
+ * - mode: removido nas tools de execução; nas três de leitura atravessa para preservar o
+ *   `--ro-bind` do workspace. Se o CLI não suporta esse mount, falha em vez de liberar escrita.
  * - resume: id de sessão no formato/namespace do engine original; não existe no fallback.
  * - images: hoje só generate_image usa (`-i`, exclusivo codex); grok/claude ignoram silenciosamente
  *   o valor, o que dropa a imagem de entrada sem avisar — pior que falhar.
  */
 export function fallbackOpts(opts: RunOpts, engine: Engine): RunOpts {
-  const { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny } = opts;
-  return { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny, engine };
+  const { prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny, tool } = opts;
+  return {
+    prompt, cwd, timeoutMs, force, web, agentPrompt, roBinds, deny, tool, engine,
+    ...(isReadTool(tool) ? { mode: opts.mode ?? "ask" } : {}),
+  };
 }
 
 /** Roda o CLI do engine em modo headless e devolve o resultado parseado. */
@@ -2288,25 +2334,31 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     return new QuotaError(kind, failedEngine, quotaErrorMessage(kind, failedEngine, opts.tool, candidates));
   };
 
+  const started = Date.now();
   return runOnce(opts).catch((originalError: unknown) => {
     const message = originalError instanceof Error ? originalError.message : String(originalError);
     if (engine !== "codex" || !message.startsWith("codex agent exited ") || !isCodexEnvError(message)) {
       throw asQuotaError(originalError, engine);
     }
 
-    const candidates: Engine[] = [
-      ...FALLBACK_ENGINE_ORDER.filter((candidate) => candidate !== "codex"),
-      ...(CURSOR_ENABLED ? ["cursor" as const] : []),
-    ];
-    const fallback = candidates.find((candidate) => hasEngine(candidate));
+    const [fallback] = codexFallbackCandidates(opts.tool, hasEngine, CURSOR_ENABLED, SANDBOX_ON);
     if (!fallback) throw originalError;
 
+    const stderr = originalError instanceof ProcessError ? originalError.stderr : message;
+    // Redige ANTES do corte: um token truncado pode deixar de casar com o scrubber.
+    const diagnostic = scrubSecrets(stderr).text.replace(/\s+/g, " ").trim();
+    const fallbackFrom: FallbackAttempt = {
+      engine: "codex", cause: codexEnvCause(stderr), stderr: diagnostic.slice(-500),
+      durationMs: Date.now() - started,
+    };
     return runOnce(fallbackOpts(opts, fallback)).catch((fallbackError: unknown) => {
-      throw asQuotaError(fallbackError, fallback);
+      const error = asQuotaError(fallbackError, fallback);
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { engine: fallback, fallbackFrom });
     }).then((result) => ({
       ...result,
+      fallbackFrom,
       text: result.text +
-        `\n\n[note: codex unavailable (environment issue — missing CODEX_HOME or read-only app-server init) — retried on ${fallback} with its default model]`,
+        `\n\n[note: codex unavailable (environment issue — ${fallbackFrom.cause}; stderr: ${diagnostic.slice(-200)}) — retried on ${fallback} with its default model]`,
     }));
   });
 }

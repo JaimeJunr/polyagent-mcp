@@ -8,7 +8,7 @@ import {
   budgetNote, evidenceNote, formatSessionHandle, parseSessionHandle, parseCliJson, parseCodexJsonl, resolveModel, resolveTier,
   parseOpencodeJsonl, parseKimiJsonl, parseKimiStreamJson, parseMuseJsonl, parseOutput, resolveDelegate, resolveFastTier,
   LEVELS, TIERS, FAST_CANDIDATES, isCodexEnvError, withTerseStyle, TERSE_STYLE, FALLBACK_ENGINE_ORDER, isDefaultTierEngine, raceFirstSuccess,
-  fallbackOpts, runCursor, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
+  codexEnvCause, codexFallbackCandidates, fallbackOpts, runCursor, DEFAULT_MODEL, EXPLORE_MODEL, IMAGE_MODEL,
   type SandboxSpec, type Engine,
 } from "../src/cli.js";
 import { computeEngineHealth } from "../src/usage.js";
@@ -38,6 +38,41 @@ describe("codex environment fallback helpers", () => {
 
   it("keeps the host-agnostic fallback order stable", () => {
     expect(FALLBACK_ENGINE_ORDER).toEqual(["codex", "grok", "claude"]);
+  });
+
+  it.each([
+    ["CODEX_HOME points to '/gone' which does not exist", "CODEX_HOME points to a missing directory"],
+    ["Error finding codex home: /gone does not exist", "CODEX_HOME points to a missing directory"],
+    ["failed to initialize in-process app-server client: Read-only file system", "read-only file system"],
+    ["failed to initialize in-process app-server client", "in-process app-server failed to initialize"],
+    ["some directory does not exist", "codex environment failure"],
+    ["", "codex environment failure"],
+  ])("codexEnvCause diagnoses %j", (stderr, cause) => {
+    expect(codexEnvCause(stderr)).toBe(cause);
+  });
+
+  it.each([
+    ["web_lookup", true, true, ["claude"]],
+    ["web_lookup", true, false, []],
+    ["explore", true, true, ["grok", "claude", "cursor"]],
+    ["read_slice", false, true, ["grok", "claude"]],
+    ["explore", true, false, []],
+    ["read_slice", true, false, []],
+    ["delegate", false, false, ["grok", "claude"]],
+    ["run_filtered", true, false, ["grok", "claude", "cursor"]],
+    [undefined, true, true, ["grok", "claude", "cursor"]],
+  ] as const)("codexFallbackCandidates respects %s (cursor=%s sandbox=%s)", (tool, cursor, sandbox, expected) => {
+    expect(codexFallbackCandidates(tool, () => true, cursor, sandbox)).toEqual(expected);
+  });
+
+  it("codexFallbackCandidates skips missing engines and disabled Cursor", () => {
+    expect(codexFallbackCandidates("delegate", (engine) => engine === "claude", true, true)).toEqual(["claude"]);
+    expect(codexFallbackCandidates("web_lookup", (engine) => engine === "grok", true, true)).toEqual([]);
+    expect(codexFallbackCandidates("delegate", (engine) => engine === "cursor", false, true)).toEqual([]);
+  });
+
+  it.each(["explore", "read_slice", "web_lookup"] as const)("preserves read-only mode and tool on %s retry", (tool) => {
+    expect(fallbackOpts({ prompt: "q", tool, mode: "ask" }, "claude")).toMatchObject({ tool, mode: "ask" });
   });
 
   // A retentativa entre engines é coberta em process-error.test.ts.
@@ -1436,5 +1471,83 @@ describe("resolveDelegate named levels", () => {
   it("drops inherited defaults on a different engine and preserves explicit overrides", () => {
     expect(resolveDelegate("high", { engine: "codex" }, () => true)).toEqual({ engine: "codex", model: undefined, effort: undefined });
     expect(resolveDelegate("middle", { model: "custom", effort: "high" }, () => true)).toEqual({ engine: "codex", model: "custom", effort: "high" });
+  });
+});
+
+
+describe("runCursor codex fallback observability", () => {
+  async function scenario(tool: "delegate" | "web_lookup", installed: string[], stderr: string, fails = false) {
+    const root = mkdtempSync(join(tmpdir(), "codex-env-fallback-"));
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace);
+    for (const bin of ["bwrap", ...installed]) writeFileSync(join(root, bin), "", { mode: 0o755 });
+    vi.stubEnv("HOME", root);
+    vi.stubEnv("PATH", root);
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => {
+      const attempt = spawnMock.mock.calls.length;
+      const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      setImmediate(() => {
+        child.stderr.emit("data", Buffer.from(attempt === 1 ? stderr : fails ? "fallback failed" : ""));
+        if (attempt > 1 && !fails) child.stdout.emit("data", Buffer.from('{"result":"ok","session_id":"retry-session"}'));
+        child.emit("close", attempt === 1 || fails ? 1 : 0);
+      });
+      return child;
+    });
+    try {
+      return await runCursor({ prompt: "q", engine: "codex", tool, cwd: workspace, mode: tool === "web_lookup" ? "ask" : undefined });
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("reports the actual cause and bounded single-line stderr with failed attempt metadata", async () => {
+    const stderr = `Read-only file system\n${"diagnostic ".repeat(80)}last detail`;
+    const result = await scenario("delegate", ["grok", "claude"], stderr);
+    expect(result.engine).toBe("grok");
+    expect(result.text).toContain("environment issue — read-only file system");
+    expect(result.text).not.toContain("missing CODEX_HOME");
+    const note = result.text.slice(result.text.indexOf("[note:"));
+    expect(note).not.toMatch(/[\r\n]/);
+    expect(note).toContain("last detail");
+    expect(note.length).toBeLessThan(400);
+    expect(result.fallbackFrom).toMatchObject({ engine: "codex", cause: "read-only file system" });
+    expect(result.fallbackFrom!.stderr.length).toBeLessThanOrEqual(500);
+    expect(result.fallbackFrom!.durationMs).toBeGreaterThanOrEqual(0);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries web_lookup on Claude and preserves the workspace read-only bind", async () => {
+    const result = await scenario("web_lookup", ["grok", "claude"], "Read-only file system");
+    expect(result.engine).toBe("claude");
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    const args = spawnMock.mock.calls[1][1] as string[];
+    const workspaceAt = args.findIndex((a) => a.endsWith("/workspace"));
+    expect(workspaceAt).toBeGreaterThan(0);
+    expect(args[workspaceAt - 1]).toBe("--ro-bind");
+  });
+
+  it("rethrows the original codex error when no compatible engine is installed", async () => {
+    await expect(scenario("web_lookup", ["grok"], "Read-only file system"))
+      .rejects.toMatchObject({ name: "ProcessError", stderr: "Read-only file system", message: "codex agent exited 1: Read-only file system" });
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the codex attempt and actual failed engine when the single retry fails", async () => {
+    await expect(scenario("delegate", ["grok", "claude"], "Read-only file system", true))
+      .rejects.toMatchObject({ engine: "grok", fallbackFrom: { engine: "codex", stderr: "Read-only file system" }, message: "grok agent exited 1: fallback failed" });
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("scrubs credentials before clipping stderr into metadata and the note", async () => {
+    const secret = `sk-${"a".repeat(600)}`;
+    const result = await scenario("delegate", ["grok"], `Read-only file system token ${secret} last detail`);
+    expect(result.fallbackFrom!.stderr).toContain("[REDACTED]");
+    expect(result.text).toContain("[REDACTED]");
+    expect(JSON.stringify(result)).not.toContain("a".repeat(20));
   });
 });
