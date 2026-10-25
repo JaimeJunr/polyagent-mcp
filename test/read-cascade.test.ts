@@ -24,6 +24,7 @@ describe("resolveReadTool — cascata das três tools de leitura", () => {
   it("codex sem cota (health 0) cai no Claude Haiku 5.5 medium", () => {
     for (const tool of READ_TOOLS) {
       expect(resolveReadTool(tool, {}, {}, all, false, { codex: 0 }, true)).toEqual({
+        skipped: [{ engine: "codex", cause: "failures" }],
         engine: "claude",
         model: "claude-haiku-5-5",
         effort: "medium",
@@ -39,6 +40,10 @@ describe("resolveReadTool — cascata das três tools de leitura", () => {
   it("explore e read_slice seguem até o opencode quando codex e claude estão fora", () => {
     for (const tool of ["explore", "read_slice"] as const) {
       expect(resolveReadTool(tool, {}, {}, all, false, { codex: 0, claude: 0 }, true)).toEqual({
+        skipped: [
+          { engine: "codex", cause: "failures" },
+          { engine: "claude", cause: "failures" },
+        ],
         engine: "opencode",
         model: "openrouter/inception/mercury-2",
         effort: undefined,
@@ -65,7 +70,12 @@ describe("resolveReadTool — cascata das três tools de leitura", () => {
 
   it("modelo e effort explícitos vencem o da cascata", () => {
     expect(resolveReadTool("explore", { model: "sonnet", effort: "high" }, {}, all, false, { codex: 0 }, true))
-      .toEqual({ engine: "claude", model: "sonnet", effort: "high" });
+      .toEqual({
+        skipped: [{ engine: "codex", cause: "failures" }],
+        engine: "claude",
+        model: "sonnet",
+        effort: "high",
+      });
   });
 
   it("POLYAGENT_EXPLORE_MODEL/EFFORT seguem valendo quando a cascata escolhe o codex", () => {

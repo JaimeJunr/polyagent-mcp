@@ -396,6 +396,7 @@ describe("computeEngineHealth", () => {
     const all: (e: Engine) => boolean = () => true;
     // Regra atual: Claude é a segunda assinatura; OpenRouter só entra depois de Codex e Claude.
     expect(resolveFastTier(all, false, health)).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }],
       engine: "claude",
       model: "claude-haiku-5-5",
       effort: "medium",
@@ -440,6 +441,7 @@ describe("computeEngineHealth", () => {
     expect(health.codex).toBeLessThan(HEALTH_THRESHOLD);
     const all: (e: Engine) => boolean = () => true;
     expect(resolveFastTier(all, false, health)).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }],
       engine: "claude",
       model: "claude-haiku-5-5",
       effort: "medium",
