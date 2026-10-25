@@ -648,6 +648,45 @@ describe("runCursor com arquivos da skill", () => {
   });
 });
 
+describe("runCursor sandbox execvp diagnostics", () => {
+  it.each([false, true])("anexa a resolução do host ao ProcessError e preserva stderr (found=%s)", async (found) => {
+    const root = mkdtempSync(join(tmpdir(), "engine-error-"));
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace);
+    writeFileSync(join(root, "bwrap"), "", { mode: 0o755 });
+    if (found) writeFileSync(join(root, "opencode"), "#!/bin/sh\n", { mode: 0o755 });
+    vi.stubEnv("HOME", root);
+    vi.stubEnv("PATH", root);
+    const stderr = "bwrap: execvp opencode: No such file or directory";
+    spawnMock.mockReset();
+    spawnMock.mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      setImmediate(() => {
+        child.stderr.emit("data", Buffer.from(stderr));
+        child.emit("close", 1);
+      });
+      return child;
+    });
+    try {
+      await expect(runCursor({ prompt: "x", cwd: workspace, engine: "opencode" })).rejects.toMatchObject({
+        name: "ProcessError", stderr, stdout: "", exitCode: 1,
+        message: `opencode agent exited 1: ${stderr}\n${found
+          ? `Host PATH resolved opencode to ${join(root, "opencode")}.`
+          : "opencode was not found on the host PATH."}`,
+      });
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      const args = spawnMock.mock.calls[0][1] as string[];
+      expect(args.slice(args.lastIndexOf("opencode"), args.lastIndexOf("opencode") + 2)).toEqual(["opencode", "run"]);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("buildGrokArgs", () => {
   it("passa o prompt como valor de --single e usa flags próprias do grok", () => {
     const args = buildGrokArgs({ prompt: "do it", model: "grok-4.5", effort: "high" });
@@ -1035,7 +1074,7 @@ describe("buildClaudeArgs", () => {
 
 describe("buildOpencodeArgs", () => {
   it("roda `opencode run` com JSON e prompt posicional", () => {
-    expect(buildOpencodeArgs({ prompt: "do it" })).toEqual(["run", "--format", "json", "--", "do it"]);
+    expect(buildOpencodeArgs({ prompt: "do it" })).toEqual(["run", "--format", "json", "-m", "openrouter/inception/mercury-2", "--", "do it"]);
   });
 
   it("preserva prompt começando com hífen como argumento posicional", () => {
