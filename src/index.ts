@@ -10,7 +10,8 @@ import {
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
-  lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS,
+  lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS, engineSwitchLine,
+  type SkippedEngine,
   type CliResult, type Engine, type Level,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
@@ -21,7 +22,8 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  USAGE_LOG, logDecision, logRating, logUsage, readUsage, aggregate, computeEngineHealth, classifyOutcome, QUOTA_WINDOW_MS,
+  USAGE_LOG, logDecision, logRating, logUsage, readUsage, aggregate, engineHealthReport, classifyOutcome, QUOTA_WINDOW_MS,
+  buildHealthResetEntries, logHealthResets, renderEngineHealth, type EngineHealthReport,
   ratingStats, renderRatingStats,
   type TierReceipt, type UsageRun,
 } from "./usage.js";
@@ -106,6 +108,7 @@ function format(
   res: CliResult,
   tier?: TierReceipt,
   run?: UsageRun,
+  skipped?: SkippedEngine[],
 ): { content: { type: "text"; text: string }[] } {
   const sessionHandle = res.engine && res.sessionId
     ? formatSessionHandle(res.engine, res.sessionId)
@@ -114,7 +117,9 @@ function format(
     ? `\n\n---\nsession_id: ${sessionHandle} (pass to follow_up to continue; grade it with rate(session_id, score 1-5))`
     : "";
   const { text: scrubbed, redacted } = scrubSecrets(res.text);
-  const text = scrubbed + footer;
+  const selectedEngine = res.engine ?? run?.engine;
+  const switchLine = selectedEngine ? engineSwitchLine(selectedEngine as Engine, skipped) : "";
+  const text = scrubbed + (switchLine ? `\n${switchLine}` : "") + footer;
   const usageRun = sessionHandle ? { ...run, sessionId: sessionHandle } : run;
   logUsage(tool, text.length, tier, usageRun);
   if (redacted) logUsage("blocked_exfil", text.length);
@@ -122,10 +127,10 @@ function format(
 }
 
 /** Saúde atual das engines a partir do log. I/O + Date.now() ficam aqui — os resolvers permanecem puros. */
-function currentEngineHealth(): Record<string, number> {
+function currentEngineHealth(): EngineHealthReport {
   // O teto acompanha o budget real: sucesso dentro do timeout não deve parecer engine quebrada só por latência.
   // Janela curta (30 min) pra failure/timeout; janela longa (QUOTA_WINDOW_MS) pra cota — ver usage.ts.
-  return computeEngineHealth(readUsage(), Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
+  return engineHealthReport(readUsage(), Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
 }
 
 /**
@@ -138,6 +143,7 @@ async function formatRun(
   work: () => Promise<CliResult>,
   receipt?: TierReceipt,
   metadata?: Pick<UsageRun, "model" | "effort">,
+  skipped?: SkippedEngine[],
 ): Promise<{ content: { type: "text"; text: string }[] }> {
   const started = Date.now();
   try {
@@ -147,7 +153,7 @@ async function formatRun(
       engine: res.engine ?? engine,
       outcome: "success",
       durationMs: Date.now() - started,
-    });
+    }, skipped);
   } catch (err) {
     logUsage(tool, 0, receipt, {
       ...metadata,
@@ -164,7 +170,7 @@ async function runFanOutWorker(
   prompt: string,
   cwd: string | undefined,
   level: Level,
-  tier: { engine: Engine; model?: string; effort?: string },
+  tier: { engine: Engine; model?: string; effort?: string; skipped?: SkippedEngine[] },
 ): Promise<{ level: Level; tier: typeof tier; res: CliResult }> {
   const started = Date.now();
   const receipt = { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) };
@@ -255,6 +261,7 @@ server.registerTool(
       },
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
       { model: tier.model, effort: tier.effort },
+      tier.skipped,
     );
     const verified = verifyingWorker(work, prompt);
     return JEV_SHADOW_ENABLED
@@ -308,6 +315,7 @@ server.registerTool(
       // — sem isso, o downgrade pro cursor ficava indistinguível de um roteamento nativo no log.
       { requestedLevel: 0, matchedRequest: FAST_CANDIDATES.some((c) => c.engine === tier.engine) },
       { model: selectedModel, effort: selectedEffort },
+      tier.skipped,
     ), prompt)();
   },
 );
@@ -342,7 +350,7 @@ server.registerTool(
     const { prompt, mode } = explorePrompt(question, files, breadth);
     // read-only (mode) com modelo+effort explícitos no codex por default. O worker localiza/mapeia sem editar.
     const health = currentEngineHealth();
-    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+    const { engine, model: auxModel, effort: auxEffort, skipped } = resolveReadTool(
       "explore", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
     );
     return formatRun(
@@ -351,6 +359,7 @@ server.registerTool(
       () => runCursor({ prompt, cwd, engine, model: auxModel, effort: auxEffort, mode, agentPrompt: withTerseStyle(), tool: "explore", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
+      skipped,
     );
   },
 );
@@ -384,7 +393,7 @@ server.registerTool(
       });
     }
     const health = currentEngineHealth();
-    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+    const { engine, model: auxModel, effort: auxEffort, skipped } = resolveReadTool(
       "read_slice", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
     );
     return formatRun(
@@ -393,6 +402,7 @@ server.registerTool(
       () => runCursor({ prompt: readSlicePrompt(files, want), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", agentPrompt: withTerseStyle(), tool: "read_slice", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
+      skipped,
     );
   },
 );
@@ -418,7 +428,7 @@ server.registerTool(
     // force mantém a paridade quando o fallback é cursor. O worker filtra o output por relevância.
     // Default = cascata do fast_delegate (resolveFastTier); param/env ainda vencem.
     const health = currentEngineHealth();
-    const { engine, model: auxModel, effort: auxEffort } = resolveRunFiltered(
+    const { engine, model: auxModel, effort: auxEffort, skipped } = resolveRunFiltered(
       { engine: engineParam, model, effort },
       process.env,
       hasEngine,
@@ -431,6 +441,7 @@ server.registerTool(
       () => runCursor({ prompt: runFilteredPrompt(command, want), cwd, engine, model: auxModel, effort: auxEffort, force: true, agentPrompt: withTerseStyle(), tool: "run_filtered", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
+      skipped,
     );
   },
 );
@@ -454,7 +465,7 @@ server.registerTool(
     // read-only (mode:'ask' → filesystem intocado) + web:true liga a busca web do codex
     // (-c tools.web_search=true). approval_policy=never evita pendurar em headless.
     const health = currentEngineHealth();
-    const { engine, model: auxModel, effort: auxEffort } = resolveReadTool(
+    const { engine, model: auxModel, effort: auxEffort, skipped } = resolveReadTool(
       "web_lookup", { engine: engineParam, model, effort }, process.env, hasEngine, CURSOR_ENABLED, health,
     );
     return formatRun(
@@ -463,6 +474,7 @@ server.registerTool(
       () => runCursor({ prompt: webLookupPrompt(query), cwd, engine, model: auxModel, effort: auxEffort, mode: "ask", web: true, agentPrompt: withTerseStyle(), tool: "web_lookup", health }),
       undefined,
       { model: auxModel, effort: auxEffort },
+      skipped,
     );
   },
 );
@@ -488,7 +500,9 @@ server.registerTool(
     },
   },
   async ({ prompt, levels, mode, cwd }) => {
-    const tiers = levels.map((level) => ({ level, tier: resolveTier(level) }));
+    const health = currentEngineHealth();
+    const tiers = levels.map((level) => ({ level, tier: resolveTier(level, hasEngine, CURSOR_ENABLED, health) }));
+    const skipped = [...new Map(tiers.flatMap(({ tier }) => tier.skipped ?? []).map((entry) => [entry.engine, entry])).values()];
     const runs = tiers.map(({ level, tier }) =>
       runFanOutWorker(prompt, cwd, level, tier),
     );
@@ -500,6 +514,7 @@ server.registerTool(
         res,
         { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
         { engine: res.engine ?? tier.engine, model: tier.model, effort: tier.effort },
+        skipped,
       );
     }
 
@@ -531,25 +546,30 @@ server.registerTool(
             outcome: "success",
             durationMs: Date.now() - gateStarted,
           },
+          skipped,
         );
       },
       async () => {
         const arbiterStarted = Date.now();
+        const arbiterTier = resolveReadTool("explore", {}, process.env, hasEngine, CURSOR_ENABLED, health);
+        const arbiterSkipped = [...new Map([...skipped, ...(arbiterTier.skipped ?? [])].map((entry) => [entry.engine, entry])).values()];
         let arbiter: CliResult;
         try {
           arbiter = await runCursor({
             prompt: fanOutArbiterPrompt(outputs),
             cwd,
-            engine: "codex",
-            model: EXPLORE_MODEL,
+            engine: arbiterTier.engine,
+            model: arbiterTier.model,
+            effort: arbiterTier.effort,
+            health,
             mode: "ask",
             agentPrompt: withTerseStyle(),
             tool: "fan_out",
           });
         } catch (err) {
           logUsage("fan_out", 0, undefined, {
-            engine: "codex",
-            model: EXPLORE_MODEL,
+            engine: arbiterTier.engine,
+            model: arbiterTier.model,
             outcome: classifyOutcome(err),
             durationMs: Date.now() - arbiterStarted,
           });
@@ -560,11 +580,12 @@ server.registerTool(
           { ...arbiter, text: `${arbiter.text}\n\nWorker sessions (pass to follow_up):\n${footer}` },
           undefined,
           {
-            engine: arbiter.engine ?? "codex",
-            model: EXPLORE_MODEL,
+            engine: arbiter.engine ?? arbiterTier.engine,
+            model: arbiterTier.model,
             outcome: "success",
             durationMs: Date.now() - arbiterStarted,
           },
+          arbiterSkipped,
         );
       },
       { ask: askInternalJev, log: logDecision },
@@ -663,18 +684,22 @@ server.registerTool(
   "bridge_stats",
   {
     description:
-      "Report this bridge's usage: calls and chars returned to context per tool (the real cost), plus local rating benchmarks when available. Requires POLYAGENT_LOG to be set so calls are logged; otherwise reports that logging is off.",
+      "Report this bridge's usage: calls and chars returned to context per tool (the real cost), engine health with cause and local eligibility time, plus local rating benchmarks. Use reset_health with engine names to clear their health history. Requires POLYAGENT_LOG to persist resets and usage.",
     inputSchema: {
       export: z.boolean().optional().describe("Also export the ratings markdown to research/bench/<YYYY-MM-DD>-ratings.md."),
+      reset_health: z.array(z.string()).optional().describe("Reset health for these engines: cursor, grok, codex, claude, opencode, kimi, muse. Persists reset events in POLYAGENT_LOG."),
     },
   },
-  async ({ export: exportRequested }) => {
+  async ({ export: exportRequested, reset_health }) => {
+    if (reset_health?.length) logHealthResets(buildHealthResetEntries(reset_health, Date.now()));
     const entries = readUsage();
     const stats = aggregate(entries);
     const ratings = ratingStats(entries);
     const ratingGroups = Object.keys(ratings);
     const tools = Object.keys(stats);
     const sections: string[] = [];
+    const health = engineHealthReport(entries, Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
+    if (Object.keys(health).length) sections.push(renderEngineHealth(health));
     if (tools.length) {
       const lines = tools
         .sort((a, b) => stats[b].totalOutChars - stats[a].totalOutChars)
