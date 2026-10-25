@@ -56,7 +56,7 @@ Modelo `:free` pode sumir ou ganhar preço sem aviso.
 
 **Aplicada em 2026-10-24** a pedido do dono: trocar o default de `JEV_MODEL` para `baseten/elephant-1:free`
 (melhor shadow, mais rápido, grátis), mantendo `POLYAGENT_JEV_MODEL` para voltar ao Jev; o 16K de
-contexto cabe no recorte do `fan_out` longo (passou 12/12). As flags seguem opt-in.
+contexto cabe no recorte do `fan_out` longo (passou 12/12). As flags viraram opt-out no mesmo dia (ver `2026-09-24-jev-decisions-bench.md`).
 
 ## Reavaliar
 
