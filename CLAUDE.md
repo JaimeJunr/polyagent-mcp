@@ -159,7 +159,12 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 
 `delegate` takes a required named `level` (`"low" | "middle" | "high"`) → `resolveTier` maps
 it to (engine, model, effort). `LEVELS` exports those names in increasing cost order and `Level`
-is the shared type. Numeric levels are rejected; this is a deliberate breaking change.
+is the shared type. The advertised schema is names only, but `delegate.level` and `fan_out.levels`
+run `z.preprocess(legacyLevel, …)`: the old integers map 1→low, 2–3→middle, 4–5→high, anything else
+is rejected. Reason (2026-10-25): a resumed or forked session keeps the old integer schema and no
+reload refreshes it, so rejecting numbers left those sessions with no `delegate` at all.
+`notifications/tools/list_changed` would not help them: the stale schema lives in the transcript,
+and a fresh connection already lists tools on initialize.
 All three defaults use subscriptions (codex + claude), with AA quota proxies
 $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, AA 38),
 middle=GPT-6.1 Sol medium (codex, AA 48), high=Claude Opus 5.5 high (claude, AA 54).

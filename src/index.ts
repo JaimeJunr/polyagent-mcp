@@ -8,7 +8,7 @@ import { z } from "zod";
 import {
   runCursor, EXPLORE_MODEL, EXPLORE_EFFORT, IMAGE_MODEL, DEFAULT_TIMEOUT_MS, budgetNote, evidenceNote, denyNote,
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
-  resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS,
+  resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
   lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS,
   type CliResult, type Engine, type Level,
@@ -202,7 +202,7 @@ server.registerTool(
       "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The required `level` picks one of three named model+effort pairs on the codex/claude subscriptions, with AA estimated $/task (quota proxies) $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, cheapest), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: high is EXPENSIVE ($1.82/task AA proxy, ~8.7× middle) and shares the Claude Code host subscription. Use high only when a cheaper level already failed or for frontier reasoning such as hard debugging, cross-file impact, or a costly review verdict. Low/middle cover most work, including implementation. Give a complete, self-contained instruction — the worker does not see your context. Optional `deny` blocks commands (e.g. 'git push', 'rm', 'make db-up', 'npx prisma migrate') inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary.",
     inputSchema: {
       prompt: z.string().describe("The complete task prompt for the worker agent."),
-      level: z.enum(LEVELS)
+      level: z.preprocess(legacyLevel, z.enum(LEVELS))
         .describe("Required difficulty name, a quoted JSON string: \"low\", \"middle\" or \"high\" ({\"level\": \"<name>\"}; a bare low, middle or high without quotes is invalid JSON and the call fails before reaching the server). low=GPT-6 Luna max (codex, $0.07/task), middle=GPT-6.1 Sol medium (codex, $0.21), high=Claude Opus 5.5 high (claude, $1.82). AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do."),
       engine: z
         .string()
@@ -477,7 +477,7 @@ server.registerTool(
     inputSchema: {
       prompt: z.string().describe("The task prompt sent identically to every worker."),
       levels: z
-        .array(z.enum(LEVELS))
+        .array(z.preprocess(legacyLevel, z.enum(LEVELS)))
         .min(2)
         .describe("Which named delegate levels to fan out to: low, middle, high. One worker per entry, at least two; repeats are allowed (e.g. [\"low\",\"low\",\"low\"]) to sample the same model N times."),
       mode: z

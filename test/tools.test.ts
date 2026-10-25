@@ -53,7 +53,7 @@ describe("tool surface (US-003)", () => {
 
   it("a descrição do param level manda passar o nome como string JSON entre aspas", () => {
     // host mandou {"level": middle} sem aspas várias vezes: JSON inválido, recusado antes de chegar ao server
-    const desc = indexSrc.match(/level: z\.enum\(LEVELS\)\s*\.describe\("((?:[^"\\]|\\.)*)"/)?.[1] ?? "";
+    const desc = indexSrc.match(/level: z\.preprocess\(legacyLevel, z\.enum\(LEVELS\)\)\s*\.describe\("((?:[^"\\]|\\.)*)"/)?.[1] ?? "";
     expect(desc).toContain('{\\"level\\": \\"<name>\\"}');
     for (const l of ["low", "middle", "high"]) expect(desc).toContain(`\\"${l}\\"`);
     expect(desc).toMatch(/quoted JSON string/);

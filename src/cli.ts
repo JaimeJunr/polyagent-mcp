@@ -1772,9 +1772,22 @@ interface TierEntry {
   cursorModel: string;
 }
 
-/** Níveis públicos em ordem crescente de custo; números antigos não são aceitos na entrada. */
+/** Níveis públicos em ordem crescente de custo. */
 export const LEVELS = ["low", "middle", "high"] as const;
 export type Level = typeof LEVELS[number];
+
+/**
+ * Converte o nível numérico antigo (1-5) no nome atual: 1→low, 2-3→middle, 4-5→high.
+ * Sessão retomada ou forkada guarda o schema de antes da troca (inteiro 1-5) e nem /reload-plugins
+ * atualiza; recusar o número deixava essas sessões sem delegate (2026-10-25). Qualquer outro valor
+ * passa intacto para o z.enum recusar com a mensagem normal.
+ */
+export function legacyLevel(value: unknown): unknown {
+  if (value === 1) return "low";
+  if (value === 2 || value === 3) return "middle";
+  if (value === 4 || value === 5) return "high";
+  return value;
+}
 
 /**
  * Matriz do `delegate`: decisão do dono em research/2026-10-23-tres-niveis.md.
