@@ -32,8 +32,13 @@ describe("delegate level schema", () => {
     expect(schema("delegate").parse({ prompt: "task", level }).level).toBe(level);
   });
 
-  it.each([undefined, 0, 1, 2, 3, 4, 5, "1", "medium", "HIGH", "toString", ""])("rejects invalid level %s", (level) => {
+  it.each([undefined, 0, 6, -1, 2.5, "1", "medium", "HIGH", "toString", ""])("rejects invalid level %s", (level) => {
     expect(schema("delegate").safeParse({ prompt: "task", level }).success).toBe(false);
+  });
+
+  // Sessão aberta antes da troca para nomes guarda o schema antigo (inteiro 1-5) e manda número.
+  it.each([[1, "low"], [2, "middle"], [3, "middle"], [4, "high"], [5, "high"]])("maps legacy numeric level %s to %s", (level, name) => {
+    expect(schema("delegate").parse({ prompt: "task", level }).level).toBe(name);
   });
 });
 
@@ -42,8 +47,12 @@ describe("fan_out named levels schema", () => {
     expect(schema("fan_out").parse({ prompt: "task", levels }).levels).toEqual(levels);
   });
 
-  it.each([undefined, [], ["low"], [1, 2], ["low", 2], ["low", "medium"], ["low", "HIGH"]].map((levels) => ({ levels })))("rejects missing, short or invalid levels $levels", ({ levels }) => {
+  it.each([undefined, [], ["low"], [1, 6], ["low", 0], ["low", "medium"], ["low", "HIGH"]].map((levels) => ({ levels })))("rejects missing, short or invalid levels $levels", ({ levels }) => {
     expect(schema("fan_out").safeParse({ prompt: "task", levels }).success).toBe(false);
+  });
+
+  it("maps legacy numeric levels inside the array", () => {
+    expect(schema("fan_out").parse({ prompt: "task", levels: [1, "middle", 5] }).levels).toEqual(["low", "middle", "high"]);
   });
 
   it("keeps fast_delegate level-free", () => {

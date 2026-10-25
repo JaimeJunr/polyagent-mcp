@@ -162,7 +162,12 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
 
 `delegate` takes a required named `level` (`"low" | "middle" | "high"`) → `resolveTier` maps
 it to (engine, model, effort). `LEVELS` exports those names in increasing cost order and `Level`
-is the shared type. Numeric levels are rejected; this is a deliberate breaking change.
+is the shared type. The advertised schema is names only, but `delegate.level` and `fan_out.levels`
+run `z.preprocess(legacyLevel, …)`: the old integers map 1→low, 2–3→middle, 4–5→high, anything else
+is rejected. Reason (2026-10-25): a resumed or forked session keeps the old integer schema and no
+reload refreshes it, so rejecting numbers left those sessions with no `delegate` at all.
+`notifications/tools/list_changed` would not help them: the stale schema lives in the transcript,
+and a fresh connection already lists tools on initialize.
 All three defaults use subscriptions (codex + claude), with AA quota proxies
 $0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, AA 38),
 middle=GPT-6.1 Sol medium (codex, AA 48), high=Claude Opus 5.5 high (claude, AA 54).
@@ -206,6 +211,10 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
 - `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` and `rate` tools.
   New delegate/fan_out receipts store named `requestedLevel`; `fast_delegate` keeps neutral `0`.
   Readers/stats tolerate numeric `requestedLevel` in old logs and skip malformed JSONL lines.
+  `bridge_stats` mostra tabela de saúde só das engines vistas no log (score com duas casas,
+  causa e elegibilidade HH:MM local). `reset_health: ["codex"]` valida nomes e persiste eventos
+  `outcome: "reset"` sem apagar o histórico nem inflar contagens de chamadas. Exige log gravável;
+  nomes desconhecidos são recusados com o valor recebido e as sete engines válidas.
 
 ### Ratings (`rate`)
 
@@ -427,34 +436,21 @@ points, all in `cli.ts`:
   `DEFAULT_MODEL` (env `POLYAGENT_MODEL`) applies to the opt-in Cursor path. The current
   cursor-agent rejects `composer-2.5[fast=true]`. `resolveModel` still accepts caller-supplied
   `auto`, but it is not the default.
-- **Health latency uses the real runtime timeout.** `computeEngineHealth` trata o outcome
-  `"quota"` (registrado por `classifyOutcome` a partir do `name` da `QuotaError`, sem importar
-  `cli.ts`) como score 0, junto de `failure` e `timeout` — não 1, não ignorado. O `continue`
-  antigo existia para impedir que cota INFLASSE o health (cairia no ramo "não é failure nem
-  timeout" e pontuaria 1); pontuar 0 é a mesma intenção levada até o fim: engine sem saldo é
-  engine indisponível. Duas janelas, porque os sinais têm memórias diferentes: `success`/
-  `failure`/`timeout` usam a janela curta (30 min — falha e timeout são transitórios, duram
-  minutos); `quota` usa uma janela própria e longa (`quotaWindowMs`, default 6h — cota dura
-  horas, às vezes até o próximo ciclo de cobrança). Sem a janela longa, um registro de cota
-  fora dos 30 min some do mapa; engine sem registro é tratada como saudável (`health[e] ?? 1`)
-  e a cascata escolhe de novo a engine esgotada. Cada registro decai na escala da SUA janela
-  (halfLife = recWindow/4): cota recupera o health sozinha quando o saldo volta, só que mais
-  devagar, sem lógica de expiração própria. Isto NÃO é fallback imediato: o health só reflete
-  a cota DEPOIS de pelo menos uma chamada ter falhado e sido registrada no log de uso — a
-  primeira chamada após a cota estourar ainda falha; as seguintes é que evitam a engine. A
-  proteção é por aprendizado, e depende de `POLYAGENT_LOG` estar configurada: sem log não há
-  registros, `computeEngineHealth` devolve vazio e todo engine fica com health 1 (omissão =
-  saudável). Dado real (host, 2026-09): o log tinha 3162 linhas (272 `success`, 21 `failure`,
-  2 `timeout`, 19 `quota` — todos os de cota do codex); com o `continue` antigo esses 19 eram
-  descartados e não influenciavam a seleção. Medido de novo: janela de 2h via o registro de
-  cota (health 0.00, cascata cai no opencode); janela de 30 min omitia o codex do mapa — a
-  lacuna que a janela longa fecha.
-  `computeEngineHealth(records, now, windowMs,
-  latencyCeilMs, quotaWindowMs)` retains 300,000ms as its optional-parameter default for backward compatibility,
-  but `currentEngineHealth()` passes `DEFAULT_TIMEOUT_MS` (30min by default) and the 6h quota
-  window. The old fixed 5min
-  ceiling zeroed successful 5–22min runs and falsely made engines unhealthy despite no failure or
-  timeout. Both `resolveTier` and `resolveFastTier` use the resulting score at the shared 0.3 threshold.
+- **Health latency uses the real runtime timeout.** `computeEngineHealth` mantém o mapa numérico
+  e o score por decaimento: success/failure/timeout usam 30 min; quota usa `QUOTA_WINDOW_MS` (6h).
+  O teto default permanece 300.000 ms por compatibilidade; `currentEngineHealth()` injeta
+  `DEFAULT_TIMEOUT_MS`. `LATENCY_FLOOR=0.4` fica acima de `HEALTH_THRESHOLD=0.3`: latência sozinha
+  nunca bloqueia. Uma cota anterior ao sucesso mais novo da própria engine é ignorada; falhas e
+  timeouts continuam contando. O reset mais novo invalida todos os registros anteriores da engine.
+  `engineHealthReport` é puro e devolve score, causa (`quota`/`failures`/`timeouts`/`ok`), prazo
+  `until` e `probe`. Quando só a cota causa o bloqueio, libera nova tentativa após
+  `QUOTA_PROBE_MS` (env `POLYAGENT_QUOTA_PROBE_MS`, default 30 min, lida uma vez). Nova cota reinicia
+  o relógio; sucesso limpa a cota. Isso não retenta a chamada que falhou nem reserva um único probe
+  entre chamadas concorrentes. O score observado permanece baixo durante o probe liberado.
+  Os resolvers aceitam o relatório ou o mapa numérico histórico; runtime usa o relatório, inclusive
+  workers e árbitro do `fan_out`. Erros mostram causa, hora local HH:MM e `bridge_stats reset_health`.
+  Cascatas devolvem `skipped`; o resultado mostra uma única linha antes do footer quando houve salto.
+  Sem `POLYAGENT_LOG` não há memória de saúde; engine sem histórico é saudável por omissão.
 - **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna medium
   → Claude Haiku 5.5 medium → OpenCode `openrouter/inception/mercury-2` → Grok 4.5 low. `resolveFastTier`
   skips missing or unhealthy native engines before the opt-in Cursor fallback. Keep it level-free,

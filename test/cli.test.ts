@@ -841,9 +841,21 @@ describe("resolveTier", () => {
   });
 
   it("keeps the corresponding legacy Cursor fallback for each retained tier", () => {
-    expect(resolveTier("low", noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-luna-max-fast" });
-    expect(resolveTier("middle", noCodex, true)).toEqual({ engine: "cursor", model: "gpt-5.6-sol-xhigh-fast" });
-    expect(resolveTier("high", (e) => e !== "claude", true)).toEqual({ engine: "cursor", model: "gpt-6-astra-max-fast" });
+    expect(resolveTier("low", noCodex, true)).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }],
+      engine: "cursor",
+      model: "gpt-5.6-luna-max-fast",
+    });
+    expect(resolveTier("middle", noCodex, true)).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }],
+      engine: "cursor",
+      model: "gpt-5.6-sol-xhigh-fast",
+    });
+    expect(resolveTier("high", (e) => e !== "claude", true)).toEqual({
+      skipped: [{ engine: "claude", cause: "missing" }],
+      engine: "cursor",
+      model: "gpt-6-astra-max-fast",
+    });
   });
 
   it("names the missing primary CLI when Cursor is disabled", () => {
@@ -871,6 +883,7 @@ describe("resolveTier", () => {
 
   it("cai pro cursor quando a engine preferida está instalada mas com health baixo", () => {
     expect(resolveTier("low", all, true, { codex: 0.1 })).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }],
       engine: "cursor",
       model: "gpt-5.6-luna-max-fast",
     });
@@ -912,19 +925,45 @@ describe("resolveFastTier", () => {
   });
 
   it("cai para o próximo candidato conforme as engines mais rápidas faltam", () => {
-    expect(resolveFastTier((e) => e !== "codex")).toEqual({ engine: "claude", model: "claude-haiku-5-5", effort: "medium" });
-    expect(resolveFastTier((e) => e !== "codex" && e !== "claude")).toEqual({ engine: "opencode", model: "openrouter/inception/mercury-2" });
-    expect(resolveFastTier((e) => e === "grok")).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
+    expect(resolveFastTier((e) => e !== "codex")).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }],
+      engine: "claude",
+      model: "claude-haiku-5-5",
+      effort: "medium",
+    });
+    expect(resolveFastTier((e) => e !== "codex" && e !== "claude")).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+      ],
+      engine: "opencode",
+      model: "openrouter/inception/mercury-2",
+    });
+    expect(resolveFastTier((e) => e === "grok")).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+        { engine: "opencode", cause: "missing" },
+      ],
+      engine: "grok",
+      model: "grok-4.5",
+      effort: "low",
+    });
   });
 
   it("pula engine instalada mas unhealthy", () => {
     const all: (e: Engine) => boolean = () => true;
     expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.8 })).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }],
       engine: "claude",
       model: "claude-haiku-5-5",
       effort: "medium",
     });
     expect(resolveFastTier(all, false, { codex: 0.29, claude: 0.29, opencode: 0.8 })).toEqual({
+      skipped: [
+        { engine: "codex", cause: "failures" },
+        { engine: "claude", cause: "failures" },
+      ],
       engine: "opencode",
       model: "openrouter/inception/mercury-2",
     });
@@ -937,14 +976,32 @@ describe("resolveFastTier", () => {
   });
 
   it("cai para cursor com DEFAULT_MODEL quando nenhuma engine nativa está disponível ou saudável", () => {
-    expect(resolveFastTier(() => false, true)).toEqual({ engine: "cursor", model: DEFAULT_MODEL });
+    expect(resolveFastTier(() => false, true)).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+        { engine: "opencode", cause: "missing" },
+        { engine: "grok", cause: "missing" },
+      ],
+      engine: "cursor",
+      model: DEFAULT_MODEL,
+    });
     expect(resolveFastTier(() => true, true, {
       opencode: 0.1,
       codex: 0.1,
       claude: 0.1,
       grok: 0.1,
       cursor: 0.9,
-    })).toEqual({ engine: "cursor", model: DEFAULT_MODEL });
+    })).toEqual({
+      skipped: [
+        { engine: "codex", cause: "failures" },
+        { engine: "claude", cause: "failures" },
+        { engine: "opencode", cause: "failures" },
+        { engine: "grok", cause: "failures" },
+      ],
+      engine: "cursor",
+      model: DEFAULT_MODEL,
+    });
   });
 });
 

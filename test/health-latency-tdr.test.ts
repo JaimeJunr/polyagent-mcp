@@ -28,7 +28,16 @@ describe("regressão: latência sozinha nunca derruba uma engine abaixo do thres
     expect(health.grok).toBeGreaterThanOrEqual(0.3);
     // consequência de roteamento: grok segue disponível — zero falhas, só foi lento. (Grok saiu da
     // matriz do delegate em 2026-09-23; a cascata do fast_delegate é onde ele ainda é roteado.)
-    expect(resolveFastTier((e) => e === "grok", false, health)).toEqual({ engine: "grok", model: "grok-4.5", effort: "low" });
+    expect(resolveFastTier((e) => e === "grok", false, health)).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+        { engine: "opencode", cause: "missing" },
+      ],
+      engine: "grok",
+      model: "grok-4.5",
+      effort: "low",
+    });
   });
 
   it("mesmo um sucesso arbitrariamente lento (10x o teto) não cruza o threshold — só failure/timeout derruba", () => {

@@ -5,6 +5,18 @@ import { estimateCostPerTask } from "./costs.js";
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
 export const USAGE_LOG = process.env.POLYAGENT_LOG;
 
+/** Intervalo entre tentativas após cota; configuração inválida usa 30 minutos. */
+const configuredQuotaProbe = Number(process.env.POLYAGENT_QUOTA_PROBE_MS ?? 1_800_000);
+export const QUOTA_PROBE_MS = Number.isFinite(configuredQuotaProbe) && configuredQuotaProbe > 0
+  ? configuredQuotaProbe : 1_800_000;
+/**
+ * Health mínimo (0-1) pra considerar uma engine viável num tier. Abaixo disso, trata como indisponível.
+ * Mora aqui (não em cli.ts) porque engineHealthReport também precisa dele. Um teste de invariante em
+ * test/usage.test.ts prova que LATENCY_FLOOR fica acima disso, senão latência sozinha (sem nenhuma
+ * falha) volta a derrubar uma engine — era exatamente o bug original.
+ */
+export const HEALTH_THRESHOLD = 0.3;
+
 export interface DecisionRecord {
   name: string;
   candidates: string[];
@@ -46,8 +58,9 @@ export interface UsageEntry {
    * Resultado da chamada. "quota" é um outcome PRÓPRIO (cota esgotada/rate limit), deliberadamente
    * fora de failure/timeout na classificação: a engine não quebrou, o plano acabou. No health,
    * pontua 0 igual a failure/timeout — engine sem saldo é engine indisponível.
+   * "reset" limpa a memória anterior da engine, sem representar uma chamada de worker.
    */
-  outcome?: "success" | "failure" | "timeout" | "quota";
+  outcome?: "success" | "failure" | "timeout" | "quota" | "reset";
   /** Duração do run em ms. Usado por computeEngineHealth para penalizar latência alta. */
   durationMs?: number;
   /** Handle avaliado por um registro com tool="rate". */
@@ -285,6 +298,40 @@ export function readUsage(): UsageEntry[] {
   return out;
 }
 
+/** Reset é um evento persistente, sem sessão e sem alterar os registros históricos. */
+export function buildHealthResetEntries(engines: string[], now: number): UsageEntry[] {
+  const valid = ["cursor", "grok", "codex", "claude", "opencode", "kimi", "muse"];
+  for (const engine of engines) {
+    if (!valid.includes(engine)) {
+      throw new Error(`Invalid reset_health engine: received '${engine}'; valid engines: ${valid.join(", ")}`);
+    }
+  }
+  return [...new Set(engines)].map((engine) => ({
+    ts: now, tool: "bridge_stats", outChars: 0, engine, outcome: "reset",
+  }));
+}
+
+/** Escrita explícita: reset não pode confirmar sucesso se o log não persistiu. */
+export function logHealthResets(entries: UsageEntry[]): void {
+  if (!entries.length) return;
+  if (!USAGE_LOG) throw new Error("reset_health requires POLYAGENT_LOG to persist health resets.");
+  appendFileSync(USAGE_LOG, entries.map((entry) => JSON.stringify(entry) + "\n").join(""));
+}
+
+/** Ordenação do arquivo não importa; eventos futuros e decisões não alteram saúde. */
+function healthRecords(records: UsageEntry[], now: number): UsageEntry[] {
+  const valid = records.filter((r) => r.engine && Number.isFinite(r.ts) && r.ts <= now && r.tool !== "decide");
+  const resets: Record<string, number> = {};
+  const successes: Record<string, number> = {};
+  for (const r of valid) {
+    if (r.outcome === "reset") resets[r.engine!] = Math.max(resets[r.engine!] ?? -Infinity, r.ts);
+    if (r.outcome === "success") successes[r.engine!] = Math.max(successes[r.engine!] ?? -Infinity, r.ts);
+  }
+  return valid.filter((r) => r.outcome !== "reset"
+    && r.ts >= (resets[r.engine!] ?? -Infinity)
+    && !(r.outcome === "quota" && r.ts < (successes[r.engine!] ?? -Infinity)));
+}
+
 /** Default compatível: teto de latência usado só quando o chamador não injeta seu budget real. */
 const LATENCY_CEIL_MS = 300_000;
 
@@ -294,9 +341,12 @@ const LATENCY_CEIL_MS = 300_000;
  * cobrança. 6h cobre a lacuna medida no host (registro de 2h sumia da janela de 30 min e o
  * codex voltava a ser escolhido como "saudável por omissão") com folga de uma manhã de trabalho,
  * sem arrastar uma cota de ontem para o dia seguinte. Meia-vida = 6h/4 = 1,5h: peso ainda
- * relevante às 2–3h (o cenário que falhava), quase zero na borda das 6h; depois o registro
- * some do mapa e a engine é tentada de novo (aprendizado: se a cota ainda estiver lá, a
- * próxima chamada falha e regrava).
+ * relevante às 2–3h (o cenário que falhava), quase zero na borda das 6h.
+ *
+ * A janela sozinha travava a engine: bloqueada, ela nunca era chamada, nenhum sucesso entrava no
+ * log e o codex ficou fora por ~6h com a cota já de volta (2026-10-25). Por isso um sucesso
+ * posterior ou um reset invalida o sinal antes da expiração, e `engineHealthReport` libera uma
+ * nova tentativa (probe) depois de `QUOTA_PROBE_MS`.
  */
 export const QUOTA_WINDOW_MS = 6 * 60 * 60 * 1000;
 
@@ -323,7 +373,8 @@ export const LATENCY_FLOOR = 0.4;
  * um score de latência (penaliza runs bem-sucedidos mas lentos, com piso em LATENCY_FLOOR — ver
  * doc lá). Registros sem `engine` são ignorados — não há o que atribuir. Função pura; `now` é
  * injetado pelo chamador (src/index.ts fica com o I/O de ler o log e pegar Date.now()). Resultado
- * sempre clampado em [0,1].
+ * sempre clampado em [0,1]. Cotas anteriores ao sucesso mais novo e registros anteriores ao
+ * reset mais novo da própria engine são ignorados; probe fica somente no relatório.
  */
 export function computeEngineHealth(
   records: UsageEntry[],
@@ -335,8 +386,8 @@ export function computeEngineHealth(
   const ceil = Number.isFinite(latencyCeilMs) && latencyCeilMs > 0 ? latencyCeilMs : LATENCY_CEIL_MS;
   const quotaWindow = Number.isFinite(quotaWindowMs) && quotaWindowMs > 0 ? quotaWindowMs : QUOTA_WINDOW_MS;
   const byEngine: Record<string, { weight: number; weightedScore: number }> = {};
-  for (const r of records) {
-    if (!r.engine || r.tool === "decide") continue;
+  for (const r of healthRecords(records, now)) {
+    if (!r.engine) continue;
     // Cota pontua 0 (não 1, não ignorada). O `continue` antigo existia para impedir que cota
     // INFLASSE o health: sem ele, cairia no ramo "não é failure/timeout" e pontuaria 1, exatamente
     // da engine que não pode mais ser usada. Pontuar 0 é a mesma intenção levada até o fim —
@@ -349,9 +400,8 @@ export function computeEngineHealth(
     //
     // Decaimento na escala da janela do registro (halfLife = recWindow/4), não numa meia-vida
     // única. Se a cota herdasse a meia-vida curta (7,5 min), um registro de 2h teria peso ~0 e
-    // qualquer sucesso recente apagaria o sinal; com meia-vida de 1,5h o peso às 2h ainda é
-    // ~0,4, então o health só sobe de verdade quando entram sucessos (cota resetou) e some
-    // sozinho ao cruzar as 6h, sem lógica de expiração própria.
+    // qualquer sucesso recente apagaria o sinal; com meia-vida de 1,5h o peso às 2h ainda é ~0,4.
+    // A saída do bloqueio por cota vem de healthRecords (sucesso posterior/reset) e do probe.
     const age = now - r.ts;
     if (age < 0) continue;
     const recWindow = r.outcome === "quota" ? quotaWindow : windowMs;
@@ -374,10 +424,84 @@ export function computeEngineHealth(
   return out;
 }
 
+export type HealthCause = "quota" | "failures" | "timeouts" | "ok";
+export interface EngineHealth {
+  score: number;
+  cause: HealthCause;
+  until?: number;
+  probe: boolean;
+}
+export type EngineHealthReport = Record<string, EngineHealth>;
+
+/** Hora local do processo; sem locale implícito nem segundos na saída. */
+export function healthLocalTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Relatório puro: mantém score observado e libera probe só quando cota é a causa do bloqueio. */
+export function engineHealthReport(
+  records: UsageEntry[],
+  now: number,
+  windowMs = 30 * 60 * 1000,
+  latencyCeilMs = LATENCY_CEIL_MS,
+  quotaWindowMs = QUOTA_WINDOW_MS,
+  quotaProbeMs = QUOTA_PROBE_MS,
+): EngineHealthReport {
+  const quotaWindow = Number.isFinite(quotaWindowMs) && quotaWindowMs > 0 ? quotaWindowMs : QUOTA_WINDOW_MS;
+  const probeMs = Number.isFinite(quotaProbeMs) && quotaProbeMs > 0 ? quotaProbeMs : QUOTA_PROBE_MS;
+  const active = healthRecords(records, now);
+  const engines = [...new Set(records.filter((r) => r.engine && r.tool !== "decide" && r.ts <= now).map((r) => r.engine!))];
+  const result: EngineHealthReport = {};
+  for (const engine of engines) {
+    const own = active.filter((r) => r.engine === engine);
+    const scoreAt = (at: number, withoutQuota = false): number => computeEngineHealth(
+      withoutQuota ? own.filter((r) => r.outcome !== "quota") : own,
+      at, windowMs, latencyCeilMs, quotaWindow,
+    )[engine] ?? 1;
+    const quotas = own.filter((r) => r.outcome === "quota" && now - r.ts <= quotaWindow);
+    const newestQuota = Math.max(...quotas.map((r) => r.ts));
+    const probeAt = newestQuota + probeMs;
+    const eligibleAt = (at: number): boolean => scoreAt(at) >= HEALTH_THRESHOLD
+      || (quotas.length > 0 && at >= probeAt && scoreAt(at, true) >= HEALTH_THRESHOLD);
+    const score = scoreAt(now);
+    if (score >= HEALTH_THRESHOLD) {
+      result[engine] = { score, cause: "ok", probe: false };
+      continue;
+    }
+    const quotaOnly = quotas.length > 0 && scoreAt(now, true) >= HEALTH_THRESHOLD;
+    const failures = own.filter((r) => r.outcome === "failure" && now - r.ts <= windowMs);
+    const timeouts = own.filter((r) => r.outcome === "timeout" && now - r.ts <= windowMs);
+    const weight = (rs: UsageEntry[]): number => rs.reduce((sum, r) => sum + Math.pow(0.5, (now - r.ts) / (windowMs / 4)), 0);
+    const cause: HealthCause = quotaOnly ? "quota" : weight(failures) >= weight(timeouts) ? "failures" : "timeouts";
+    // Na borda inclusiva da janela o registro ainda conta; +1 é o primeiro ms elegível.
+    const deadlines = own.map((r) => r.ts + (r.outcome === "quota" ? quotaWindow : windowMs) + 1);
+    if (quotas.length) deadlines.push(probeAt);
+    const probe = quotaOnly && now >= probeAt;
+    const until = probe ? probeAt : deadlines.sort((a, b) => a - b).find((at) => at >= now && eligibleAt(at));
+    result[engine] = { score, cause, until, probe };
+  }
+  return result;
+}
+
+/** Probe aberto: `until` já passou, e mostrar a hora antiga parecia um bloqueio ainda vigente. */
+function eligibleLabel(health: EngineHealth): string {
+  if (health.probe) return "now (probe)";
+  return health.until === undefined ? "-" : healthLocalTime(health.until);
+}
+
+/** Tabela curta usada por bridge_stats; inclui somente engines vistas no log. */
+export function renderEngineHealth(report: EngineHealthReport): string {
+  const rows = Object.entries(report).sort(([a], [b]) => a.localeCompare(b)).map(([engine, health]) =>
+    `${engine} | ${health.score.toFixed(2)} | ${health.cause} | ${eligibleLabel(health)}`);
+  return ["Engine health", "engine | score | cause | eligible again at", "--- | --- | --- | ---", ...rows].join("\n");
+}
+
 /** Agrega entradas por tool: nº de chamadas, total e média de chars devolvidos. Função pura. */
 export function aggregate(entries: UsageEntry[]): Record<string, ToolStats> {
   const out: Record<string, ToolStats> = {};
   for (const e of entries) {
+    if (e.outcome === "reset") continue;
     const s = out[e.tool] ?? { calls: 0, totalOutChars: 0, avgOutChars: 0 };
     s.calls += 1;
     s.totalOutChars += e.outChars;

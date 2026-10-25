@@ -168,10 +168,10 @@ describe("superfície das tools auxiliares (US-004)", () => {
     }
   });
 
-  it("as três de leitura resolvem por resolveReadTool; run_filtered por resolveRunFiltered", () => {
+  it("as três de leitura e o árbitro resolvem por resolveReadTool; run_filtered por resolveRunFiltered", () => {
     const readCalls = indexSrc.match(/resolveReadTool\(/g) ?? [];
     const runCalls = indexSrc.match(/resolveRunFiltered\(/g) ?? [];
-    expect(readCalls).toHaveLength(3);
+    expect(readCalls).toHaveLength(4);
     expect(runCalls).toHaveLength(1);
   });
 });
@@ -189,16 +189,22 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
 
   it("pula o primeiro da cascata quando está ausente ou unhealthy", () => {
     expect(resolveRunFiltered({}, {}, (e) => e !== "codex", false)).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }],
       engine: "claude",
       model: "claude-haiku-5-5",
       effort: "medium",
     });
     expect(resolveRunFiltered({}, {}, (e) => e !== "codex" && e !== "claude", false)).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+      ],
       engine: "opencode",
       model: "openrouter/inception/mercury-2",
       effort: undefined,
     });
     expect(resolveRunFiltered({}, {}, all, false, { codex: 0.29, claude: 0.8 })).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }],
       engine: "claude",
       model: "claude-haiku-5-5",
       effort: "medium",
@@ -253,6 +259,11 @@ describe("resolveRunFiltered — cascata do fast_delegate", () => {
 
   it("cascata não esbarra em assertReadOnlyEngine — aceita grok com sandbox desligado", () => {
     expect(resolveRunFiltered({}, {}, (e) => e === "grok", false, undefined, false)).toEqual({
+      skipped: [
+        { engine: "codex", cause: "missing" },
+        { engine: "claude", cause: "missing" },
+        { engine: "opencode", cause: "missing" },
+      ],
       engine: "grok",
       model: "grok-4.5",
       effort: "low",
