@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 
 /** CLIs suportados. Cada engine tem dialeto de args e parser de saída próprios. */
 export type Engine = "cursor" | "grok" | "codex" | "claude" | "opencode" | "kimi" | "muse";
@@ -27,6 +27,7 @@ export function isCodexEnvError(stderr: string): boolean {
  * antes (quem só lê `error.message` não vê diferença), mas o JSON estruturado que os CLIs emitem em
  * stdout deixa de ser descartado sempre que o stderr tem qualquer conteúdo — é ele que permite
  * classificar a causa (cota, rate limit, auth) a jusante.
+ * Exceção na message: falhas bwrap execvp acrescentam o path resolvido no host, sem mudar os canais.
  */
 export class ProcessError extends Error {
   constructor(
@@ -81,6 +82,8 @@ export const MUSE_BIN = process.env.POLYAGENT_MUSE_BIN ?? "muse";
  * (`composer-2.5-fast`). NUNCA `auto`. Override via POLYAGENT_MODEL.
  */
 export const DEFAULT_MODEL = process.env.POLYAGENT_MODEL ?? "composer-2.5-fast";
+/** Evita herdar silenciosamente o modelo da config do OpenCode. Override via POLYAGENT_OPENCODE_MODEL. */
+export const OPENCODE_DEFAULT_MODEL = process.env.POLYAGENT_OPENCODE_MODEL ?? "openrouter/inception/mercury-2";
 
 /**
  * Modelo barato de leitura do `explore`/`read_slice`/`web_lookup`: GPT-6 Luna via
@@ -415,6 +418,57 @@ export function resolveShimTargets(
   return { targets, real: resolved, relocate: true };
 }
 
+/**
+ * Resolve o CLI no PATH do host e libera só as raízes de instalação que os binds ainda não cobrem.
+ * O symlink e seu alvo precisam estar visíveis: montar só o alvo não torna o nome no PATH acessível.
+ * Sondagens de fs injetadas mantêm a decisão testável; buildSandboxSpec fornece o fs real.
+ */
+export function resolveEngineBinary(
+  bin: string,
+  path: string,
+  home: string,
+  covered: string[],
+  isExecutable: (p: string) => boolean,
+  realpath: (p: string) => string,
+  cwd: string,
+): { hostPath: string | null; roBinds: string[] } {
+  const candidates = bin.includes("/")
+    ? [resolve(cwd, bin)]
+    : path.split(":").map((dir) => resolve(cwd, dir, bin));
+  const hostPath = candidates.find(isExecutable) ?? null;
+  if (!hostPath) return { hostPath, roBinds: [] };
+  const contains = (root: string, target: string) => target === root || target.startsWith(`${root}/`);
+  const roBinds: string[] = [];
+  for (const target of [hostPath, realpath(hostPath)]) {
+    if ([...covered, ...roBinds].some((root) => contains(root, target))) continue;
+    const root = contains(home, target)
+      ? join(home, target.slice(home.length + 1).split("/")[0])
+      : "/" + target.split("/").filter(Boolean).slice(0, 2).join("/");
+    // Nunca expor o HOME inteiro nem a raiz, mesmo com overrides incomuns do binário.
+    if (root !== "/" && root !== home) roBinds.push(root);
+  }
+  return { hostPath, roBinds };
+}
+
+/** Acrescenta a resolução do host só ao erro execvp correspondente, sem mascarar o stderr original. */
+export function sandboxExecError(stderr: string, bin: string, hostPath: string | null): string {
+  if (!stderr.includes(`bwrap: execvp ${bin}: No such file or directory`)) return stderr;
+  return `${stderr}\n${hostPath
+    ? `Host PATH resolved ${bin} to ${hostPath}.`
+    : `${bin} was not found on the host PATH.`}`;
+}
+
+/** Centraliza a escolha para a sondagem do host e o spawn usarem exatamente o mesmo binário. */
+function engineBinary(engine: Engine): string {
+  return engine === "grok" ? GROK_BIN
+    : engine === "codex" ? CODEX_BIN
+    : engine === "claude" ? CLAUDE_BIN
+    : engine === "opencode" ? OPENCODE_BIN
+    : engine === "kimi" ? KIMI_BIN
+    : engine === "muse" ? MUSE_BIN
+    : POLYAGENT_CURSOR_BIN;
+}
+
 export interface SandboxSpec {
   home: string;
   user: string;
@@ -429,6 +483,10 @@ export interface SandboxSpec {
   workspace: string;
   /** monta o workspace como somente leitura quando true. */
   workspaceRo: boolean;
+  /** Caminho do executável no host, para diagnosticar falhas execvp dentro do bwrap. */
+  engineHostPath?: string | null;
+  /** Instalações fora dos binds padrão, RO após HOME e antes dos extras/workspace. */
+  engineRoBinds?: string[];
   systemRo: string[];
   homeRo: string[];
   homeRw: string[];
@@ -457,6 +515,7 @@ export function buildSandboxArgs(spec: SandboxSpec): string[] {
   args.push("--bind", spec.tmpDir, "/tmp", "--tmpfs", "/run");
   for (const p of spec.homeRo) args.push("--ro-bind", p, p);
   for (const p of spec.homeRw) args.push("--bind", p, p);
+  for (const p of spec.engineRoBinds ?? []) args.push("--ro-bind", p, p);
   for (const p of spec.extraBinds) args.push("--bind", p, p);
   for (const p of spec.roBinds) args.push("--ro-bind", p, p);
   // depois do tmpfs /run e dos overlays do HOME (senão somem), antes do workspace (que fica por último)
@@ -1197,6 +1256,17 @@ export function buildSandboxSpec(
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k] as string]),
   };
+  const isExecutable = (p: string): boolean => {
+    try {
+      accessSync(p, constants.X_OK);
+      return statSync(p).isFile();
+    } catch { return false; }
+  };
+  const binary = resolveEngineBinary(engineBinary(engine), path, home, [
+    ...spec.systemRo, ...spec.homeRo, ...spec.homeRw, ...spec.extraBinds, ...spec.roBinds, workspace,
+  ], isExecutable, realpath, workspace);
+  spec.engineHostPath = binary.hostPath;
+  spec.engineRoBinds = binary.roBinds;
   return { spec, cleanup };
 }
 
@@ -1362,9 +1432,9 @@ function assertOpencodeModel(model: string): void {
  * porque o CLI não oferece um canal aditivo de system prompt. Função pura.
  */
 export function buildOpencodeArgs(opts: RunOpts): string[] {
-  if (opts.model !== undefined) assertOpencodeModel(opts.model);
-  const args = ["run", "--format", "json"];
-  if (opts.model !== undefined) args.push("-m", opts.model);
+  const model = opts.model ?? OPENCODE_DEFAULT_MODEL;
+  assertOpencodeModel(model);
+  const args = ["run", "--format", "json", "-m", model];
   if (opts.effort) args.push("--variant", opts.effort);
   if (opts.resume) args.push("-s", opts.resume);
   // Em headless, mode também precisa de auto-aprovação; o read-only real continua no bwrap.
@@ -2004,13 +2074,7 @@ export function fallbackOpts(opts: RunOpts, engine: Engine): RunOpts {
 export function runCursor(opts: RunOpts): Promise<CliResult> {
   const runOnce = (runOpts: RunOpts): Promise<CliResult> => {
     const engine = runOpts.engine ?? "cursor";
-    const bin = engine === "grok" ? GROK_BIN
-      : engine === "codex" ? CODEX_BIN
-      : engine === "claude" ? CLAUDE_BIN
-      : engine === "opencode" ? OPENCODE_BIN
-      : engine === "kimi" ? KIMI_BIN
-      : engine === "muse" ? MUSE_BIN
-      : POLYAGENT_CURSOR_BIN;
+    const bin = engineBinary(engine);
     const workspace = runOpts.cwd ?? process.cwd();
 
     // deny só tem efeito dentro do bwrap: sem ele o run é recusado em vez de rodar sem a guarda.
@@ -2030,9 +2094,11 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     let cmd = bin;
     let args = engineArgs;
     let cleanup = () => {};
+    let engineHostPath: string | null = null;
     if (bwrap) {
       const built = buildSandboxSpec(workspace, engine, !!runOpts.mode, runOpts.roBinds, denyRules);
       cleanup = built.cleanup;
+      engineHostPath = built.spec.engineHostPath ?? null;
       cmd = bwrap;
       args = [...buildSandboxArgs(built.spec), bin, ...engineArgs];
     } else if (SANDBOX_ON) {
@@ -2070,8 +2136,9 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
         clearTimeout(timer);
         cleanup();
         if (code !== 0) {
+          const detail = stderr.trim() || stdout.trim();
           reject(new ProcessError(
-            `${engine} agent exited ${code}: ${stderr.trim() || stdout.trim()}`,
+            `${engine} agent exited ${code}: ${bwrap ? sandboxExecError(detail, bin, engineHostPath) : detail}`,
             stdout,
             stderr,
             code,

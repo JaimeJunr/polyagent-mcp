@@ -207,7 +207,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Explicit engine override: 'codex', 'grok', 'claude', 'cursor', 'opencode', 'kimi' or 'muse'. It beats the level's primary engine. With 'opencode', model must use the provider/model format (e.g. 'google/gemini-3.8-flash'). If it differs from the level's primary engine, the tier model and effort are not inherited."),
+        .describe("Explicit engine override: 'codex', 'grok', 'claude', 'cursor', 'opencode', 'kimi' or 'muse'. It beats the level's primary engine. With 'opencode', model defaults to openrouter/inception/mercury-2 (override via POLYAGENT_OPENCODE_MODEL); explicit models must use provider/model format (e.g. 'google/gemini-3.8-flash'). If it differs from the level's primary engine, the tier model and effort are not inherited."),
       agent: agentSchema.optional().describe(agentDescription),
       deny: denySchema.optional().describe(denyDescription),
       timeout_ms: z

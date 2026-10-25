@@ -186,3 +186,11 @@ describe("deny (delegate/fast_delegate)", () => {
     }
   });
 });
+
+it("delegate engine descreve o default OpenCode e a env de override", () => {
+  const delegate = indexSrc.slice(indexSrc.indexOf('server.registerTool(\n  "delegate"'), indexSrc.indexOf('server.registerTool(\n  "fast_delegate"'));
+  const desc = delegate.match(/engine: z[\s\S]*?\.describe\("([^"\n]*)"\)/)?.[1];
+  expect(desc).toBeDefined();
+  expect(desc).toContain("openrouter/inception/mercury-2");
+  expect(desc).toContain("POLYAGENT_OPENCODE_MODEL");
+});

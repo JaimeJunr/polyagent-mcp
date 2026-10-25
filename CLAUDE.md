@@ -128,7 +128,10 @@ tier path; it is available as a fallback only when `POLYAGENT_ENABLE_CURSOR=1`
   Resume uses `--resume`; force OR mode always adds `--dangerously-skip-permissions`, because
   headless Claude otherwise hangs waiting for approval.
 - **opencode** (`opencode run`) — prompt positional, `--format json` emits JSONL events, `-m` requires
-  `provider/model`, effort maps to `--variant`, resume uses `-s`; the CLI also offers last-session
+  `provider/model`. Sem modelo explícito, sempre passa `OPENCODE_DEFAULT_MODEL` em `-m`:
+  `POLYAGENT_OPENCODE_MODEL`, lida uma vez no módulo, ou `openrouter/inception/mercury-2` — evita
+  herdar silenciosamente o modelo da config do CLI. Effort maps to `--variant`, resume uses `-s`;
+  the CLI also offers last-session
   continuation via `-c`, but the bridge does not use `-c`. Autonomy uses `--auto`, persona uses a
   prompt prefix, and cwd uses `--dir`. The positional prompt follows `--`. It is pay-per-token, so it
   stays excluded from `TIERS` (pick it via `delegate.engine` or an auxiliary tool's engine override).
@@ -336,6 +339,15 @@ points, all in `cli.ts`:
   load-bearing: `isoHome` mounts the empty `$HOME` **before** the HOME-subpath overlays (auth/
   toolchain), and the `workspace` bind is **last** so it's never shadowed. `buildSandboxSpec(workspace,
   engine)` is the impure half (mkdtemp + `existsSync` probing) — keep the fs/tmp side effects there.
+- **Binário da engine fora dos binds padrão:** `buildSandboxSpec` resolve o primeiro executável
+  no PATH do host e seu realpath via `resolveEngineBinary` (sondagens de fs injetáveis). Para cada
+  caminho sem cobertura de sistema/HOME/extras/workspace, monta RO a raiz de instalação:
+  `$HOME/<primeiro segmento>` dentro do HOME; `/<seg1>/<seg2>` fora dele. Nunca monta o HOME inteiro
+  nem `/`. `buildSandboxArgs` permanece pura: isoHome → overlays HOME → instalações RO → extras →
+  workspace **por último**. O CLI continua por nome, com o PATH do host. Na falha bwrap `execvp`,
+  `sandboxExecError` acrescenta o caminho resolvido no host (ou informa que não foi encontrado),
+  preservando os canais de `ProcessError`. `test/engine-bin-bwrap.test.ts` prova executável e symlink
+  em instalações temporárias fora dos binds padrão, com controle sem os novos binds.
 - **Only `cwd` is mounted — paths outside it are invisible.** A command touching a sibling path
   (additional working dir, adjacent monorepo) fails with `No such file or directory`. Mount extras
   RO per call via `RunOpts.roBinds` (skill folders), or RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
@@ -526,7 +538,8 @@ points, all in `cli.ts`:
   O erro de saída não-zero de `runOnce` é uma `ProcessError` (exportada de `cli.ts`) que carrega
   `{stdout, stderr, exitCode}` separados — o JSON estruturado dos CLIs sai em **stdout** e se perdia
   sempre que `stderr` tinha qualquer conteúdo. `error.message` segue idêntica
-  (`<engine> agent exited <code>: <stderr||stdout>`) e o fallback de engine continua decidindo pelo
+  (`<engine> agent exited <code>: <stderr||stdout>`, com diagnóstico adicional em falhas bwrap
+  `execvp`) e o fallback de engine continua decidindo pelo
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
