@@ -10,6 +10,7 @@ import {
   formatSessionHandle, parseSessionHandle, hasEngine, resolveTier, resolveFastTier, FAST_CANDIDATES,
   resolveDelegate, isDefaultTierEngine, withTerseStyle, LEVELS,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
+  lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS,
   type CliResult, type Engine, type Level,
 } from "./cli.js";
 import { resolveAgent } from "./agents.js";
@@ -48,8 +49,15 @@ const server = new McpServer(
 const PROCESS_ENV = process.env;
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
+// Só o acerto fica em cache: um chaveiro trancado agora pode estar destravado na próxima decisão.
+let keyringKey: string | undefined;
+function openRouterKeyFromKeyring(): string | undefined {
+  keyringKey ??= lookupKeyringSecret(OPENROUTER_KEYRING_ATTRS);
+  return keyringKey;
+}
+
 function askInternalJev(params: AskJevParams) {
-  const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"));
+  const key = resolveOpenRouterKey(PROCESS_ENV, (path) => readFileSync(path, "utf8"), openRouterKeyFromKeyring);
   return askJev(params, { fetch: (url, init) => globalThis.fetch(url, init), key });
 }
 

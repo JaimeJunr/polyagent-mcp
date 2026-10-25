@@ -220,7 +220,11 @@ The `est $/task (AA)` column uses model/effort costs from `src/costs.ts`, source
 
 The HTTP boundary lives in `src/jev.ts`, separate from `cli.ts` and its process-spawn boundary.
 Jev is not an engine and is not part of `TIERS` or `FAST_CANDIDATES`. Key resolution checks
-`OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`.
+`OPENROUTER_API_KEY`, then `.openrouter.key` in `~/.local/share/opencode/auth.json`, then the system
+keyring: `lookupKeyringSecret(OPENROUTER_KEYRING_ATTRS)` in `cli.ts` runs `secret-tool lookup` on the
+item the `secret-request --keyring openrouter --env OPENROUTER_API_KEY` skill stores (5 s timeout;
+`index.ts` caches only a hit). Found 2026-10-24: the registered server had neither env nor file, so
+every decision since 2026-10-19 logged `choice: null` although the flags were on.
 "Jev" names the integration, not the model: `JEV_MODEL` (`resolveJevModel`, env
 `POLYAGENT_JEV_MODEL`) defaults to `baseten/elephant-1:free` — free, same `/v1/systemone` schema.
 Bench 2026-10-24 (`research/2026-10-24-modelos-decisao-gratis.md`): `fan_out` gate tied (0 false
