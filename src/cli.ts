@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { HEALTH_THRESHOLD, healthLocalTime, type EngineHealth, type HealthCause } from "./usage.js";
 import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, extname, join } from "node:path";
@@ -647,7 +648,7 @@ export function resolveAuxTool(
   params: { engine?: string; model?: string; effort?: string } = {},
   env: NodeJS.ProcessEnv = process.env,
   sandboxOn = SANDBOX_ON,
-): { engine: Engine; model: string | undefined; effort?: string } {
+): { engine: Engine; model: string | undefined; effort?: string; skipped?: SkippedEngine[] } {
   const prefix = AUX_TOOL_ENV[tool];
   const engine = params.engine
     ? parseEngine(params.engine, `parâmetro engine de ${tool}`)
@@ -703,9 +704,9 @@ export function resolveRunFiltered(
   env: NodeJS.ProcessEnv = process.env,
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
-  health?: Record<string, number>,
+  health?: HealthInput,
   sandboxOn = SANDBOX_ON,
-): { engine: Engine; model: string | undefined; effort?: string } {
+): { engine: Engine; model: string | undefined; effort?: string; skipped?: SkippedEngine[] } {
   const prefix = AUX_TOOL_ENV.run_filtered;
   if (params.engine || env[`${prefix}_ENGINE`]) {
     const resolved = resolveAuxTool("run_filtered", params, env, sandboxOn);
@@ -713,6 +714,7 @@ export function resolveRunFiltered(
   }
   const tier = resolveFastTier(has, cursorEnabled, health);
   return {
+    ...(tier.skipped ? { skipped: tier.skipped } : {}),
     engine: tier.engine,
     model: params.model ?? env[`${prefix}_MODEL`] ?? tier.model,
     effort: params.effort ?? tier.effort,
@@ -739,35 +741,49 @@ export function resolveReadTool(
   env: NodeJS.ProcessEnv = process.env,
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
-  health?: Record<string, number>,
+  health?: HealthInput,
   sandboxOn = SANDBOX_ON,
-): { engine: Engine; model: string | undefined; effort?: string } {
+): { engine: Engine; model: string | undefined; effort?: string; skipped?: SkippedEngine[] } {
   const prefix = AUX_TOOL_ENV[tool];
   if (params.engine || env[`${prefix}_ENGINE`]) return resolveAuxTool(tool, params, env, sandboxOn);
 
-  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
+  const healthy = (e: Engine): boolean => engineHealthy(e, health);
   const cascade: Tier[] = cursorEnabled
     ? [...FAST_CANDIDATES, { engine: "cursor", model: DEFAULT_MODEL }]
     : FAST_CANDIDATES;
-  const tier = cascade.find((c) =>
-    meetsAuxRequirements(tool, c.engine, sandboxOn) && has(c.engine) && healthy(c.engine));
+  const skipped: SkippedEngine[] = [];
+  const tier = cascade.find((c) => {
+    if (!meetsAuxRequirements(tool, c.engine, sandboxOn)) {
+      skipped.push({ engine: c.engine, cause: "unsupported" });
+      return false;
+    }
+    if (has(c.engine) && healthy(c.engine)) return true;
+    skipped.push(skippedEngine(c.engine, has, health));
+    return false;
+  });
   if (!tier) {
     const req = AUX_TOOL_REQUIREMENTS[tool];
     const need = [req.webSearch ? "web search" : "", req.readOnly && !sandboxOn ? "read-only sem sandbox" : ""]
       .filter(Boolean).join(" + ") || "nenhum requisito extra";
     throw new Error(
       `${tool} não achou engine disponível: exige ${need}, e as que atendem estão ausentes ou ` +
-      "unhealthy (cota/falha recente). Tente mais tarde ou passe engine explícita.",
+      `unhealthy: ${healthBlockMessage(skipped)}`,
     );
   }
   if (tier.engine === "codex") {
     return {
+      ...(skipped.length ? { skipped } : {}),
       engine: "codex",
       model: params.model ?? env[`${prefix}_MODEL`] ?? env.POLYAGENT_EXPLORE_MODEL ?? EXPLORE_MODEL_FALLBACK,
       effort: params.effort ?? env.POLYAGENT_EXPLORE_EFFORT ?? EXPLORE_EFFORT_FALLBACK,
     };
   }
-  return { engine: tier.engine, model: params.model ?? tier.model, effort: params.effort ?? tier.effort };
+  return {
+    ...(skipped.length ? { skipped } : {}),
+    engine: tier.engine,
+    model: params.model ?? tier.model,
+    effort: params.effort ?? tier.effort,
+  };
 }
 
 /** Cota do plano acabou (trocar de engine resolve) versus throttle transitório (só esperar resolve). */
@@ -1006,10 +1022,10 @@ export function quotaCandidates(
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
   sandboxOn: boolean = SANDBOX_ON,
-  health?: Record<string, number>,
+  health?: HealthInput,
 ): Engine[] {
   const isAux = tool !== undefined && tool in AUX_TOOL_REQUIREMENTS;
-  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
+  const healthy = (e: Engine): boolean => engineHealthy(e, health);
   const canToolSelect = (engine: Engine): boolean => {
     if (tool === "follow_up") return false;
     if (tool === "fast_delegate") {
@@ -1244,7 +1260,7 @@ export interface RunOpts {
    * Saúde das engines no momento da chamada. Também não muda a execução: só tira do erro de cota
    * as engines unhealthy, pra não sugerir trocar por outra que também está fora.
    */
-  health?: Record<string, number>;
+  health?: HealthInput;
 }
 
 /**
@@ -1760,6 +1776,7 @@ export function hasEngine(engine: Engine): boolean {
 }
 
 export interface Tier {
+  skipped?: SkippedEngine[];
   engine: Engine;
   model: string;
   effort?: string;
@@ -1792,13 +1809,44 @@ export const TIERS: Record<Level, TierEntry> = {
   high: { primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" }, cursorModel: "gpt-6-astra-max-fast" },
 };
 
-/**
- * Health mínimo (0-1) pra considerar uma engine viável num tier. Abaixo disso, trata como indisponível.
- * Exportado só pra teste: um teste de invariante em test/usage.test.ts prova que LATENCY_FLOOR
- * (src/usage.ts) fica acima disso, senão latência sozinha (sem nenhuma falha) volta a derrubar uma
- * engine — era exatamente o bug original.
- */
-export const HEALTH_THRESHOLD = 0.3;
+/** Threshold compartilhado com o relatório; LATENCY_FLOOR deve permanecer acima dele. */
+export { HEALTH_THRESHOLD } from "./usage.js";
+
+/** Aceita o mapa numérico histórico e o relatório com causa/probe. */
+export type HealthInput = Record<string, number | EngineHealth>;
+export interface SkippedEngine {
+  engine: Engine;
+  cause: HealthCause | "missing" | "unsupported";
+  until?: number;
+}
+
+function engineHealthy(engine: Engine, health?: HealthInput): boolean {
+  const entry = health?.[engine];
+  return entry === undefined || (typeof entry === "number"
+    ? entry >= HEALTH_THRESHOLD : entry.score >= HEALTH_THRESHOLD || entry.probe);
+}
+
+function skippedEngine(engine: Engine, has: (e: Engine) => boolean, health?: HealthInput): SkippedEngine {
+  if (!has(engine)) return { engine, cause: "missing" };
+  const entry = health?.[engine];
+  return {
+    engine,
+    cause: typeof entry === "object" ? entry.cause : "failures",
+    ...(typeof entry === "object" && entry.until !== undefined ? { until: entry.until } : {}),
+  };
+}
+
+function healthBlockMessage(skipped: SkippedEngine[]): string {
+  return skipped.map((s) => `${s.engine} (${s.cause}${s.until === undefined ? "" : `, eligible ${healthLocalTime(s.until)}`})`).join("; ")
+    + ". Use bridge_stats reset_health to reset engine health";
+}
+
+/** Uma única linha antes do footer; omite quando não houve salto na cascata. */
+export function engineSwitchLine(engine: Engine, skipped: SkippedEngine[] = []): string {
+  if (!skipped.length) return "";
+  return `[engine: ${engine} — skipped ${skipped.map((s) =>
+    `${s.engine} (${s.cause}${s.until === undefined ? "" : `, eligible ${healthLocalTime(s.until)}`})`).join(", ")}]`;
+}
 
 /**
  * Ordem de velocidade do fast_delegate (primeiro instalado E saudável vence).
@@ -1860,19 +1908,24 @@ export const FAST_CANDIDATES: Tier[] = [
 export function resolveFastTier(
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
-  health?: Record<string, number>,
+  health?: HealthInput,
 ): Tier {
-  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
+  const healthy = (e: Engine): boolean => engineHealthy(e, health);
+  const skipped: SkippedEngine[] = [];
   for (const candidate of FAST_CANDIDATES) {
-    if (has(candidate.engine) && healthy(candidate.engine)) return candidate;
+    if (has(candidate.engine) && healthy(candidate.engine)) {
+      return skipped.length ? { ...candidate, skipped } : candidate;
+    }
+    skipped.push(skippedEngine(candidate.engine, has, health));
   }
-  if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: DEFAULT_MODEL };
+  if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: DEFAULT_MODEL, skipped };
+  if (cursorEnabled) skipped.push(skippedEngine("cursor", has, health));
   const anyInstalled = FAST_CANDIDATES.some((c) => has(c.engine));
   const reason = anyInstalled
-    ? "they are installed but unhealthy (recent failures/timeouts) — retry later or use delegate with an explicit level"
+    ? `they are installed but unhealthy: ${healthBlockMessage(skipped)}`
     : "none of them is installed";
   const cursorNote = cursorEnabled
-    ? " The cursor-agent fallback is also unhealthy."
+    ? ` The cursor-agent fallback is also unhealthy: ${healthBlockMessage(skipped.filter((s) => s.engine === "cursor"))}`
     : " Set POLYAGENT_ENABLE_CURSOR=1 to fall back to cursor-agent.";
   throw new Error(
     `fast_delegate needs at least one healthy CLI among codex, opencode, claude, or grok, but ${reason}.${cursorNote}`,
@@ -1890,14 +1943,19 @@ export function resolveTier(
   level: Level,
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
-  health?: Record<string, number>,
+  health?: HealthInput,
 ): Tier {
   if (!LEVELS.includes(level)) throw new Error(`invalid delegate level: received ${level}, expected low, middle or high`);
   const entry = TIERS[level];
-  const healthy = (e: Engine): boolean => health === undefined || (health[e] ?? 1) >= HEALTH_THRESHOLD;
+  const healthy = (e: Engine): boolean => engineHealthy(e, health);
   if (has(entry.primary.engine) && healthy(entry.primary.engine)) return entry.primary;
-  if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: entry.cursorModel };
-  const reason = has(entry.primary.engine) ? "is unhealthy (recent failures/timeouts)" : "is not installed";
+  const skipped = [skippedEngine(entry.primary.engine, has, health)];
+  if (cursorEnabled && healthy("cursor")) return { engine: "cursor", model: entry.cursorModel, skipped };
+  if (cursorEnabled && !healthy("cursor")) skipped.push(skippedEngine("cursor", has, health));
+  const blocked = skipped.filter((entry) => entry.cause !== "missing");
+  const reason = has(entry.primary.engine)
+    ? `is unhealthy: ${healthBlockMessage(blocked)}`
+    : `is not installed${blocked.length ? `; fallback unhealthy: ${healthBlockMessage(blocked)}` : ""}`;
   throw new Error(
     `delegate level ${level} needs the '${entry.primary.engine}' CLI, which ${reason}. ` +
     "Install it, pick another level, or set POLYAGENT_ENABLE_CURSOR=1 to fall back to cursor-agent.",
@@ -1905,6 +1963,7 @@ export function resolveTier(
 }
 
 export interface DelegateResolution {
+  skipped?: SkippedEngine[];
   engine: Engine;
   model: string | undefined;
   effort: string | undefined;
@@ -1920,7 +1979,7 @@ export function resolveDelegate(
   params: { engine?: string; model?: string; effort?: string } = {},
   has: (e: Engine) => boolean = hasEngine,
   cursorEnabled: boolean = CURSOR_ENABLED,
-  health?: Record<string, number>,
+  health?: HealthInput,
 ): DelegateResolution {
   if (!LEVELS.includes(level)) throw new Error(`invalid delegate level: received ${level}, expected low, middle or high`);
   const entry = TIERS[level];
@@ -1949,6 +2008,7 @@ export function resolveDelegate(
 
   const tier = resolveTier(level, has, cursorEnabled, health);
   return {
+    ...(tier.skipped ? { skipped: tier.skipped } : {}),
     engine: tier.engine,
     model: params.model ?? tier.model,
     effort: params.effort ?? tier.effort,
