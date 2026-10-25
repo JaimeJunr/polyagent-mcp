@@ -817,7 +817,6 @@ describe("buildCodexArgs", () => {
 
 describe("resolveTier", () => {
   const all: (e: Engine) => boolean = () => true;
-  const noCodex: (e: Engine) => boolean = (e) => e !== "codex";
 
   it("mantém os defaults de leitura e imagem no roster atual", () => {
     expect(EXPLORE_MODEL).toBe("gpt-6-luna");
@@ -841,26 +840,26 @@ describe("resolveTier", () => {
   });
 
   it("keeps the corresponding legacy Cursor fallback for each retained tier", () => {
-    expect(resolveTier("low", noCodex, true)).toEqual({
-      skipped: [{ engine: "codex", cause: "missing" }],
+    expect(resolveTier("low", (e) => e === "cursor", true)).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }, { engine: "claude", cause: "missing" }],
       engine: "cursor",
       model: "gpt-5.6-luna-max-fast",
     });
-    expect(resolveTier("middle", noCodex, true)).toEqual({
-      skipped: [{ engine: "codex", cause: "missing" }],
+    expect(resolveTier("middle", (e) => e === "cursor", true)).toEqual({
+      skipped: [{ engine: "codex", cause: "missing" }, { engine: "claude", cause: "missing" }],
       engine: "cursor",
       model: "gpt-5.6-sol-xhigh-fast",
     });
-    expect(resolveTier("high", (e) => e !== "claude", true)).toEqual({
-      skipped: [{ engine: "claude", cause: "missing" }],
+    expect(resolveTier("high", (e) => e === "cursor", true)).toEqual({
+      skipped: [{ engine: "claude", cause: "missing" }, { engine: "codex", cause: "missing" }],
       engine: "cursor",
       model: "gpt-6-astra-max-fast",
     });
   });
 
-  it("names the missing primary CLI when Cursor is disabled", () => {
-    expect(() => resolveTier("low", noCodex, false)).toThrow(/needs the 'codex' CLI/);
-    expect(() => resolveTier("high", (e) => e !== "claude", false)).toThrow(/needs the 'claude' CLI/);
+  it("names the missing primary CLI when reserve and Cursor are unavailable", () => {
+    expect(() => resolveTier("low", () => false, false)).toThrow(/needs the 'codex' CLI/);
+    expect(() => resolveTier("high", () => false, false)).toThrow(/needs the 'claude' CLI/);
   });
 
   it.each([0, 1, 2, 3, 4, 5, 6, "1", "medium", "HIGH", "", "toString", "__proto__"])("rejects invalid level %s at both resolvers", (level) => {
@@ -881,9 +880,9 @@ describe("resolveTier", () => {
     expect(resolveTier("high", all, true, {})).toEqual(resolveTier("high", all, true));
   });
 
-  it("cai pro cursor quando a engine preferida está instalada mas com health baixo", () => {
-    expect(resolveTier("low", all, true, { codex: 0.1 })).toEqual({
-      skipped: [{ engine: "codex", cause: "failures" }],
+  it("cai pro cursor quando titular e reserva estão instalados mas com health baixo", () => {
+    expect(resolveTier("low", all, true, { codex: 0.1, claude: 0.1 })).toEqual({
+      skipped: [{ engine: "codex", cause: "failures" }, { engine: "claude", cause: "failures" }],
       engine: "cursor",
       model: "gpt-5.6-luna-max-fast",
     });
@@ -897,13 +896,13 @@ describe("resolveTier", () => {
     });
   });
 
-  it("lança erro quando toda engine candidata do tier (preferida + cursor) está unhealthy", () => {
-    expect(() => resolveTier("low", all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/needs the 'codex' CLI/);
-    expect(() => resolveTier("low", all, true, { codex: 0.1, cursor: 0.1 })).toThrow(/unhealthy/);
+  it("lança erro quando toda engine candidata do tier (preferida + reserva + cursor) está unhealthy", () => {
+    expect(() => resolveTier("low", all, true, { codex: 0.1, claude: 0.1, cursor: 0.1 })).toThrow(/needs the 'codex' CLI/);
+    expect(() => resolveTier("low", all, true, { codex: 0.1, claude: 0.1, cursor: 0.1 })).toThrow(/unhealthy/);
   });
 
-  it("lança erro quando a engine preferida está unhealthy e o cursor está desabilitado", () => {
-    expect(() => resolveTier("low", all, false, { codex: 0.1 })).toThrow(/needs the 'codex' CLI/);
+  it("lança erro quando titular e reserva estão unhealthy e o cursor está desabilitado", () => {
+    expect(() => resolveTier("low", all, false, { codex: 0.1, claude: 0.1 })).toThrow(/needs the 'codex' CLI/);
   });
 });
 
