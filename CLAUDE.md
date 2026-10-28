@@ -65,10 +65,12 @@ the **pure logic is testable without spawning a worker process**:
   `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `resolveReadTool()`, `resolveRunFiltered()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
 - `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
-  `pit:issue-investigator` searches project/home `.claude/agents` and `~/.claude/plugins`; plugin
+  `pit:issue-investigator` searches the worker `cwd`'s `.claude/agents`, then the host project's
+  (`process.cwd()` of the MCP server — the host often points `cwd` at a sibling worktree, 2026-10-28),
+  then home `.claude/agents` and `~/.claude/plugins`; plugin
   collisions pick the newest match by mtime. An inline `{prompt}` skips lookup. Only the markdown
   body crosses into the worker, and names containing `/` or `..` are rejected. `{ skill: "plugin:name" }`
-  resolves `skills/<name>/SKILL.md` (project `.claude/skills`, `~/.claude/skills`, then `~/.claude/plugins`,
+  resolves `skills/<name>/SKILL.md` (worker cwd `.claude/skills`, host project `.claude/skills`, `~/.claude/skills`, then `~/.claude/plugins`,
   newest by mtime, plugin prefix filters the path): the body becomes the persona and the canonical skill
   folder comes back as `mountRo`, which `delegate`/`fast_delegate` pass as `RunOpts.roBinds` — the one
   exception to "no new bind", so the skill's `scripts/`/`references/` are readable (RO) in the sandbox.
