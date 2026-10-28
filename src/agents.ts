@@ -23,8 +23,13 @@ export interface ResolvedAgent {
 /** Entrada do param `agent`: nome de agent, persona inline ou nome de skill. */
 export type AgentInput = string | { prompt: string; name?: string; model?: string } | { skill: string };
 
-/** Roots onde procurar arquivos de agent (.md), na ordem. Extra via POLYAGENT_AGENT_PATHS (`:`). */
-export function agentRoots(cwd: string): string[] {
+/**
+ * Roots onde procurar arquivos de agent (.md), na ordem. Extra via POLYAGENT_AGENT_PATHS (`:`).
+ * `hostCwd` é o projeto do host (cwd do processo MCP): o host costuma apontar o worker para outro
+ * repo ou worktree irmã, e o agent que o próprio host enxerga mora no projeto dele (2026-10-28,
+ * connect-reviewer em connect-context com cwd numa worktree de código).
+ */
+export function agentRoots(cwd: string, hostCwd: string = process.cwd()): string[] {
   const home = process.env.HOME ?? homedir();
   const extra = (process.env.POLYAGENT_AGENT_PATHS ?? "")
     .split(":").map((p) => p.trim()).filter(Boolean);
@@ -38,6 +43,7 @@ export function agentRoots(cwd: string): string[] {
   return [
     ...extra.filter(existsSync), // configuração explícita: roots fora de cwd/home são confiáveis
     containedRoot(join(cwd, ".claude", "agents"), cwd),
+    hostCwd === cwd ? undefined : containedRoot(join(hostCwd, ".claude", "agents"), hostCwd),
     containedRoot(join(home, ".claude", "agents"), home),
     containedRoot(join(home, ".claude", "plugins"), home), // pit:issue-investigator → issue-investigator.md
   ].filter((root): root is string => root !== undefined);
@@ -101,7 +107,7 @@ function findSkillFiles(root: string, base: string, depth = 6, acc: string[] = [
 }
 
 /** Resolve a skill no host e transporta a persona junto do diretório de arquivos auxiliares. */
-function resolveSkill(input: string, cwd: string): ResolvedAgent {
+function resolveSkill(input: string, cwd: string, hostCwd: string): ResolvedAgent {
   const colon = input.lastIndexOf(":");
   const base = input.slice(colon + 1);
   const plugin = colon >= 0 ? input.slice(0, colon) : undefined;
@@ -111,6 +117,8 @@ function resolveSkill(input: string, cwd: string): ResolvedAgent {
   const home = process.env.HOME ?? homedir();
   const roots = [
     { path: join(cwd, ".claude", "skills"), parent: cwd, recursive: false },
+    // Mesmo motivo do agentRoots: o host aponta o worker para outro repo, a skill mora no projeto dele.
+    ...(hostCwd === cwd ? [] : [{ path: join(hostCwd, ".claude", "skills"), parent: hostCwd, recursive: false }]),
     { path: join(home, ".claude", "skills"), parent: home, recursive: false },
     { path: join(home, ".claude", "plugins"), parent: home, recursive: true },
   ];
@@ -148,9 +156,9 @@ function resolveSkill(input: string, cwd: string): ResolvedAgent {
  * não achar. Segurança: nomes com `/` ou `..` são rejeitados (sem path traversal); a busca só desce
  * dentro dos roots allowlisted.
  */
-export function resolveAgent(input: AgentInput, cwd: string): ResolvedAgent {
+export function resolveAgent(input: AgentInput, cwd: string, hostCwd: string = process.cwd()): ResolvedAgent {
   if (typeof input !== "string") {
-    if ("skill" in input) return resolveSkill(input.skill, cwd);
+    if ("skill" in input) return resolveSkill(input.skill, cwd, hostCwd);
     if (!input.prompt?.trim()) {
       throw new Error(`invalid agent: object needs a non-empty 'prompt', received ${JSON.stringify(input)}`);
     }
@@ -160,7 +168,7 @@ export function resolveAgent(input: AgentInput, cwd: string): ResolvedAgent {
   if (!base || base.includes("/") || base.includes("..")) {
     throw new Error(`invalid agent name: received ${JSON.stringify(input)}, expected a plain name or 'plugin:name'`);
   }
-  for (const root of agentRoots(cwd)) {
+  for (const root of agentRoots(cwd, hostCwd)) {
     const files = findAgentFiles(root, base);
     if (files.length) {
       let canonicalRoot: string;
@@ -190,7 +198,7 @@ export function resolveAgent(input: AgentInput, cwd: string): ResolvedAgent {
     }
   }
   throw new Error(
-    `agent '${input}' not found. Searched .claude/agents (project + home) and ~/.claude/plugins. ` +
+    `agent '${input}' not found. Searched .claude/agents (worker cwd + host project + home) and ~/.claude/plugins. ` +
     "Add roots via POLYAGENT_AGENT_PATHS, or pass an inline { prompt } object.",
   );
 }

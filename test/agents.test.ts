@@ -100,6 +100,30 @@ describe("resolveAgent", () => {
     expect(() => resolveAgent("empty", repo)).toThrow(/invalid agent 'empty'.*non-empty prompt body/);
   });
 
+  // Caso real 2026-10-28: host em connect-context, worker com cwd numa worktree irmã de código.
+  it("acha o agent no .claude/agents do projeto do host quando o cwd do worker é outro repo", () => {
+    const host = mkdtempSync(join(tmpdir(), "cbx-host-"));
+    const sibling = mkdtempSync(join(tmpdir(), "cbx-sibling-"));
+    dirs.push(host, sibling);
+    mkdirSync(join(host, ".claude", "agents"), { recursive: true });
+    writeFileSync(join(host, ".claude", "agents", "connect-reviewer.md"), "Review the connect way.");
+
+    expect(resolveAgent("connect-reviewer", sibling, host))
+      .toEqual({ prompt: "Review the connect way.", name: "connect-reviewer" });
+  });
+
+  it("o .claude/agents do cwd do worker vence o do projeto do host", () => {
+    const host = mkdtempSync(join(tmpdir(), "cbx-host-"));
+    const repo = mkdtempSync(join(tmpdir(), "cbx-repo-"));
+    dirs.push(host, repo);
+    for (const [dir, body] of [[host, "Host persona."], [repo, "Repo persona."]]) {
+      mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+      writeFileSync(join(dir, ".claude", "agents", "reviewer.md"), body);
+    }
+
+    expect(resolveAgent("reviewer", repo, host).prompt).toBe("Repo persona.");
+  });
+
   it("lança erro listando onde procurou quando o agent não existe", () => {
     expect(() => resolveAgent("ghost", tmpdir())).toThrow(/agent 'ghost' not found/);
   });
@@ -162,6 +186,22 @@ describe("resolveAgent com skill", () => {
   it("resolve skill do projeto, remove frontmatter e anuncia o diretório canônico", () => {
     const dir = skill(join(project, ".claude", "skills", "audit"), "---\nname: security-audit\nmodel: opus\ndescription: ignored\n---\nAudit the code.");
     expect(resolveAgent({ skill: "audit" }, project)).toEqual(expected("audit", dir, "Audit the code.", "security-audit"));
+  });
+
+  // Caso connect-context: `.claude/skills` é symlink para `../.agents/skills`, dentro do projeto do host.
+  it.skipIf(process.platform === "win32")("resolve skill do projeto do host quando o cwd do worker é outro repo", () => {
+    const host = join(root, "host");
+    const dir = skill(join(host, ".agents", "skills", "audit"), "Audit from host.");
+    mkdirSync(join(host, ".claude"));
+    symlinkSync("../.agents/skills", join(host, ".claude", "skills"), "dir");
+    expect(resolveAgent({ skill: "audit" }, project, host)).toEqual(expected("audit", dir, "Audit from host."));
+  });
+
+  it("skill do cwd do worker vence a do projeto do host", () => {
+    const host = join(root, "host");
+    skill(join(host, ".claude", "skills", "audit"), "Host.");
+    const dir = skill(join(project, ".claude", "skills", "audit"), "Project.");
+    expect(resolveAgent({ skill: "audit" }, project, host)).toEqual(expected("audit", dir, "Project."));
   });
 
   it("resolve skill do HOME sem frontmatter e usa base como nome", () => {
