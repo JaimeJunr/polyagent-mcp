@@ -27,6 +27,11 @@ const CANDIDATES = [
   { id: "haiku55-low", engine: "claude", model: "claude-haiku-5-5", effort: "low" },
   { id: "haiku55-medium", engine: "claude", model: "claude-haiku-5-5", effort: "medium" },
   { id: "grok-4.5-low", engine: "grok", model: "grok-4.5", effort: "low" },
+  // GPT-6.1 Terra (2026-11-03) contra o titular do nível low do delegate (Luna max).
+  { id: "luna-max", engine: "codex", model: "gpt-6-luna", effort: "max" },
+  { id: "terra-low", engine: "codex", model: "gpt-6.1-terra", effort: "low" },
+  { id: "terra-medium", engine: "codex", model: "gpt-6.1-terra", effort: "medium" },
+  { id: "terra-xhigh", engine: "codex", model: "gpt-6.1-terra", effort: "xhigh" },
 ].filter((c) => !ONLY || ONLY.includes(c.id));
 
 // Gabarito tirado do repo no início — editar src/ ou test/ DURANTE a rodada ainda invalida o resultado.
