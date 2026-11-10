@@ -10,6 +10,24 @@ Onde os modelos moram (todos em `src/cli.ts`): `TIERS` (níveis do `delegate`), 
 web_lookup/árbitro do fan_out), `IMAGE_MODEL`. O resto (descrições em `src/index.ts`,
 `hooks/prefer-polyagent.mjs`, `README.md`, `CLAUDE.md`) só **descreve** esses valores.
 
+## 0. Pesquisar antes de opinar
+
+Modelo novo chegou (anúncio colado, link, "lançaram X"): o primeiro passo é pesquisa, antes de
+qualquer número ou recomendação. Em 2026-11-09 o agente estimou o custo do Fable 5.2 escalando o do
+5.1 pelo corte de preço e recomendou com base nisso; a AA já tinha publicado o real, ~3× maior.
+
+Busque com `web_lookup` (ou `codex exec -c tools.web_search=true`, que poupa a cota Claude), cada
+número com URL e data, rotulado **VENDOR** (anúncio, system card) ou **INDEPENDENT**:
+
+- Preço oficial por milhão de tokens (input/output), do modelo novo e do que ele substituiria.
+- Artificial Analysis: Intelligence Index, Coding Agent Index e US$/tarefa **por effort**.
+- Benchmarks de código independentes (SWE-bench, Terminal-Bench, METR, Epoch, LMArena).
+- System card e papers (arXiv, revisados por pares); diga "não encontrado" quando não houver.
+
+Sem fonte, o número não entra na resposta. Estimativa só se o usuário pedir, marcada como tal.
+Confira se a URL citada é mesmo a página do modelo: workers de busca já devolveram comparação de
+outros modelos como fonte.
+
 ## 1. Confirmar o id em execução real — antes de escrever qualquer linha
 
 Id de anúncio/leaderboard não é id de CLI. Verifique cada um:
