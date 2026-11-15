@@ -80,6 +80,13 @@ sandbox, and only the worker's conclusion enters your context. Your job is to ro
 Native Read stays for the file you are about to Edit. Steps that need an MCP server or a browser stay with you;
 everything else in the same task can still be delegated.
 
+**Self-contained task: delegate first, explore second.** When the whole task is something a worker can
+finish alone (a ticket, a bugfix, a feature), call \`delegate\` with the full task before using \`explore\`/
+\`read_slice\`/native Read yourself. A measured pilot (\`research/2026-11-15-piloto-controlado.md\`) found
+delegating upfront cut the host's API-cost proxy by 27-48% versus exploring first and delegating after;
+just having polyagent available, with no upfront delegation, did not save anything by itself. Explore first
+only when you must decide something (which file, which approach) before a worker could run alone.
+
 ## Write a worker prompt that stands alone
 
 The worker sees nothing of this conversation. Every prompt says:
