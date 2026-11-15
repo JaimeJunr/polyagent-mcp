@@ -1,0 +1,89 @@
+{
+  "registeredUtc": "2026-11-15T04:11:16.611Z",
+  "sourceCommit": "faf4855538b2f891deaae0a21d3a46b1d326a738",
+  "hostModel": "claude-sonnet-5-5",
+  "hostEffort": "medium",
+  "repetitions": 2,
+  "arms": [
+    "habitual-instructions",
+    "lean",
+    "bridge",
+    "coarse"
+  ],
+  "tasks": [
+    {
+      "id": "locate",
+      "project": "bridge-source",
+      "prompt": "Localize no código a função que escolhe a primeira engine instalada e saudável para fast_delegate. Responda somente JSON com function e file (caminho relativo).",
+      "expected": {
+        "function": "resolveFastTier",
+        "file": "src/cli.ts"
+      }
+    },
+    {
+      "id": "noisy",
+      "project": "reporting",
+      "prompt": "Execute node report.mjs e determine a quantidade de registros emitidos e os IDs dos registros ERROR. Você pode filtrar a saída com ferramentas determinísticas. Responda somente JSON com total e failedIds (na ordem de emissão).",
+      "expected": {
+        "total": 2000,
+        "failedIds": [
+          "evt-137",
+          "evt-864",
+          "evt-1591"
+        ]
+      }
+    },
+    {
+      "id": "implement",
+      "project": "ledger",
+      "prompt": "Corrija debit(balance, amount) em src/ledger.mjs: deve subtrair amount de balance; rejeitar amount negativo com RangeError; rejeitar amount maior que balance com RangeError; amount zero é válido. Escreva testes de sucesso e erro, confirme o teste falhando antes da correção e execute-os após. Não commite. Responda somente JSON com done:true ao terminar.",
+      "expected": {
+        "done": true
+      }
+    },
+    {
+      "id": "diagnose",
+      "project": "reporting",
+      "prompt": "Investigue por que sumInvoice([1.99, 2.99]) resulta em 3 em vez de 4.98. Não edite. Execute um exemplo e localize a causa. Responda somente JSON com file (relativo), function e cause (identificador do método que descarta a parte fracionária).",
+      "expected": {
+        "file": "src/money.mjs",
+        "function": "toMinor",
+        "cause": "Math.trunc"
+      }
+    }
+  ],
+  "minimumUsefulReductionPct": 15,
+  "qualityTolerance": 0,
+  "acceptance": "Expected JSON plus independent debit checks for edits; all attempts remain in denominators.",
+  "order": "For task index i and repetition r, arm order is rotated by (i+r) modulo 4.",
+  "limits": "Serial; note2; MemoryMax=4G; CPUQuota=200%; 16 host turns; host safety timeout 8 min; worker timeout 4 min.",
+  "scope": "Pilot on source snapshot and synthetic Node fixtures. habitual-instructions reproduces global instructions only, not installed hooks/plugins/MCP stack. No subscription quota inference from API-equivalent prices. Native-efficient controls allowed.",
+  "worker": "Codex gpt-6-luna; other engines disabled to prevent shared Claude and paid fallback.",
+  "stop": "Infrastructure/auth/quota failure or timeout stops the batch for inspection; no automatic repeated attempts.",
+  "isolation": "Host: --setting-sources project, --strict-mcp-config, --disable-slash-commands; CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 and CLAUDE_CODE_DISABLE_AUTO_MEMORY=1; arm instructions passed via --append-system-prompt. Workers retain mandatory bridge bwrap. Authentication uses original credential path, no copies.",
+  "preparationExclusion": "An outer bwrap prototype failed nested worker namespaces. All prototype attempts retained separately and excluded before the valid batch, not filtered for outcome. A later direct-host preflight reached the Codex CLI but failed with invalid_refresh_token (401); retained as preparation failure, not a valid observation. After sync, Codex 0.153.4 returned model_not_found for gpt-6-luna. An isolated copy of local CLI 0.165.0 passed a direct sandboxed OK preflight; global installation unchanged.",
+  "scriptsSha256": {
+    "bench/quota-eval-core.mjs": "09a82ee130da5323ac1ae27818bcc2e1be1c26aa7c4cbc9c42883da3af12e39d",
+    "bench/quota-eval.mjs": "57e3f53184afaac0c720531b9bc18461f2e3ad616315c1a0df38070cd8d17b04",
+    "bench/quota-eval-fixtures.mjs": "a1825e2b644ebd909cbddb4976ac7475ed5b90590b58a6dfbb488939e62df4c8",
+    "bench/quota-eval.test.mjs": "b625da35a3148da1acea3086ff1fe10ac8339d87177d3f60854acce69d9f24be"
+  },
+  "status": "Preflight passed on note2 after explicitly authorized auth sync and isolated Codex CLI 0.165.0 copy; valid batch starting.",
+  "authenticationSync": "Only Codex auth.json synchronized to jaime on note2 over SSH stdin; previous remote file backed up with 0600 permissions; no credentials in artifacts.",
+  "versions": {
+    "claude": "2.1.323",
+    "codex": "0.165.0",
+    "node": "24.19.0"
+  },
+  "runtimeCorrection": "Complete standalone Codex 0.165.0 bin directory, including codex-code-mode-host, copied into isolated ~/.local/share/polyagent-quota/cli-0.165.0/bin on note2. Functional sandboxed write/read preflight passed. Earlier batches archived as invalid-helper, never mixed with corrected batch.",
+  "evaluatorCorrections": "Use final result.modelUsage token totals; retain streaming totals. Requested-delegation arms require worker JSON to match the task gabarito, as well as independent final behavior check, preventing blocked-worker host recovery from counting as successful delegation.",
+  "correctedBatchRegisteredUtc": "2026-11-15T04:45:57.133290+00:00",
+  "correctedScriptsSha256": {
+    "bench/quota-slim.mjs": "238bcfccc59092f44ca5639c56dfbf4aa4871c7d32159ac96acf151f01e0826e",
+    "bench/quota-eval-core.mjs": "d05782369e48072bc95474cfc61ef66f8000b5833592d0ee9d70aedd582b91e7",
+    "bench/quota-eval.mjs": "25ec4e7273b6fed7abb7cd5e3d83c4ea7691348a978b993c98abeb1131dd912f",
+    "bench/quota-eval-fixtures.mjs": "a1825e2b644ebd909cbddb4976ac7475ed5b90590b58a6dfbb488939e62df4c8",
+    "bench/quota-eval.test.mjs": "ecfbee1a869229369efeec8b61fcfadbdbc9afd91b0638b90696e7ee2c27ec3e",
+    "bench/quota-batch-fixture.mjs": "768760057becf3faba026c9920ee776591042251ec60f51b6e2fc355bc00063d"
+  }
+}

@@ -1,0 +1,306 @@
+{
+  "method": "Post-hoc functional classification; does not replace pre-registered strict JSON criterion. Independent behavior check rerun; host final JSON checked; host commands after delegation retained for provenance review.",
+  "evidence": [
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "lean",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [],
+      "hostCommandsAfterDelegation": []
+    },
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "coarse",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        true
+      ],
+      "hostCommandsAfterDelegation": [
+        "cat src/ledger.mjs && ls . test* 2>/dev/null; node --test 2>&1 | tail -15"
+      ]
+    },
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "slim",
+      "protocolAccepted": false,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        false
+      ],
+      "hostCommandsAfterDelegation": [
+        "cat src/ledger.mjs; npm test 2>&1 | tail -12"
+      ]
+    },
+    {
+      "task": "batch",
+      "rep": 0,
+      "arm": "coarse",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        true
+      ],
+      "hostCommandsAfterDelegation": [
+        "node --test 2>&1 | grep -E \"^# (tests|pass|fail)\"; cat src/batch.mjs",
+        "node --test 2>&1 | tail -12",
+        "node --test 2>&1 | grep -E \"^ℹ (tests|pass|fail)\""
+      ]
+    },
+    {
+      "task": "batch",
+      "rep": 0,
+      "arm": "slim",
+      "protocolAccepted": false,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        false
+      ],
+      "hostCommandsAfterDelegation": [
+        "npm test 2>&1 | tail -15"
+      ]
+    },
+    {
+      "task": "batch",
+      "rep": 0,
+      "arm": "lean",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [],
+      "hostCommandsAfterDelegation": []
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "coarse",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        true
+      ],
+      "hostCommandsAfterDelegation": [
+        "cat src/ledger.mjs && npm test 2>&1 | tail -12"
+      ]
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "slim",
+      "protocolAccepted": false,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        false
+      ],
+      "hostCommandsAfterDelegation": [
+        "npm test 2>&1 | tail -15; cat src/ledger.mjs"
+      ]
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "lean",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [],
+      "hostCommandsAfterDelegation": []
+    },
+    {
+      "task": "batch",
+      "rep": 1,
+      "arm": "slim",
+      "protocolAccepted": false,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        false
+      ],
+      "hostCommandsAfterDelegation": [
+        "node --test 2>&1 | grep -E \"^# (tests|pass|fail)\"",
+        "node --test 2>&1 | tail -12"
+      ]
+    },
+    {
+      "task": "batch",
+      "rep": 1,
+      "arm": "lean",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [],
+      "hostCommandsAfterDelegation": []
+    },
+    {
+      "task": "batch",
+      "rep": 1,
+      "arm": "coarse",
+      "protocolAccepted": true,
+      "posthocFunctionalAccepted": true,
+      "externalBehaviorCheckExitCode": 0,
+      "workerJsonMatches": [
+        true
+      ],
+      "hostCommandsAfterDelegation": [
+        "npm test 2>&1 | tail -15; cat src/batch.mjs"
+      ]
+    }
+  ],
+  "actualWorkerConfigurations": [
+    {
+      "task": "locate",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "noisy",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "diagnose",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "locate",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "noisy",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "diagnose",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 0,
+      "arm": "slim",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "batch",
+      "rep": 0,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "batch",
+      "rep": 0,
+      "arm": "slim",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "implement",
+      "rep": 1,
+      "arm": "slim",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "batch",
+      "rep": 1,
+      "arm": "slim",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    },
+    {
+      "task": "batch",
+      "rep": 1,
+      "arm": "coarse",
+      "engine": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "outcome": "success"
+    }
+  ]
+}

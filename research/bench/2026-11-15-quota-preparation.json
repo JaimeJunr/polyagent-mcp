@@ -1,0 +1,184 @@
+{
+  "observations": [
+    {
+      "stage": "preparation-output-nested-sandbox",
+      "task": "locate",
+      "rep": 99,
+      "arm": "lean",
+      "hostCostUsd": 0.043682,
+      "hostTokens": {
+        "input_tokens": 8,
+        "output_tokens": 85,
+        "cache_creation_input_tokens": 8488,
+        "cache_read_input_tokens": 68440
+      },
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "preparation-output-nested-sandbox",
+      "task": "locate",
+      "rep": 0,
+      "arm": "habitual-instructions",
+      "hostCostUsd": 0.08720780000000002,
+      "hostTokens": {
+        "input_tokens": 8,
+        "output_tokens": 86,
+        "cache_creation_input_tokens": 18807,
+        "cache_read_input_tokens": 95238
+      },
+      "tools": [
+        "Grep",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "preparation-output-nested-sandbox",
+      "task": "locate",
+      "rep": 0,
+      "arm": "lean",
+      "hostCostUsd": 0.0508806,
+      "hostTokens": {
+        "input_tokens": 10,
+        "output_tokens": 105,
+        "cache_creation_input_tokens": 9524,
+        "cache_read_input_tokens": 88646
+      },
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "preparation-output-nested-sandbox",
+      "task": "locate",
+      "rep": 0,
+      "arm": "bridge",
+      "hostCostUsd": 0.12044940000000001,
+      "hostTokens": {
+        "input_tokens": 6,
+        "output_tokens": 73,
+        "cache_creation_input_tokens": 28106,
+        "cache_read_input_tokens": 53734
+      },
+      "tools": [
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "preparation-output-nested-sandbox",
+      "task": "locate",
+      "rep": 0,
+      "arm": "coarse",
+      "hostCostUsd": 0.14693,
+      "hostTokens": {
+        "input_tokens": 12,
+        "output_tokens": 171,
+        "cache_creation_input_tokens": 31318,
+        "cache_read_input_tokens": 140740
+      },
+      "tools": [
+        "mcp__polyagent__delegate",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [
+        {
+          "tool": "delegate",
+          "engine": "codex",
+          "model": "gpt-6-luna",
+          "outcome": "failure",
+          "durationMs": 8,
+          "outChars": 0
+        },
+        {
+          "tool": "decide",
+          "engine": "jev",
+          "outcome": "failure",
+          "durationMs": 2,
+          "outChars": 0
+        },
+        {
+          "tool": "decide",
+          "engine": "jev",
+          "outcome": "failure",
+          "durationMs": 2,
+          "outChars": 0
+        }
+      ],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "output",
+      "task": "locate",
+      "rep": 99,
+      "arm": "lean",
+      "hostCostUsd": 0.054991099999999994,
+      "hostTokens": {
+        "input_tokens": 10,
+        "output_tokens": 101,
+        "cache_creation_input_tokens": 10125,
+        "cache_read_input_tokens": 106811
+      },
+      "tools": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [],
+      "validComparisonObservation": false
+    },
+    {
+      "stage": "output",
+      "task": "locate",
+      "rep": 99,
+      "arm": "coarse",
+      "hostCostUsd": 0.17493109999999998,
+      "hostTokens": {
+        "input_tokens": 12,
+        "output_tokens": 221,
+        "cache_creation_input_tokens": 36986,
+        "cache_read_input_tokens": 165431
+      },
+      "tools": [
+        "mcp__polyagent__delegate",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "bridgeLog": [
+        {
+          "tool": "delegate",
+          "engine": "codex",
+          "model": "gpt-6-luna",
+          "outcome": "failure",
+          "durationMs": 3441,
+          "outChars": 0
+        }
+      ],
+      "validComparisonObservation": false
+    }
+  ],
+  "totalReportedHostCostUsd": 0.679072,
+  "reason": "Preparation only: outer sandbox nesting failure followed by Codex authentication failure. No valid batch started."
+}
