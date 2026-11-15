@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-11-15 | [Base externa de custo e cota (Anthropic + terceiros)](2026-11-15-base-externa-custo-cota.md) | Páginas oficiais de custo/subagentes lidas: sem custo por subagente publicado; único multiplicador oficial é agent teams ~7x (não subagente comum); overheads publicados (15k tokens de descrições, MEMORY.md 200 linhas/25KB, 32 skills, autoCompact 100k-1M); confirma que delegar só compensa em tarefa grande/autocontida |
 | 2026-11-15 | [Piloto controlado: resultados e melhoria experimental](2026-11-15-piloto-controlado.md) | 32 + 12 tentativas corrigidas; delegação antecipada: −30,8% no proxy de custo Claude da implementação pequena, −47,9% no lote maior; interface menor experimental; cota real não medida |
 | 2026-11-15 | [Auditoria histórica: uso efetivo e comparação por tarefa](2026-11-15-auditoria-historica.md) | 2.224 chamadas deduplicadas; cinco tarefas que passaram de nativas a delegadas tiveram +10,1% no custo reportado do host; 154 transcripts de workers Claude localizados; economia de cota continua não demonstrada |
 | 2026-11-15 | [Evidência de economia de cota e protocolo de avaliação](2026-11-15-evidencia-economia-cota.md) | **Não demonstrada:** inventário das evidências existentes; separa adoção, contexto, consumo de cota e qualidade entre modelos; define comparação controlada e critérios para continuar |
