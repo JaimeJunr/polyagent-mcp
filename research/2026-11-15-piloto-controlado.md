@@ -235,7 +235,7 @@ Na raiz deste checkout, este comando confere o avaliador e recalcula as compara√
 chamar modelos nem consumir cota:
 
 ```bash
-node --test bench/quota-eval.test.mjs && node --input-type=module <<'JS'
+npm test -- bench/quota-eval.test.mjs && node --input-type=module <<'JS'
 import {readFileSync} from 'node:fs';
 import {pairedSummary} from './bench/quota-eval-core.mjs';
 for (const [file,pairs] of [
