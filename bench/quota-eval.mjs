@@ -6,14 +6,18 @@ import { randomUUID, createHash } from 'node:crypto';
 import { summarizeEvents, answerMatches, pairedSummary, trialAccepted } from './quota-eval-core.mjs';
 import { ARMS, HOST_MODEL, HOST_EFFORT, REPETITIONS, TASKS, createFixtures, ledgerCheckScript } from './quota-eval-fixtures.mjs';
 import { BATCH_TASK, createBatchFixture, batchCheckScript } from './quota-batch-fixture.mjs';
+import { TINY_TASK, MEDIUM_TASK, createSizeFixture, tinyCheckScript, mediumCheckScript } from './quota-size-fixtures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RUNTIME = join(ROOT,'runtime');
 const FOCUSED = process.env.QUOTA_FOCUSED === '1';
-const TASK_SET = FOCUSED ? [TASKS[2],BATCH_TASK] : TASKS;
-const ARM_SET = FOCUSED ? ['lean','coarse','slim'] : ARMS;
-const COMPARISONS = FOCUSED ? [['lean','coarse'],['lean','slim'],['coarse','slim']] : [['habitual-instructions','lean'],['lean','bridge'],['lean','coarse']];
-const OUT = join(ROOT,FOCUSED ? 'output-focused' : 'output');
+// Curva de tamanho (tiny → implement → medium → batch): acha a partir de que tamanho de tarefa
+// delegar antes de explorar compensa, em vez de só os dois pontos (implement, batch) do piloto original.
+const SIZE_FOCUSED = process.env.QUOTA_SIZE_FOCUSED === '1';
+const TASK_SET = SIZE_FOCUSED ? [TINY_TASK,TASKS[2],MEDIUM_TASK,BATCH_TASK] : FOCUSED ? [TASKS[2],BATCH_TASK] : TASKS;
+const ARM_SET = SIZE_FOCUSED ? ['lean','coarse'] : FOCUSED ? ['lean','coarse','slim'] : ARMS;
+const COMPARISONS = SIZE_FOCUSED ? [['lean','coarse']] : FOCUSED ? [['lean','coarse'],['lean','slim'],['coarse','slim']] : [['habitual-instructions','lean'],['lean','bridge'],['lean','coarse']];
+const OUT = join(ROOT,SIZE_FOCUSED ? 'output-size' : FOCUSED ? 'output-focused' : 'output');
 const LEAN = 'Complete only the requested task. Use efficient native tools when appropriate. Do not commit, push, contact external services, or change files outside this workspace. Return the requested JSON. For edits, first run a failing behavior test, then fix and rerun. Tool and worker claims require verification.';
 const COARSE = 'For this trial, before reading or searching source or running the task command, delegate the entire task once with mcp__polyagent__delegate, level:"low", engine:"codex", model:"gpt-6-luna", effort:"medium", and cwd equal to this workspace. Include the complete task and requested JSON in its prompt. After the worker returns, verify the concrete answer or changed behavior with one targeted native check, then return the requested JSON. Do not repeat its exploration.';
 const SLIM = 'For this trial, before reading or searching source, delegate the entire task once using mcp__polyagent__delegate with a complete prompt. The tool already fixes the workspace and Codex model. After it returns, verify the changed behavior with one targeted native check, then return the requested JSON. Do not repeat its exploration.';
@@ -74,8 +78,9 @@ function runHost(args,cwd,eventPath) {
 /** @param {string} arm @param {Record<string, unknown>} task @param {number} rep */
 async function attempt(arm,task,rep) {
   const trial = `${rep}-${task.id}-${arm}`;
-  const workspace = join(ROOT,FOCUSED ? 'workspaces-focused' : 'workspaces',trial);
+  const workspace = join(ROOT,SIZE_FOCUSED ? 'workspaces-size' : FOCUSED ? 'workspaces-focused' : 'workspaces',trial);
   if (task.id === 'batch') createBatchFixture(workspace);
+  else if (task.id === 'tiny' || task.id === 'medium') createSizeFixture(workspace,task.project);
   else createFixtures(workspace,ROOT,task.project);
   const context = arm === 'habitual-instructions' ? readFileSync(join(ROOT,'habitual-instructions.txt'),'utf8') : LEAN;
   const withBridge = arm === 'bridge' || arm === 'coarse' || arm === 'slim';
@@ -91,7 +96,8 @@ async function attempt(arm,task,rep) {
   let run;
   run = await runHost(args,workspace,join(OUT,`${trial}.private.jsonl`));
   const summary = summarizeEvents(run.events);
-  const checkScript = task.id === 'implement' ? ledgerCheckScript(workspace) : task.id === 'batch' ? batchCheckScript(workspace) : null;
+  const checkScript = task.id === 'implement' ? ledgerCheckScript(workspace) : task.id === 'batch' ? batchCheckScript(workspace)
+    : task.id === 'tiny' ? tinyCheckScript(workspace) : task.id === 'medium' ? mediumCheckScript(workspace) : null;
   const check = checkScript ? spawnSync(process.execPath,['--input-type=module','-e',checkScript],{encoding:'utf8'}) : null;
   const workers = workerUsage(summary.handles);
   const workerAnswerMatches = summary.workerAnswers.map(answer=>answerMatches(answer,task.expected));
