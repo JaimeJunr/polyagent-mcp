@@ -1,0 +1,66 @@
+{
+  "instructionsChars": 1921,
+  "totalSchemaChars": 23833,
+  "tools": [
+    {
+      "name": "delegate",
+      "chars": 5336,
+      "alwaysLoad": true
+    },
+    {
+      "name": "fast_delegate",
+      "chars": 3659,
+      "alwaysLoad": true
+    },
+    {
+      "name": "explore",
+      "chars": 2261,
+      "alwaysLoad": true
+    },
+    {
+      "name": "read_slice",
+      "chars": 1794,
+      "alwaysLoad": true
+    },
+    {
+      "name": "run_filtered",
+      "chars": 1696,
+      "alwaysLoad": true
+    },
+    {
+      "name": "web_lookup",
+      "chars": 1334,
+      "alwaysLoad": true
+    },
+    {
+      "name": "fan_out",
+      "chars": 2147,
+      "alwaysLoad": true
+    },
+    {
+      "name": "generate_image",
+      "chars": 1206,
+      "alwaysLoad": false
+    },
+    {
+      "name": "follow_up",
+      "chars": 1300,
+      "alwaysLoad": false
+    },
+    {
+      "name": "bridge_stats",
+      "chars": 815,
+      "alwaysLoad": false
+    },
+    {
+      "name": "rate",
+      "chars": 959,
+      "alwaysLoad": true
+    },
+    {
+      "name": "decide",
+      "chars": 1313,
+      "alwaysLoad": false
+    }
+  ]
+}

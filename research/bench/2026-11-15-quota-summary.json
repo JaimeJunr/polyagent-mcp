@@ -1,0 +1,237 @@
+{
+  "date": "2026-11-15",
+  "metric": "Reported host API-equivalent cost from CLI final result; not subscription quota or invoice. All attempt costs retained. Initial and focused stages analyzed separately.",
+  "initial": {
+    "attempts": 32,
+    "arms": {
+      "bridge": {
+        "attempts": 8,
+        "protocolAccepted": 8,
+        "posthocFunctionalAccepted": 8,
+        "reportedHostApiEquivalentUsd": 0.20017210000000002,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.025021512500000002,
+        "medianMs": 8394.0,
+        "maximumMs": 12402,
+        "hostTokens": {
+          "input_tokens": 68,
+          "output_tokens": 4385,
+          "cache_creation_input_tokens": 13752,
+          "cache_read_input_tokens": 1011781
+        },
+        "workerRuns": 0
+      },
+      "coarse": {
+        "attempts": 8,
+        "protocolAccepted": 8,
+        "posthocFunctionalAccepted": 8,
+        "reportedHostApiEquivalentUsd": 0.1744305,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.0218038125,
+        "medianMs": 20043.5,
+        "maximumMs": 29671,
+        "hostTokens": {
+          "input_tokens": 60,
+          "output_tokens": 4874,
+          "cache_creation_input_tokens": 9104,
+          "cache_read_input_tokens": 891545
+        },
+        "workerRuns": 8
+      },
+      "habitual-instructions": {
+        "attempts": 8,
+        "protocolAccepted": 8,
+        "posthocFunctionalAccepted": 8,
+        "reportedHostApiEquivalentUsd": 0.2073757,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.0259219625,
+        "medianMs": 8301.0,
+        "maximumMs": 12378,
+        "hostTokens": {
+          "input_tokens": 66,
+          "output_tokens": 4487,
+          "cache_creation_input_tokens": 15386,
+          "cache_read_input_tokens": 1008297
+        },
+        "workerRuns": 0
+      },
+      "lean": {
+        "attempts": 8,
+        "protocolAccepted": 8,
+        "posthocFunctionalAccepted": 8,
+        "reportedHostApiEquivalentUsd": 0.1538194,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.019227425,
+        "medianMs": 8018.0,
+        "maximumMs": 12062,
+        "hostTokens": {
+          "input_tokens": 64,
+          "output_tokens": 4352,
+          "cache_creation_input_tokens": 10518,
+          "cache_read_input_tokens": 680994
+        },
+        "workerRuns": 0
+      }
+    },
+    "tasks": {
+      "diagnose": {
+        "costs": {
+          "bridge": 0.0403859,
+          "coarse": 0.056077199999999994,
+          "habitual-instructions": 0.030488700000000004,
+          "lean": 0.028413200000000003
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "bridge": 42.13780918727914,
+          "coarse": 97.36319738712989,
+          "habitual-instructions": 7.304703447693339
+        }
+      },
+      "implement": {
+        "costs": {
+          "bridge": 0.06138640000000001,
+          "coarse": 0.0364838,
+          "habitual-instructions": 0.06981090000000001,
+          "lean": 0.0527589
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "bridge": 16.352691204706705,
+          "coarse": -30.848065444882288,
+          "habitual-instructions": 32.32061320459678
+        }
+      },
+      "locate": {
+        "costs": {
+          "bridge": 0.0543861,
+          "coarse": 0.0483952,
+          "habitual-instructions": 0.0566713,
+          "lean": 0.038663
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "bridge": 40.66704601298399,
+          "coarse": 25.17186974626904,
+          "habitual-instructions": 46.57760649716782
+        }
+      },
+      "noisy": {
+        "costs": {
+          "bridge": 0.0440137,
+          "coarse": 0.0334743,
+          "habitual-instructions": 0.0504048,
+          "lean": 0.03398430000000001
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "bridge": 29.511862830777712,
+          "coarse": -1.5006929670465796,
+          "habitual-instructions": 48.31789973605456
+        }
+      }
+    },
+    "rawAttemptCostChangeVsLeanPct": {
+      "bridge": 30.134495388748128,
+      "coarse": 13.399545180906959,
+      "habitual-instructions": 34.81764978929836
+    }
+  },
+  "focused": {
+    "attempts": 12,
+    "arms": {
+      "coarse": {
+        "attempts": 4,
+        "protocolAccepted": 4,
+        "posthocFunctionalAccepted": 4,
+        "reportedHostApiEquivalentUsd": 0.0962418,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.02406045,
+        "medianMs": 45545.5,
+        "maximumMs": 55535,
+        "hostTokens": {
+          "input_tokens": 28,
+          "output_tokens": 3152,
+          "cache_creation_input_tokens": 5657,
+          "cache_read_input_tokens": 420378
+        },
+        "workerRuns": 4
+      },
+      "lean": {
+        "attempts": 4,
+        "protocolAccepted": 4,
+        "posthocFunctionalAccepted": 4,
+        "reportedHostApiEquivalentUsd": 0.163698,
+        "reportedHostApiEquivalentPerProtocolAccepted": 0.0409245,
+        "medianMs": 16611.5,
+        "maximumMs": 22537,
+        "hostTokens": {
+          "input_tokens": 44,
+          "output_tokens": 7658,
+          "cache_creation_input_tokens": 9821,
+          "cache_read_input_tokens": 477460
+        },
+        "workerRuns": 0
+      },
+      "slim": {
+        "attempts": 4,
+        "protocolAccepted": 0,
+        "posthocFunctionalAccepted": 4,
+        "reportedHostApiEquivalentUsd": 0.0649098,
+        "reportedHostApiEquivalentPerProtocolAccepted": null,
+        "medianMs": 43662.5,
+        "maximumMs": 55937,
+        "hostTokens": {
+          "input_tokens": 26,
+          "output_tokens": 1967,
+          "cache_creation_input_tokens": 4283,
+          "cache_read_input_tokens": 280558
+        },
+        "workerRuns": 4
+      }
+    },
+    "tasks": {
+      "batch": {
+        "costs": {
+          "coarse": 0.0581319,
+          "lean": 0.11148380000000001,
+          "slim": 0.036760600000000004
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "coarse": -47.85619076493626,
+          "slim": -67.02606118557135
+        }
+      },
+      "implement": {
+        "costs": {
+          "coarse": 0.0381099,
+          "lean": 0.0522142,
+          "slim": 0.0281492
+        },
+        "rawAttemptCostChangeVsLeanPct": {
+          "coarse": -27.012383604460087,
+          "slim": -46.08899494773453
+        }
+      }
+    },
+    "rawAttemptCostChangeVsLeanPct": {
+      "coarse": -41.20771176190302,
+      "slim": -60.34783564857238
+    }
+  },
+  "workers": {
+    "runs": 16,
+    "missingUsage": 0,
+    "engines": {
+      "codex": 16
+    },
+    "tokens": {
+      "input_tokens": 1418157,
+      "cached_input_tokens": 1296256,
+      "output_tokens": 15013,
+      "total_tokens": 1433170,
+      "reasoning_output_tokens": 1056
+    }
+  },
+  "invalidBatches": [
+    "2026-11-15-quota-invalid-helper-results.jsonl",
+    "2026-11-15-quota-focused-invalid-helper-results.jsonl"
+  ],
+  "limitations": [
+    "Two repetitions per task and arm; source snapshot and synthetic fixtures, not representative production workload.",
+    "No direct attributable subscription quota observations; other live sessions not excluded.",
+    "Cache not flushed; previous invalid/preparation sessions warmed prefixes, and working directory names were reused.",
+    "Focused slim arm failed the registered intermediate JSON criterion in all four attempts; post-hoc functional results retained separately, never substituted for registered acceptance."
+  ]
+}

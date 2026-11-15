@@ -1,0 +1,52 @@
+{
+  "registeredUtc": "2026-11-15T04:33:35.354Z",
+  "stage": "Follow-up experiment, separate from initial pilot",
+  "motivation": "Measure a narrower MCP surface and whole-task delegation on larger implementation. No production defaults changed.",
+  "arms": [
+    "lean",
+    "coarse",
+    "slim"
+  ],
+  "tasks": [
+    "implement",
+    {
+      "id": "batch",
+      "project": "batch-ledger",
+      "prompt": "Implemente applyBatch(ledger, entries) em src/batch.mjs. ledger vem de createLedger em src/accounts.mjs. Cada entrada tem id, from, to e amount (centavos). Valide amount inteiro positivo (RangeError), contas existentes e distintas (RangeError), saldo suficiente no momento da transferência (RangeError) e id não vazio ainda não usado, nem repetido no lote (Error). Aplique sequencialmente; ou o lote inteiro é confirmado em balances e appliedIds, ou nenhuma mudança é feita. Não altere as entradas. Retorne {applied: quantidade, totalTransferred: soma dos amounts}; lote vazio é válido. Preserve o total dos saldos. Escreva testes reais para sucesso, sequência dependente do saldo recebido, erros, IDs duplicados, lote vazio e rollback após uma transferência válida seguida de inválida. Execute red antes de implementar e green depois. Não commite. Responda somente JSON com done:true.",
+      "expected": {
+        "done": true
+      }
+    }
+  ],
+  "repetitions": 2,
+  "attempts": 12,
+  "hostModel": "claude-sonnet-5-5",
+  "hostEffort": "medium",
+  "worker": {
+    "engine": "codex",
+    "model": "gpt-6-luna",
+    "effort": "medium"
+  },
+  "minimumUsefulReductionPct": 15,
+  "qualityTolerance": 0,
+  "quotaClaimAllowed": false,
+  "comparison": "All arms rerun in this stage; do not mix initial-pilot controls with focused-stage observations.",
+  "acceptance": "Requested JSON plus independent behavior checks; batch checks success, sequence, zero-length batch, duplicate IDs, invalid amounts/accounts/insufficient funds, rollback and conservation.",
+  "scriptsSha256": {
+    "bench/quota-eval.mjs": "d21258feadc9526019dfcf3d80ed18e5d2964b3e990684b556ceafe8ab364b29",
+    "bench/quota-eval-core.mjs": "64ce20e0218ba973640f34c447ae13099ae0037d85eace3f91b0c98c5ea5db85",
+    "bench/quota-slim.mjs": "238bcfccc59092f44ca5639c56dfbf4aa4871c7d32159ac96acf151f01e0826e",
+    "bench/quota-batch-fixture.mjs": "768760057becf3faba026c9920ee776591042251ec60f51b6e2fc355bc00063d"
+  },
+  "runtimeCorrection": "Complete standalone Codex 0.165.0 bin directory, including codex-code-mode-host, copied into isolated ~/.local/share/polyagent-quota/cli-0.165.0/bin on note2. Functional sandboxed write/read preflight passed. Earlier batches archived as invalid-helper, never mixed with corrected batch.",
+  "evaluatorCorrections": "Use final result.modelUsage token totals; retain streaming totals. Requested-delegation arms require worker JSON to match the task gabarito, as well as independent final behavior check, preventing blocked-worker host recovery from counting as successful delegation.",
+  "correctedBatchRegisteredUtc": "2026-11-15T04:45:57.138954+00:00",
+  "correctedScriptsSha256": {
+    "bench/quota-slim.mjs": "238bcfccc59092f44ca5639c56dfbf4aa4871c7d32159ac96acf151f01e0826e",
+    "bench/quota-eval-core.mjs": "d05782369e48072bc95474cfc61ef66f8000b5833592d0ee9d70aedd582b91e7",
+    "bench/quota-eval.mjs": "25ec4e7273b6fed7abb7cd5e3d83c4ea7691348a978b993c98abeb1131dd912f",
+    "bench/quota-eval-fixtures.mjs": "a1825e2b644ebd909cbddb4976ac7475ed5b90590b58a6dfbb488939e62df4c8",
+    "bench/quota-eval.test.mjs": "ecfbee1a869229369efeec8b61fcfadbdbc9afd91b0638b90696e7ee2c27ec3e",
+    "bench/quota-batch-fixture.mjs": "768760057becf3faba026c9920ee776591042251ec60f51b6e2fc355bc00063d"
+  }
+}
