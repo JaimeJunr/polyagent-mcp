@@ -72,3 +72,11 @@ export function slimDelegateArgs(prompt,cwd) {
   if (!prompt.trim()) throw new Error(`invalid prompt: received ${JSON.stringify(prompt)}, expected non-empty string`);
   return {prompt,cwd,level:'low',engine:'codex',model:'gpt-6-luna',effort:'medium'};
 }
+
+/** @param {string|undefined} raw @param {number} fallback */
+export function parseRepetitions(raw, fallback) {
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) throw new RangeError(`invalid QUOTA_REPETITIONS: received ${raw}, expected a positive integer`);
+  return value;
+}
