@@ -43,3 +43,32 @@ Total pareado: `coarse` +20,1% (US$ 0,386 contra 0,321). Aceitos: `lean` 8/8, `c
   não são código (revisão, diagnóstico): ainda não medidos.
 
 Dados: `research/bench/2026-11-15-limiar-tamanho-results.jsonl`.
+
+## Adendo 2026-11-16: 6 repetições por célula
+
+Mesmo harness, `QUOTA_REPETITIONS=6`, retomando as 16 tentativas anteriores (48 no total, 24 pares).
+Dados: `research/bench/2026-11-16-limiar-tamanho-6rep-results.jsonl`. Todo trial `coarse` delegou (`workers` ≥ 1).
+
+| Tarefa | Custo host (proxy de API) `coarse` vs `lean` | `coarse` aceito | `lean` aceito |
+|---|---|---|---|
+| tiny | +66,8% | 6/6 | 6/6 |
+| implement | −6,8% | 6/6 | 6/6 |
+| medium | −27,3% (−28,3% só nos 3 pares aceitos) | 3/6 | 6/6 |
+| batch | −40,0% (−46,2% só nos 3 pares aceitos) | 3/6 | 6/6 |
+
+Total pareado: −12,3% (US$ 0,904 contra 1,031). Aceitos: `lean` 24/24, `coarse` 18/24.
+
+Leitura:
+- O limiar se confirma: tiny custa mais delegado (+67%), implement é neutro (−7%), medium e batch economizam 27-40%.
+- Achado novo: em medium e batch o `coarse` reprovou o critério de qualidade em metade das tentativas (3/6 cada),
+  e o `lean` não reprovou nenhuma. A economia do host nessas tarefas vem com mais risco de entrega errada.
+  O worker Codex Luna medium entregou resposta que não passou no check em `medium` reps 2, 4, 5 e `batch` reps 0, 4, 5.
+- O custo medido é só o do host Claude. O custo do worker (Codex, ~90-170k tokens de entrada por trial) não entra no proxy:
+  parte da economia é troca de assinatura, não redução do trabalho total.
+- Os −25% e −45% de n=2 eram otimistas; com n=6 ficam −27% e −40%, mas com a ressalva de qualidade acima.
+
+Efeito na regra de roteamento: o piso de tamanho (média ou maior) continua certo; falta dizer que o resultado do worker
+deve ser verificado antes de dar a tarefa por pronta (já está em "After the result" da skill).
+
+Ainda não medido: cota real da assinatura, outros workers (Claude Haiku, Sol medium) e se um worker mais forte
+elimina as reprovações de medium/batch.

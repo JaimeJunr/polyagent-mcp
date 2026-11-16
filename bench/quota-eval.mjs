@@ -13,6 +13,7 @@ const RUNTIME = join(ROOT,'runtime');
 const FOCUSED = process.env.QUOTA_FOCUSED === '1';
 // Curva de tamanho (tiny → implement → medium → batch): acha a partir de que tamanho de tarefa
 // delegar antes de explorar compensa, em vez de só os dois pontos (implement, batch) do piloto original.
+const REPS = Number(process.env.QUOTA_REPETITIONS) || REPETITIONS;
 const SIZE_FOCUSED = process.env.QUOTA_SIZE_FOCUSED === '1';
 const TASK_SET = SIZE_FOCUSED ? [TINY_TASK,TASKS[2],MEDIUM_TASK,BATCH_TASK] : FOCUSED ? [TASKS[2],BATCH_TASK] : TASKS;
 const ARM_SET = SIZE_FOCUSED ? ['lean','coarse'] : FOCUSED ? ['lean','coarse','slim'] : ARMS;
@@ -117,7 +118,7 @@ async function attempt(arm,task,rep) {
 }
 
 mkdirSync(OUT,{recursive:true});
-writeFileSync(join(OUT,'plan.json'),JSON.stringify({hostModel:HOST_MODEL,hostEffort:HOST_EFFORT,repetitions:REPETITIONS,arms:ARM_SET,tasks:TASK_SET,minimumUsefulReductionPct:15,qualityTolerance:0,comparisons:COMPARISONS,quotaClaimAllowed:false,notes:'Pilot; API equivalent and tokens only. Global instructions baseline, not full plugin stack. Rotated order; no shared task directory. Codex workers only; no paid fallback.'},null,2));
+writeFileSync(join(OUT,'plan.json'),JSON.stringify({hostModel:HOST_MODEL,hostEffort:HOST_EFFORT,repetitions:REPS,arms:ARM_SET,tasks:TASK_SET,minimumUsefulReductionPct:15,qualityTolerance:0,comparisons:COMPARISONS,quotaClaimAllowed:false,notes:'Pilot; API equivalent and tokens only. Global instructions baseline, not full plugin stack. Rotated order; no shared task directory. Codex workers only; no paid fallback.'},null,2));
 const mode = process.argv[2] ?? 'run';
 if (mode === 'smoke' || mode === 'smoke-bridge') {
   await attempt(mode === 'smoke' ? 'lean' : 'coarse',TASKS[0],99);
@@ -126,7 +127,7 @@ if (mode === 'smoke' || mode === 'smoke-bridge') {
   console.log(JSON.stringify({rows:rows.length,comparisons:COMPARISONS.map(([before,after]) => ({before,after,...pairedSummary(rows,before,after)}))},null,2));
 } else {
   const prior = jsonLines(join(OUT,'quota-results.jsonl'));
-  for (let rep=0;rep<REPETITIONS;rep++) for (let index=0;index<TASK_SET.length;index++) {
+  for (let rep=0;rep<REPS;rep++) for (let index=0;index<TASK_SET.length;index++) {
     for (let offset=0;offset<ARM_SET.length;offset++) {
       const arm = ARM_SET[(offset+index+rep)%ARM_SET.length];
       if (prior.some(row => row.rep===rep && row.task===TASK_SET[index].id && row.arm===arm)) continue;
