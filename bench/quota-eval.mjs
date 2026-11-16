@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, rea
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
-import { summarizeEvents, answerMatches, pairedSummary, trialAccepted } from './quota-eval-core.mjs';
+import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, parseRepetitions } from './quota-eval-core.mjs';
 import { ARMS, HOST_MODEL, HOST_EFFORT, REPETITIONS, TASKS, createFixtures, ledgerCheckScript } from './quota-eval-fixtures.mjs';
 import { BATCH_TASK, createBatchFixture, batchCheckScript } from './quota-batch-fixture.mjs';
 import { TINY_TASK, MEDIUM_TASK, createSizeFixture, tinyCheckScript, mediumCheckScript } from './quota-size-fixtures.mjs';
@@ -13,7 +13,7 @@ const RUNTIME = join(ROOT,'runtime');
 const FOCUSED = process.env.QUOTA_FOCUSED === '1';
 // Curva de tamanho (tiny → implement → medium → batch): acha a partir de que tamanho de tarefa
 // delegar antes de explorar compensa, em vez de só os dois pontos (implement, batch) do piloto original.
-const REPS = Number(process.env.QUOTA_REPETITIONS) || REPETITIONS;
+const REPS = parseRepetitions(process.env.QUOTA_REPETITIONS, REPETITIONS);
 const SIZE_FOCUSED = process.env.QUOTA_SIZE_FOCUSED === '1';
 const TASK_SET = SIZE_FOCUSED ? [TINY_TASK,TASKS[2],MEDIUM_TASK,BATCH_TASK] : FOCUSED ? [TASKS[2],BATCH_TASK] : TASKS;
 const ARM_SET = SIZE_FOCUSED ? ['lean','coarse'] : FOCUSED ? ['lean','coarse','slim'] : ARMS;

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, slimDelegateArgs } from './quota-eval-core.mjs';
+import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, slimDelegateArgs, parseRepetitions } from './quota-eval-core.mjs';
 
 test('reconciles streaming snapshots and preserves separate cache categories', () => {
   const events = [2, 7].map(output => ({type:'assistant', message:{id:'m1',model:'fixture-model',usage:{input_tokens:3,output_tokens:output,cache_read_input_tokens:40,cache_creation_input_tokens:5},content:[]}}));
@@ -58,4 +58,13 @@ test('keeps worker answers so a blocked worker cannot be hidden by host recovery
   const result=summarizeEvents([{type:'user',message:{content:[{type:'tool_result',tool_use_id:'t1',content:[{type:'text',text:'{"done":false}\n---\nsession_id: codex:fixture-session-id'}]}]}}]);
   assert.equal(result.workerAnswers.length,1);
   assert.equal(answerMatches(result.workerAnswers[0],{done:true}),false);
+});
+
+test('parseRepetitions: usa o padrão se ausente e aceita inteiro positivo', () => {
+  assert.equal(parseRepetitions(undefined, 2), 2);
+  assert.equal(parseRepetitions('', 2), 2);
+  assert.equal(parseRepetitions('6', 2), 6);
+});
+test('parseRepetitions: rejeita valor inválido com o valor recebido', () => {
+  for (const bad of ['-1', '0', '2.5', 'Infinity', 'abc']) assert.throws(() => parseRepetitions(bad, 2), new RegExp(`received ${bad}`));
 });
