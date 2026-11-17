@@ -104,6 +104,23 @@ export interface UsageRun {
 }
 
 /**
+ * Monta o UsageRun que `format()` grava. Duas regras do consumo do worker:
+ * - `alreadyLogged`: o fan_out grava o uso de cada worker em `runFanOutWorker`; o `format()` extra
+ *   do vencedor (race) ou do gate de consenso não pode gravar de novo, senão tokens e custo contam em dobro.
+ * - sem `run` (follow_up), a engine vem de `res.engine`: sem ela os agregadores descartam a entrada.
+ */
+export function buildFormatRun(
+  res: { engine?: string; usage?: WorkerUsage },
+  run: UsageRun | undefined,
+  sessionHandle: string | undefined,
+  alreadyLogged = false,
+): UsageRun | undefined {
+  const base: UsageRun | undefined = run?.engine || !res.engine ? run : { ...run, engine: res.engine };
+  const withHandle = sessionHandle ? { ...base, sessionId: sessionHandle } : base;
+  return res.usage && !alreadyLogged ? { ...withHandle, workerUsage: res.usage } : withHandle;
+}
+
+/**
  * Classifica o erro rejeitado por runCursor. Cota/rate limit vem como QuotaError (src/cli.ts) e
  * ganha outcome próprio — reconhecido pelo `name` em vez de import, para usage.ts seguir sem
  * depender do módulo que spawna processo. Timeout vem do setTimeout em cli.ts, que mata o child
