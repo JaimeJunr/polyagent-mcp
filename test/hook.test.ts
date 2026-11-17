@@ -115,8 +115,8 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/when needed/i);
   });
 
-  it("menciona fast_delegate (não regressar a adoção silenciosa)", () => {
-    expect(sessionStartContext()).toMatch(/fast_delegate/);
+  it("não menciona mais fast_delegate (ferramenta removida)", () => {
+    expect(sessionStartContext()).not.toMatch(/fast_delegate/);
   });
 
   it("cobre o buraco do Bash grep: menciona preferir explore/read_slice sobre Read/Grep", () => {
@@ -266,7 +266,7 @@ describe("decide — Agent/Task handoff", () => {
     expect(res?.keys).toEqual(["agent-handoff"]);
     expect(res?.redirect).toBe(false);
     expect(res?.text).toContain("pit:issue-investigator");
-    expect(res?.text).toMatch(/delegate|fast_delegate/);
+    expect(res?.text).toMatch(/delegate/);
     expect(res?.text).toMatch(/agent: "<subagent name>"/);
     expect(res?.text).toMatch(/MCP servers or a browser/);
   });
@@ -304,7 +304,7 @@ describe("decide — handoff vira redirect quando o worker assume o trabalho", (
     expect(res?.keys).toEqual(["agent-handoff"]);
     expect(res?.redirect).toBe(true);
     expect(res?.text).toContain('delegate(prompt, level, agent: "pit:issue-investigator")');
-    expect(res?.text).toMatch(/fast_delegate/);
+    expect(res?.text).not.toMatch(/fast_delegate/);
   });
 
   it("agent de projeto sem prefixo de plugin também redireciona (Task)", () => {
@@ -452,8 +452,8 @@ describe("subagentStartContext — contexto injetado no subagente", () => {
     expect(text).toMatch(/ToolSearch/);
   });
 
-  it("menciona fast_delegate para não regredir a adoção", () => {
-    expect(subagentStartContext("general-purpose")).toMatch(/fast_delegate/);
+  it("não menciona mais fast_delegate", () => {
+    expect(subagentStartContext("general-purpose")).not.toMatch(/fast_delegate/);
   });
 
   it("agent_type Explore inclui o reforço específico", () => {

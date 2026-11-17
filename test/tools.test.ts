@@ -8,9 +8,9 @@ const indexSrc = readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
 const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
 
 describe("tool surface (US-003)", () => {
-  it("registra exatamente doze tools", () => {
+  it("registra exatamente onze tools", () => {
     const calls = indexSrc.match(/server\.registerTool\(/g) ?? [];
-    expect(calls).toHaveLength(12);
+    expect(calls).toHaveLength(11);
   });
 
   it("não registra mais as tools plan e build", () => {
@@ -91,7 +91,7 @@ describe("tool surface (US-003)", () => {
   }
 
   it("execution tools append evidenceNote; read tools do not", () => {
-    for (const tool of ["delegate", "fast_delegate"]) {
+    for (const tool of ["delegate"]) {
       const block = registeredToolBlock(tool);
       expect(block).toMatch(/budgetNote\(/);
       expect(block).toMatch(/evidenceNote\(\)/);
@@ -113,13 +113,12 @@ describe("tool surface (US-003)", () => {
     expect(delegate).toContain("JEV_SHADOW_ENABLED");
     expect(delegate).toContain("const verified = verifyingWorker(work, prompt);");
     expect(delegate).toContain("withDelegateShadow(verified, prompt, level");
-    expect(registeredToolBlock("fast_delegate")).toContain("return verifyingWorker(() => formatRun(");
   });
 
-  it("alwaysLoad inclui as cinco core, fast_delegate, fan_out e rate", () => {
-    // A lista EXIGE fast_delegate e fan_out — se alguém tirar qualquer um daqui o teste falha.
+  it("alwaysLoad inclui as cinco core, fan_out e rate", () => {
+    // fan_out segue na lista; fast_delegate foi removido em 2026-11-16.
     const alwaysLoad = [
-      "delegate", "fast_delegate", "explore", "read_slice", "run_filtered", "web_lookup",
+      "delegate", "explore", "read_slice", "run_filtered", "web_lookup",
       "fan_out", "rate",
     ];
     for (const tool of alwaysLoad) {
@@ -130,9 +129,9 @@ describe("tool surface (US-003)", () => {
     }
   });
 
-  it("README lista as doze tools reais, sem linhas de plan/build", () => {
+  it("README lista as onze tools reais, sem linhas de plan/build", () => {
     for (const tool of [
-      "delegate", "fast_delegate", "explore", "read_slice", "run_filtered",
+      "delegate", "explore", "read_slice", "run_filtered",
       "web_lookup", "fan_out", "generate_image", "follow_up", "bridge_stats", "decide",
       "rate",
     ]) {
@@ -157,7 +156,7 @@ describe("tool surface (US-003)", () => {
   });
 });
 
-describe("deny (delegate/fast_delegate)", () => {
+describe("deny (delegate)", () => {
   function registeredToolBlock(name: string): string {
     const start = indexSrc.indexOf(`registerTool(\n  "${name}"`);
     expect(start, name).toBeGreaterThan(-1);
@@ -165,7 +164,7 @@ describe("deny (delegate/fast_delegate)", () => {
     return next === -1 ? indexSrc.slice(start) : indexSrc.slice(start, next);
   }
 
-  it.each(["delegate", "fast_delegate"])("%s expõe deny no próprio inputSchema e repassa ao worker", (tool) => {
+  it.each(["delegate"])("%s expõe deny no próprio inputSchema e repassa ao worker", (tool) => {
     const block = registeredToolBlock(tool);
     expect(block).toMatch(/deny: denySchema\.optional\(\)/);
     expect(block).toMatch(/async \(\{[^)]*\bdeny\b[^)]*\}\)/);
@@ -179,8 +178,8 @@ describe("deny (delegate/fast_delegate)", () => {
     expect(routing).not.toMatch(/\bdeny\b/);
   });
 
-  it("README documenta deny em delegate e fast_delegate", () => {
-    for (const tool of ["delegate", "fast_delegate"]) {
+  it("README documenta deny em delegate", () => {
+    for (const tool of ["delegate"]) {
       const row = readme.split("\n").find((line) => line.startsWith(`| \`${tool}\` |`)) ?? "";
       expect(row).toContain("`deny`");
     }
@@ -188,7 +187,7 @@ describe("deny (delegate/fast_delegate)", () => {
 });
 
 it("delegate engine descreve o default OpenCode e a env de override", () => {
-  const delegate = indexSrc.slice(indexSrc.indexOf('server.registerTool(\n  "delegate"'), indexSrc.indexOf('server.registerTool(\n  "fast_delegate"'));
+  const delegate = indexSrc.slice(indexSrc.indexOf('server.registerTool(\n  "delegate"'), indexSrc.indexOf('server.registerTool(\n  "explore"'));
   const desc = delegate.match(/engine: z[\s\S]*?\.describe\("([^"\n]*)"\)/)?.[1];
   expect(desc).toBeDefined();
   expect(desc).toContain("openrouter/inception/mercury-2");

@@ -37,8 +37,8 @@ beforeEach(() => {
 afterAll(() => { vi.unstubAllEnvs(); rmSync(dir, { recursive: true, force: true }); });
 
 describe("health visibility through registered tool handlers", () => {
-  it("keeps twelve tools and exposes reset_health as an optional string array", () => {
-    expect(registered.size).toBe(12);
+  it("keeps eleven tools and exposes reset_health as an optional string array", () => {
+    expect(registered.size).toBe(11);
     const schema = tool("bridge_stats").config.inputSchema.reset_health;
     expect(schema.parse(undefined)).toBeUndefined();
     expect(schema.parse(["codex"])).toEqual(["codex"]);
@@ -64,7 +64,6 @@ describe("health visibility through registered tool handlers", () => {
 
   it.each([
     ["delegate", { prompt: "task", level: "low" }],
-    ["fast_delegate", { prompt: "task" }],
     ["explore", { question: "locate a symbol" }],
     ["read_slice", { files: ["src/cli.ts"], want: "resolveTier signature" }],
     ["run_filtered", { command: "true" }],
@@ -87,7 +86,7 @@ describe("health visibility through registered tool handlers", () => {
 
   it("omits a switch line when the first engine is healthy", async () => {
     writeFileSync(log, "");
-    expect(await call("fast_delegate", { prompt: "task" })).not.toContain("[engine:");
+    expect(await call("delegate", { prompt: "task", level: "low" })).not.toContain("[engine:");
   });
 });
 

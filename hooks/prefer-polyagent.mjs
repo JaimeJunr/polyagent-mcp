@@ -44,7 +44,7 @@ const SKIP_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|pdf|zip|gz|tar|wasm|mp4|mov|woff
 const PRELOAD_TEXT =
   "Core polyagent tools, including fan_out, are marked alwaysLoad on Claude Code 2.1.121+; older " +
   "hosts may defer them. If a required schema is missing, run ToolSearch(\"select:mcp__polyagent__delegate," +
-  "mcp__polyagent__fast_delegate,mcp__polyagent__explore,mcp__polyagent__read_slice," +
+  "mcp__polyagent__explore,mcp__polyagent__read_slice," +
   "mcp__polyagent__run_filtered,mcp__polyagent__web_lookup,mcp__polyagent__fan_out,mcp__polyagent__rate\"). " +
   "Secondary tools (generate_image, follow_up, bridge_stats, decide) may be deferred; load one with " +
   "ToolSearch when needed. For pure reading/locating (no edit ahead), prefer explore/read_slice over Grep/Read.";
@@ -135,7 +135,7 @@ export function agentSkillNudge(tool, toolInput) {
     const name = typeof ti.subagent_type === "string" ? ti.subagent_type.slice(0, 120) : "";
     if (/claude-code-guide|statusline-setup/i.test(name)) return null;
     return "polyagent workers can take this subagent" + (name ? ` (${name})` : "") +
-      ": delegate or fast_delegate accepts agent: \"<subagent name>\" to carry its persona. " + boundary;
+      ": delegate accepts agent: \"<subagent name>\" to carry its persona. " + boundary;
   }
   return null;
 }
@@ -226,8 +226,8 @@ export function handoffRedirectText(tool, toolInput, cwd, deps) {
   const ti = toolInput ?? {};
   const name = typeof ti.subagent_type === "string" ? ti.subagent_type.slice(0, 120) : "";
   if (subagentNeedsHost(findSubagentFile(name, cwd, deps))) return null;
-  return `polyagent worker can run this subagent (${name}) now: delegate(prompt, level, agent: "${name}") ` +
-    "(or fast_delegate). The worker gets its persona; it has no MCP servers or browser.";
+  return `polyagent worker can run this subagent (${name}) now: delegate(prompt, level, agent: "${name}"). ` +
+    "The worker gets its persona; it has no MCP servers or browser.";
 }
 
 // Edit/Write → o agente está prestes a IMPLEMENTAR ele mesmo. 1×/sessão, lembra que uma
@@ -290,7 +290,7 @@ export function sessionStartContext() {
   return (
     "polyagent MCP (fleet of cheap/fast coding-agent workers) is available. Core tools are marked alwaysLoad on Claude " +
     "Code 2.1.121+; older hosts may defer them, so use " +
-    'ToolSearch("select:mcp__polyagent__delegate,mcp__polyagent__fast_delegate,mcp__polyagent__explore,' +
+    'ToolSearch("select:mcp__polyagent__delegate,mcp__polyagent__explore,' +
     'mcp__polyagent__read_slice,mcp__polyagent__run_filtered,mcp__polyagent__web_lookup,' +
     'mcp__polyagent__fan_out,mcp__polyagent__rate") if a required schema is missing. ' +
     "Secondary tools may be deferred; load generate_image, follow_up, bridge_stats, or decide with " +
@@ -298,7 +298,7 @@ export function sessionStartContext() {
     'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. For PURE reading/locating/web with no edit ahead, ' +
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
-    "execution AND judgment. Prefer fast_delegate(prompt) over delegate for simple or urgent work where speed matters more than picking a level. Its healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. low (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
+    "execution AND judgment. For a tiny or one-line fix do it yourself: delegating cost more in the size experiment. low (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
     "edits, commits, PRs, tickets, grunt-work, running/fixing builds. middle (GPT-6.1 Sol medium on codex) handles harder implementation and analysis. " +
     "Low/middle cover most work. high (Claude Opus 5.5 high on claude) is EXPENSIVE and shares the Claude Code host subscription. " +
     "AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Reserve high for tasks a cheaper level already failed or for a costly verdict — code review, cross-file impact analysis, hard debugging. The worker " +
@@ -339,7 +339,7 @@ const AGENT_PREF_BODY =
   "delegate uses three named levels: low = GPT-6 Luna max on codex, middle = GPT-6.1 Sol medium on codex, " +
   "high = Claude Opus 5.5 high on claude. Low/middle cover most work; high is expensive and shares the Claude Code host subscription. " +
   "AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). " +
-  "Prefer fast_delegate to delegate for simple/urgent work where speed matters more than picking a level. Its healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low.";
+  "For a tiny or one-line fix do it yourself: delegating cost more in the size experiment.";
 
 // Reforço só para o subagente Explore: ele foi spawnado no modelo caro do orquestrador
 // (o Explore herda o modelo da sessão, capado em Opus), então empurra TODO o trabalho de
