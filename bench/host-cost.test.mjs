@@ -152,3 +152,14 @@ test('total do dia deduplica message.id repetido entre transcripts (cópia/retom
   assert.equal(day.hostTotal.tokens.input_tokens, 6);
   assert.match(renderDayReport(day), new RegExp(`Total host: ${Math.round(day.hostTotal.units)} unidades`));
 });
+
+test('total do dia preserva o total final do CLI (result.modelUsage) e bate com a linha da sessão', () => {
+  const s = { id: 'f', events: [
+    turn('m1', at(0), { input_tokens: 10, output_tokens: 160, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }),
+    { type: 'result', timestamp: at(1), modelUsage: { 'claude-x': { inputTokens: 10, outputTokens: 1049, cacheReadInputTokens: 100, cacheCreationInputTokens: 0 } } },
+  ] };
+  const day = daySummary([s], []);
+  assert.equal(day.sessions[0].host.tokens.output_tokens, 1049);
+  assert.equal(day.hostTotal.tokens.output_tokens, 1049);
+  assert.equal(day.hostTotal.units, day.sessions[0].host.units);
+});
