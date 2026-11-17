@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseCodexJsonl, parseCliJson, parseOpencodeJsonl, parseOutput } from "../src/cli.js";
 import {
-  aggregateWorkerUsage, renderWorkerUsage, buildUsageEntry, type UsageEntry,
+  aggregateWorkerUsage, renderWorkerUsage, buildUsageEntry, buildFormatRun, type UsageEntry,
 } from "../src/usage.js";
 
 describe("parseCodexJsonl: uso de tokens", () => {
@@ -100,5 +100,34 @@ describe("aggregateWorkerUsage / renderWorkerUsage", () => {
     const text = renderWorkerUsage(aggregateWorkerUsage([entry({ engine: "codex", workerUsage: wu(100, 80, 10) })]));
     expect(text).toContain("Worker tokens");
     expect(text).toContain("explore|codex|-");
+  });
+});
+
+describe("buildFormatRun: uso do worker no log do format()", () => {
+  const usage = { inputTokens: 100, cachedInputTokens: 80, outputTokens: 10, costUsd: null };
+
+  it("fan_out: uso já gravado pelo worker não é gravado de novo no format() extra (sem dupla contagem)", () => {
+    const worker = buildUsageEntry("fan_out", 0, undefined, { engine: "codex", outcome: "success", workerUsage: usage });
+    const extra = buildUsageEntry("fan_out", 120, undefined, buildFormatRun({ engine: "codex", usage }, { engine: "codex", outcome: "success" }, "codex:s1", true));
+    expect(extra.workerUsage).toBeUndefined();
+    const stats = aggregateWorkerUsage([worker, extra]);
+    expect(Object.values(stats).reduce((n, s) => n + s.inputTokens, 0)).toBe(100);
+  });
+
+  it("chamada comum (delegate/explore) continua gravando o uso uma vez", () => {
+    const run = buildFormatRun({ engine: "codex", usage }, { engine: "codex", outcome: "success" }, undefined);
+    expect(run?.workerUsage).toEqual(usage);
+  });
+
+  it("follow_up sem run: engine vem de res.engine e o uso entra nos agregadores", () => {
+    const entry = buildUsageEntry("follow_up", 50, undefined, buildFormatRun({ engine: "claude", usage }, undefined, "claude:s2"));
+    expect(entry.engine).toBe("claude");
+    expect(entry.sessionId).toBe("claude:s2");
+    expect(aggregateWorkerUsage([entry])["follow_up|claude|-"]).toMatchObject({ calls: 1, measured: 1, inputTokens: 100 });
+  });
+
+  it("follow_up sem engine nem uso devolve só o handle, sem inventar campos", () => {
+    expect(buildFormatRun({}, undefined, undefined)).toBeUndefined();
+    expect(buildFormatRun({}, undefined, "x:1")).toEqual({ sessionId: "x:1" });
   });
 });

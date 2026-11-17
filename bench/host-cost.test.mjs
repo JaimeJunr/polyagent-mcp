@@ -103,3 +103,18 @@ test('o relatório diz o que não dá para concluir', () => {
   assert.match(text, /cota real/i);
   assert.match(renderDayReport(daySummary([], [])), /nenhuma sessão/i);
 });
+
+test('usa o total final do CLI (result.modelUsage) em vez do parcial do streaming', () => {
+  const events = [
+    { ...turn('m1', '2026-11-17T10:00:00.000Z', { input_tokens: 10, output_tokens: 160, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }) },
+    { type: 'result', timestamp: '2026-11-17T10:00:05.000Z', modelUsage: { 'claude-x': { inputTokens: 10, outputTokens: 1049, cacheReadInputTokens: 100, cacheCreationInputTokens: 0 } } },
+  ];
+  const host = hostFromTranscript(events);
+  assert.equal(host.tokens.output_tokens, 1049);
+  assert.equal(host.units, proxyUnits({ input_tokens: 10, output_tokens: 1049, cache_read_input_tokens: 100 }));
+});
+
+test('transcript sem result.modelUsage segue usando os tokens do streaming', () => {
+  const host = hostFromTranscript([turn('m1', '2026-11-17T10:00:00.000Z', { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })]);
+  assert.equal(host.tokens.output_tokens, 3);
+});

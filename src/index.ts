@@ -22,7 +22,7 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  USAGE_LOG, aggregateWorkerUsage, renderWorkerUsage, logDecision, logRating, logUsage, readUsage, aggregate, engineHealthReport, classifyOutcome, QUOTA_WINDOW_MS,
+  USAGE_LOG, buildFormatRun, aggregateWorkerUsage, renderWorkerUsage, logDecision, logRating, logUsage, readUsage, aggregate, engineHealthReport, classifyOutcome, QUOTA_WINDOW_MS,
   buildHealthResetEntries, logHealthResets, renderEngineHealth, type EngineHealthReport,
   ratingStats, renderRatingStats,
   type TierReceipt, type UsageRun,
@@ -137,6 +137,7 @@ function format(
   tier?: TierReceipt,
   run?: UsageRun,
   skipped?: SkippedEngine[],
+  usageAlreadyLogged = false,
 ): { content: { type: "text"; text: string }[] } {
   const sessionHandle = res.engine && res.sessionId
     ? formatSessionHandle(res.engine, res.sessionId)
@@ -151,9 +152,7 @@ function format(
   const actualRun = res.fallbackFrom
     ? { ...(run ?? { outcome: "success" as const }), engine: res.engine, model: undefined, effort: undefined }
     : run;
-  const withHandle = sessionHandle ? { ...actualRun, sessionId: sessionHandle } : actualRun;
-  const usageRun = res.usage ? { ...withHandle, workerUsage: res.usage } : withHandle;
-  logUsage(tool, text.length, tier, usageRun);
+  logUsage(tool, text.length, tier, buildFormatRun(res, actualRun, sessionHandle, usageAlreadyLogged));
   if (redacted) logUsage("blocked_exfil", text.length);
   return { content: [{ type: "text", text }] };
 }
@@ -501,6 +500,7 @@ server.registerTool(
         { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, tier.engine) },
         { engine: res.engine ?? tier.engine, model: tier.model, effort: tier.effort },
         skipped,
+        true,
       );
     }
 
@@ -533,6 +533,7 @@ server.registerTool(
             durationMs: Date.now() - gateStarted,
           },
           skipped,
+          true,
         );
       },
       async () => {

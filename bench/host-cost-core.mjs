@@ -21,8 +21,8 @@ export function hostFromTranscript(events) {
   const stamps = events.map(e => Date.parse(e?.timestamp)).filter(Number.isFinite);
   const summary = summarizeEvents(events.filter(e => e && typeof e === 'object'));
   return {
-    tokens: summary.streamTokens,
-    units: proxyUnits(summary.streamTokens),
+    tokens: summary.tokens,
+    units: proxyUnits(summary.tokens),
     startMs: stamps.length ? Math.min(...stamps) : null,
     endMs: stamps.length ? Math.max(...stamps) : null,
   };
