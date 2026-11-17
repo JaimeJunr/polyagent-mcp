@@ -1608,9 +1608,48 @@ export interface FallbackFailure extends Error {
   fallbackFrom: FallbackAttempt;
 }
 
+/**
+ * Consumo do worker lido da própria saída do CLI. `inputTokens` inclui o que veio do cache
+ * (`cachedInputTokens` é o subconjunto cacheado), igual nas engines que o reportam. `null` = o CLI
+ * não informou aquele campo; nunca zero inventado. Sem nenhum dado, o parser omite o objeto todo.
+ */
+export interface WorkerUsage {
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens?: number | null;
+  costUsd: number | null;
+}
+
+/** Número finito e não negativo, senão null (campo ausente, string ou NaN não viram zero). */
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/** Soma tolerante a null: só devolve null se nenhuma das parcelas foi informada. */
+function addCounts(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : a + b;
+}
+
+/** Soma dois WorkerUsage (turnos ou steps do mesmo run). */
+function mergeWorkerUsage(a: WorkerUsage | undefined, b: WorkerUsage): WorkerUsage {
+  if (!a) return b;
+  const merged: WorkerUsage = {
+    inputTokens: addCounts(a.inputTokens, b.inputTokens),
+    cachedInputTokens: addCounts(a.cachedInputTokens, b.cachedInputTokens),
+    outputTokens: addCounts(a.outputTokens, b.outputTokens),
+    costUsd: addCounts(a.costUsd, b.costUsd),
+  };
+  const reasoning = addCounts(a.reasoningTokens ?? null, b.reasoningTokens ?? null);
+  if (a.reasoningTokens !== undefined || b.reasoningTokens !== undefined) merged.reasoningTokens = reasoning;
+  return merged;
+}
+
 export interface CliResult {
   text: string;
   sessionId?: string;
+  /** Tokens/custo do worker quando o CLI informa; ausente quando não informa ou veio malformado. */
+  usage?: WorkerUsage;
   engine?: Engine;
   fallbackFrom?: FallbackAttempt;
 }
@@ -1629,10 +1668,31 @@ export function parseCliJson(raw: string): CliResult {
       : typeof obj.text === "string" ? obj.text : trimmed;
     const sessionId = typeof obj.session_id === "string" ? obj.session_id
       : typeof obj.sessionId === "string" ? obj.sessionId : undefined;
-    return { text, sessionId };
+    const usage = claudeUsage(obj);
+    return usage ? { text, sessionId, usage } : { text, sessionId };
   } catch {
     return { text: trimmed };
   }
+}
+
+/**
+ * Uso do `claude -p --output-format json`: `usage` (input/cache_creation/cache_read/output) e
+ * `total_cost_usd`. Input soma as três parcelas de entrada; cacheado é só `cache_read`. Aceita
+ * também o formato camelCase do grok se vier, sem inventar campo ausente.
+ */
+function claudeUsage(obj: unknown): WorkerUsage | undefined {
+  const root = record(obj);
+  if (!root) return undefined;
+  const costUsd = tokenCount(root.total_cost_usd);
+  const u = record(root.usage);
+  if (!u) return costUsd === null ? undefined : { inputTokens: null, cachedInputTokens: null, outputTokens: null, costUsd };
+  const plain = tokenCount(u.input_tokens ?? u.inputTokens);
+  const created = tokenCount(u.cache_creation_input_tokens);
+  const read = tokenCount(u.cache_read_input_tokens);
+  const outputTokens = tokenCount(u.output_tokens ?? u.outputTokens);
+  const inputTokens = addCounts(addCounts(plain, created), read);
+  if (inputTokens === null && outputTokens === null && costUsd === null) return undefined;
+  return { inputTokens, cachedInputTokens: read, outputTokens, costUsd };
 }
 
 /**
@@ -1643,20 +1703,40 @@ export function parseCliJson(raw: string): CliResult {
 export function parseCodexJsonl(raw: string): CliResult {
   let text = "";
   let sessionId: string | undefined;
+  let usage: WorkerUsage | undefined;
   for (const line of raw.split("\n")) {
     const t = line.trim();
     if (!t.startsWith("{")) continue;
     try {
       const ev = JSON.parse(t) as {
+        type?: unknown; usage?: unknown;
         item?: { type?: unknown; text?: unknown }; session_id?: unknown; thread_id?: unknown;
       };
+      if (ev.type === "turn.completed") {
+        const turn = codexTurnUsage(ev.usage);
+        if (turn) usage = mergeWorkerUsage(usage, turn);
+      }
       if (ev.item?.type === "agent_message" && typeof ev.item.text === "string") text = ev.item.text;
       // o codex emite o id como `thread_id` no evento `thread.started`; `session_id` fica de fallback
       if (typeof ev.session_id === "string") sessionId = ev.session_id;
       else if (typeof ev.thread_id === "string") sessionId = ev.thread_id;
     } catch { /* linha de log não-JSON — ignora */ }
   }
-  return { text: text || raw.trim(), sessionId };
+  return usage ? { text: text || raw.trim(), sessionId, usage } : { text: text || raw.trim(), sessionId };
+}
+
+/** Uso do evento `turn.completed` do codex: `input_tokens` já inclui `cached_input_tokens`. */
+function codexTurnUsage(value: unknown): WorkerUsage | undefined {
+  const u = record(value);
+  if (!u) return undefined;
+  const inputTokens = tokenCount(u.input_tokens);
+  const outputTokens = tokenCount(u.output_tokens);
+  const cachedInputTokens = tokenCount(u.cached_input_tokens);
+  const reasoningTokens = tokenCount(u.reasoning_output_tokens);
+  if (inputTokens === null && outputTokens === null) return undefined;
+  const usage: WorkerUsage = { inputTokens, cachedInputTokens, outputTokens, costUsd: null };
+  if (reasoningTokens !== null) usage.reasoningTokens = reasoningTokens;
+  return usage;
 }
 
 /**
@@ -1667,6 +1747,7 @@ export function parseCodexJsonl(raw: string): CliResult {
 export function parseOpencodeJsonl(raw: string): CliResult {
   let text = "";
   let sessionId: string | undefined;
+  let usage: WorkerUsage | undefined;
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) continue;
@@ -1674,6 +1755,10 @@ export function parseOpencodeJsonl(raw: string): CliResult {
       const event = record(JSON.parse(trimmed));
       if (!event) continue;
       const part = record(event.part);
+      if (stringField(event, "type") === "step_finish" || stringField(part, "type") === "step-finish") {
+        const step = opencodeStepUsage(part);
+        if (step) usage = mergeWorkerUsage(usage, step);
+      }
       const payload = record(event.payload);
       const properties = record(event.properties);
       const nested = [part, payload, properties];
@@ -1695,7 +1780,22 @@ export function parseOpencodeJsonl(raw: string): CliResult {
       if (chunk !== undefined) text += chunk;
     } catch { /* linha malformada — mantém o melhor resultado já extraído */ }
   }
-  return { text: text || raw.trim(), sessionId };
+  return usage ? { text: text || raw.trim(), sessionId, usage } : { text: text || raw.trim(), sessionId };
+}
+
+/** Uso de um `step_finish` do opencode: `part.tokens {input,output,reasoning,cache{read,write}}` e `part.cost`. */
+function opencodeStepUsage(part: JsonObject | undefined): WorkerUsage | undefined {
+  const tokens = record(part?.tokens);
+  if (!tokens) return undefined;
+  const cache = record(tokens.cache);
+  const read = tokenCount(cache?.read);
+  const input = addCounts(addCounts(tokenCount(tokens.input), read), tokenCount(cache?.write));
+  const outputTokens = tokenCount(tokens.output);
+  if (input === null && outputTokens === null) return undefined;
+  const usage: WorkerUsage = { inputTokens: input, cachedInputTokens: read, outputTokens, costUsd: tokenCount(part?.cost) };
+  const reasoning = tokenCount(tokens.reasoning);
+  if (reasoning !== null) usage.reasoningTokens = reasoning;
+  return usage;
 }
 
 interface KimiTextEvent {

@@ -1370,7 +1370,10 @@ describe("parseCodexJsonl", () => {
       JSON.stringify({ type: "item.completed", item: { id: "2", type: "agent_message", text: "PONG" } }),
       JSON.stringify({ type: "turn.completed", usage: { output_tokens: 6 } }),
     ].join("\n");
-    expect(parseCodexJsonl(raw)).toEqual({ text: "PONG", sessionId: undefined });
+    expect(parseCodexJsonl(raw)).toEqual({
+      text: "PONG", sessionId: undefined,
+      usage: { inputTokens: null, cachedInputTokens: null, outputTokens: 6, costUsd: null },
+    });
   });
 
   it("degrada para texto cru quando não há agent_message", () => {
@@ -1385,7 +1388,7 @@ describe("parseCodexJsonl", () => {
       JSON.stringify({ type: "item.completed", item: { id: "1", type: "agent_message", text: "PONG" } }),
       JSON.stringify({ type: "turn.completed", usage: { output_tokens: 6 } }),
     ].join("\n");
-    expect(parseCodexJsonl(raw)).toEqual({ text: "PONG", sessionId: "019f7049-22af-79a2" });
+    expect(parseCodexJsonl(raw)).toMatchObject({ text: "PONG", sessionId: "019f7049-22af-79a2" });
   });
 });
 
@@ -1396,8 +1399,9 @@ describe("parseOpencodeJsonl", () => {
       JSON.stringify({ type: "text", timestamp: 1001, sessionID: "ses_1", part: { id: "prt_text", messageID: "msg_1", sessionID: "ses_1", type: "text", text: "PONG", time: { start: 1000, end: 1001 } } }),
       JSON.stringify({ type: "step_finish", timestamp: 1002, sessionID: "ses_1", part: { id: "prt_finish", messageID: "msg_1", sessionID: "ses_1", type: "step-finish", tokens: { input: 10, output: 1 }, cost: 0 } }),
     ].join("\n");
-    expect(parseOpencodeJsonl(raw)).toEqual({ text: "PONG", sessionId: "ses_1" });
-    expect(parseOutput("opencode", raw)).toEqual({ text: "PONG", sessionId: "ses_1" });
+    const usage = { inputTokens: 10, cachedInputTokens: null, outputTokens: 1, costUsd: 0 };
+    expect(parseOpencodeJsonl(raw)).toEqual({ text: "PONG", sessionId: "ses_1", usage });
+    expect(parseOutput("opencode", raw)).toEqual({ text: "PONG", sessionId: "ses_1", usage });
   });
 
   it("ignora linha malformada no meio sem lançar e mantém o texto extraído", () => {

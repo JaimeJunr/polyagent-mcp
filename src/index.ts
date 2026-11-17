@@ -22,7 +22,7 @@ import {
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
-  USAGE_LOG, logDecision, logRating, logUsage, readUsage, aggregate, engineHealthReport, classifyOutcome, QUOTA_WINDOW_MS,
+  USAGE_LOG, aggregateWorkerUsage, renderWorkerUsage, logDecision, logRating, logUsage, readUsage, aggregate, engineHealthReport, classifyOutcome, QUOTA_WINDOW_MS,
   buildHealthResetEntries, logHealthResets, renderEngineHealth, type EngineHealthReport,
   ratingStats, renderRatingStats,
   type TierReceipt, type UsageRun,
@@ -151,7 +151,8 @@ function format(
   const actualRun = res.fallbackFrom
     ? { ...(run ?? { outcome: "success" as const }), engine: res.engine, model: undefined, effort: undefined }
     : run;
-  const usageRun = sessionHandle ? { ...actualRun, sessionId: sessionHandle } : actualRun;
+  const withHandle = sessionHandle ? { ...actualRun, sessionId: sessionHandle } : actualRun;
+  const usageRun = res.usage ? { ...withHandle, workerUsage: res.usage } : withHandle;
   logUsage(tool, text.length, tier, usageRun);
   if (redacted) logUsage("blocked_exfil", text.length);
   return { content: [{ type: "text", text }] };
@@ -218,6 +219,7 @@ async function runFanOutWorker(
         sessionId,
         outcome: "success",
         durationMs: Date.now() - started,
+        ...(output.usage ? { workerUsage: output.usage } : {}),
       });
       return { level, tier: attempt, res };
     } catch (err) {
@@ -683,6 +685,8 @@ server.registerTool(
     const sections: string[] = [];
     const health = engineHealthReport(entries, Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
     if (Object.keys(health).length) sections.push(renderEngineHealth(health));
+    const workerTable = renderWorkerUsage(aggregateWorkerUsage(entries));
+    if (workerTable) sections.push(workerTable);
     if (tools.length) {
       const lines = tools
         .sort((a, b) => stats[b].totalOutChars - stats[a].totalOutChars)
