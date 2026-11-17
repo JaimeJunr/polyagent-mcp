@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, basename } from 'node:path';
-import { hostPlusWorker, compareHosts, daySummary, renderDayReport } from './host-cost-core.mjs';
+import { hostPlusWorker, compareHosts, daySummary, renderDayReport, transcriptMayHoldDay } from './host-cost-core.mjs';
 
 // Uso:
 //   node bench/host-cost.mjs <transcript.jsonl> [<transcript-com-worker.jsonl>] [--log <POLYAGENT_LOG>]
@@ -24,7 +24,7 @@ function localDay(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Transcripts de nível superior cuja última escrita caiu no dia pedido. */
+/** Transcripts de nível superior escritos no dia pedido ou depois (sessão retomada ainda pode ter eventos do dia). */
 function transcriptsOfDay(roots, day) {
   const files = [];
   for (const root of roots) {
@@ -33,7 +33,7 @@ function transcriptsOfDay(roots, day) {
     for (const name of names) {
       if (!name.endsWith('.jsonl')) continue;
       const path = join(root, name);
-      try { if (localDay(statSync(path).mtimeMs) === day) files.push(path); } catch { /* sumiu no meio */ }
+      try { if (transcriptMayHoldDay(statSync(path).mtimeMs, day)) files.push(path); } catch { /* sumiu no meio */ }
     }
   }
   return files;

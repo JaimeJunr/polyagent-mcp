@@ -36,6 +36,16 @@ Linha JSON inválida, transcript sem timestamp, evento sem `usage`, entrada de l
 `workerUsage` malformado são ignorados, nunca lançam. Nada de prompt ou resposta é lido para o
 relatório: só `usage`, `message.id` e `timestamp` do transcript e os contadores do log.
 
+## Correções após a revisão do Codex (PR do relatório)
+
+- **Dia por mtime:** o transcript entra se `mtime >= início do dia`, não só se igual; sessão que cruzou
+  a meia-noite ou foi retomada continua aparecendo nos dias anteriores (o filtro por timestamp de evento decide).
+- **Worker Claude não é host:** o sandbox grava o transcript do worker em `~/.claude/projects`. Os ids de
+  `sessionId` do log (`claude:<id>`) excluem esses arquivos da coleção do host (conferido: dois ids do log
+  existem como arquivos ali).
+- **Total do dia:** dedup global por `message.id` (máximo por campo) entre transcripts; as linhas por
+  sessão seguem independentes, então a soma delas pode passar do total.
+
 ## Reavaliar
 
 - Se o log passar a gravar o id da sessão do host (hoje o servidor MCP não o recebe), trocar a janela
