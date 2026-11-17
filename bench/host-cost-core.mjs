@@ -122,6 +122,7 @@ export function daySummary(sessions, logEntries) {
   const rows = [];
   const hostEvents = [];
   const finalExtra = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const claimedIds = new Set(); // message.id de sessões com total final já contabilizado: cópia/retomada não corrige de novo
   const workerIds = workerSessionIds(logEntries);
   for (const session of Array.isArray(sessions) ? sessions : []) {
     if (workerIds.has(String(session?.id))) continue;
@@ -129,11 +130,14 @@ export function daySummary(sessions, logEntries) {
     const host = hostFromTranscript(events);
     if (host.startMs === null) continue;
     hostEvents.push(...events.filter(event => event && typeof event === 'object' && event.type !== 'result'));
-    // Total final do CLI (result.modelUsage) vale mais que o streaming: soma só o que ele acrescenta ao
-    // streaming da própria sessão, para o total do dia bater com a linha da sessão sem recontar mensagens.
+    // Total final do CLI (result.modelUsage) vale mais que o streaming: aplica a diferença (também para baixo)
+    // entre final e streaming da sessão, para o total do dia bater com a linha. Transcript que repete
+    // mensagens de uma sessão já corrigida (cópia/retomada) não aplica a correção outra vez.
     const own = summarizeEvents(events.filter(e => e && typeof e === 'object'));
-    if (own.tokenSource === 'result.modelUsage') {
-      for (const field of Object.keys(finalExtra)) finalExtra[field] += Math.max(0, (own.tokens[field] ?? 0) - (own.streamTokens[field] ?? 0));
+    const ids = events.map(e => e?.message?.id).filter(id => typeof id === 'string');
+    if (own.tokenSource === 'result.modelUsage' && !ids.some(id => claimedIds.has(id))) {
+      ids.forEach(id => claimedIds.add(id));
+      for (const field of Object.keys(finalExtra)) finalExtra[field] += (own.tokens[field] ?? 0) - (own.streamTokens[field] ?? 0);
     }
     rows.push({ id: String(session.id ?? '?'), host, workers: workersByEngine(logEntries, host.startMs, host.endMs) });
   }
@@ -151,7 +155,7 @@ export function daySummary(sessions, logEntries) {
   // Total do dia com dedup global por message.id (máximo por campo): transcript copiado ou retomado repete
   // mensagens, e somar as linhas por sessão contaria cada uma duas vezes. Linhas por sessão seguem independentes.
   const stream = summarizeEvents(hostEvents).streamTokens;
-  const hostTokens = Object.fromEntries(Object.keys(finalExtra).map(field => [field, (stream[field] ?? 0) + finalExtra[field]]));
+  const hostTokens = Object.fromEntries(Object.keys(finalExtra).map(field => [field, Math.max(0, (stream[field] ?? 0) + finalExtra[field])]));
   const hostTotal = { tokens: hostTokens, units: proxyUnits(hostTokens) };
   return { sessions: rows.sort((a, b) => a.host.startMs - b.host.startMs), ambiguousCalls, outsideCalls, workerTotals, hostTotal };
 }

@@ -163,3 +163,19 @@ test('total do dia preserva o total final do CLI (result.modelUsage) e bate com 
   assert.equal(day.hostTotal.tokens.output_tokens, 1049);
   assert.equal(day.hostTotal.units, day.sessions[0].host.units);
 });
+
+const finalSession = (id, streamOut, finalOut, msg = 'm1') => ({ id, events: [
+  turn(msg, at(0), { input_tokens: 10, output_tokens: streamOut, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }),
+  { type: 'result', timestamp: at(1), modelUsage: { 'claude-x': { inputTokens: 10, outputTokens: finalOut, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 } } },
+] });
+
+test('total do dia não conta duas vezes o total final de transcripts copiados', () => {
+  const day = daySummary([finalSession('a', 160, 1049), finalSession('b', 160, 1049)], []);
+  assert.equal(day.hostTotal.tokens.output_tokens, 1049);
+});
+
+test('total do dia acompanha correção para baixo do total final', () => {
+  const day = daySummary([finalSession('a', 100, 80)], []);
+  assert.equal(day.sessions[0].host.tokens.output_tokens, 80);
+  assert.equal(day.hostTotal.tokens.output_tokens, 80);
+});
