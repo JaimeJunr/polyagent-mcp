@@ -19,6 +19,13 @@ export const AA_COST_PER_TASK: Record<string, number> = {
   "codex|gpt-6.1-sol|high": 0.32,
   "codex|gpt-6.1-sol|xhigh": 0.39,
   "codex|gpt-6.1-sol|max": 0.72,
+  // Publicados pela Artificial Analysis: research/2026-11-17-gpt-6-2-sol-astra.md.
+  // Sol 6.2 nos outros esforços não tem custo publicado; manter ausente.
+  "codex|gpt-6.2-sol|max": 1.01,
+  "codex|gpt-6.2-astra|max": 4.00,
+  // ESTIMATIVAS lidas no gráfico AA (±10%), não publicadas; mesmo estudo de 2026-11-17.
+  "codex|gpt-6.2-astra|xhigh": 2.5,
+  "codex|gpt-6.2-astra|high": 2.1,
   "codex|gpt-6-astra|low": 0.82,
   "codex|gpt-6-astra|medium": 1.54,
   "codex|gpt-6-astra|high": 1.73,

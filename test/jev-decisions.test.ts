@@ -189,8 +189,8 @@ describe("delegate Jev shadow", () => {
     const request = delegateShadowRequest("x".repeat(20_000));
     expect(request.questions.level).toMatchObject({ type: "choice" });
     expect(Object.keys(request.questions.level.criteria ?? {})).toEqual(["low", "middle", "high"]);
-    expect(request.questions.level.criteria?.middle).toContain("GPT-6.1 Sol medium");
-    expect(request.questions.level.criteria?.high).toContain("Claude Opus 5.5 high");
+    expect(request.questions.level.criteria?.middle).toContain("GPT-6.2 Sol medium");
+    expect(request.questions.level.criteria?.high).toContain("GPT-6.2 Astra xhigh");
     expect((request.state as string).length).toBeLessThanOrEqual(12_000);
   });
 

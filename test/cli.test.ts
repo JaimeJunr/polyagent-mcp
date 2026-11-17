@@ -935,8 +935,9 @@ describe("resolveTier", () => {
     expect(LEVELS).toEqual(["low", "middle", "high"]);
     expect(Object.keys(TIERS)).toEqual(LEVELS);
     expect(resolveTier("low", all)).toEqual({ engine: "codex", model: "gpt-6-luna", effort: "max" });
-    expect(resolveTier("middle", all)).toEqual({ engine: "codex", model: "gpt-6.1-sol", effort: "medium" });
-    expect(resolveTier("high", all)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
+    expect(resolveTier("middle", all)).toEqual({ engine: "codex", model: "gpt-6.2-sol", effort: "medium" });
+    // Todos os titulares usam Codex; Claude fica como reserva em outra assinatura.
+    expect(resolveTier("high", all)).toEqual({ engine: "codex", model: "gpt-6.2-astra", effort: "xhigh" });
   });
 
   it("uses a distinct model and effort pair per named level", () => {
@@ -959,7 +960,7 @@ describe("resolveTier", () => {
       model: "gpt-5.6-sol-xhigh-fast",
     });
     expect(resolveTier("high", (e) => e === "cursor", true)).toEqual({
-      skipped: [{ engine: "claude", cause: "missing" }, { engine: "codex", cause: "missing" }],
+      skipped: [{ engine: "codex", cause: "missing" }, { engine: "claude", cause: "missing" }],
       engine: "cursor",
       model: "gpt-6-astra-max-fast",
     });
@@ -967,7 +968,7 @@ describe("resolveTier", () => {
 
   it("names the missing primary CLI when reserve and Cursor are unavailable", () => {
     expect(() => resolveTier("low", () => false, false)).toThrow(/needs the 'codex' CLI/);
-    expect(() => resolveTier("high", () => false, false)).toThrow(/needs the 'claude' CLI/);
+    expect(() => resolveTier("high", () => false, false)).toThrow(/needs the 'codex' CLI/);
   });
 
   it.each([0, 1, 2, 3, 4, 5, 6, "1", "medium", "HIGH", "", "toString", "__proto__"])("rejects invalid level %s at both resolvers", (level) => {
@@ -1116,13 +1117,14 @@ describe("isDefaultTierEngine (tier-integrity receipt)", () => {
   it("is true when the resolved engine matches the tier's preferred engine", () => {
     expect(isDefaultTierEngine("low", "codex")).toBe(true);
     expect(isDefaultTierEngine("middle", "codex")).toBe(true);
-    expect(isDefaultTierEngine("high", "claude")).toBe(true);
+    expect(isDefaultTierEngine("high", "codex")).toBe(true);
   });
 
   it("is false when the resolved engine is a fallback (e.g. cursor)", () => {
     expect(isDefaultTierEngine("low", "cursor")).toBe(false);
     expect(isDefaultTierEngine("middle", "grok")).toBe(false);
     expect(isDefaultTierEngine("high", "cursor")).toBe(false);
+    expect(isDefaultTierEngine("high", "claude")).toBe(false);
   });
 
   it("is false for an invalid level (no tier entry to match)", () => {
@@ -1546,7 +1548,8 @@ describe("resolveDelegate named levels", () => {
   });
 
   it("drops inherited defaults on a different engine and preserves explicit overrides", () => {
-    expect(resolveDelegate("high", { engine: "codex" }, () => true)).toEqual({ engine: "codex", model: undefined, effort: undefined });
+    // High usa Codex; Claude é outra engine e não pode herdar seu modelo/effort.
+    expect(resolveDelegate("high", { engine: "claude" }, () => true)).toEqual({ engine: "claude", model: undefined, effort: undefined });
     expect(resolveDelegate("middle", { model: "custom", effort: "high" }, () => true)).toEqual({ engine: "codex", model: "custom", effort: "high" });
   });
 });

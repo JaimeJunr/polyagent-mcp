@@ -4,11 +4,13 @@ import { LEVELS, TIERS, QuotaError, resolveTier, runWithReserve, type RunOpts } 
 const reserves = {
   low: { engine: "claude", model: "claude-haiku-5-5", effort: "xhigh" },
   middle: { engine: "claude", model: "claude-haiku-5-5", effort: "max" },
-  high: { engine: "codex", model: "gpt-6.1-sol", effort: "max" },
+  high: { engine: "claude", model: "claude-opus-5-5", effort: "high" },
 };
 
 describe("level reserves", () => {
   it.each(LEVELS)("%s uses the approved reserve before Cursor when primary is missing", (level) => {
+    // A reserva precisa sobreviver à cota da assinatura titular.
+    expect(TIERS[level].reserve.engine).not.toBe(TIERS[level].primary.engine);
     expect(TIERS[level].reserve).toEqual(reserves[level]);
     expect(resolveTier(level, (e) => e !== TIERS[level].primary.engine, true)).toEqual({
       ...reserves[level], skipped: [{ engine: TIERS[level].primary.engine, cause: "missing" }],

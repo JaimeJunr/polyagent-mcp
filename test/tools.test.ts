@@ -47,7 +47,7 @@ describe("tool surface (US-003)", () => {
 
   it("instructions anunciam a escada AA atual antes dos schemas deferred", () => {
     expect(indexSrc).toContain(
-      "levels: low=GPT-6 Luna max, middle=GPT-6.1 Sol medium, high=Claude Opus 5.5 high; AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×)",
+      "levels: low=GPT-6 Luna max, middle=GPT-6.2 Sol medium, high=GPT-6.2 Astra xhigh; AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated",
     );
   });
 
@@ -143,12 +143,22 @@ describe("tool surface (US-003)", () => {
   });
 
   it("delegate e README descrevem a escada AA atual", () => {
-    const ladder = "$0.07 → $0.21 (~3×) → $1.82 (~8.7×)";
+    const ladder = "AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated";
     const delegate = registeredToolBlock("delegate");
     expect(delegate).toContain(ladder);
-    expect(delegate).toContain("middle=GPT-6.1 Sol medium (codex)");
+    expect(delegate).toContain("middle=GPT-6.2 Sol medium (codex)");
     expect(readme.replace(/\s+/g, " ")).toContain(ladder);
-    expect(readme).toContain("middle=GPT-6.1 Sol medium (codex)");
+    expect(readme).toContain("middle=GPT-6.2 Sol medium (codex)");
+  });
+
+  // A mesma evidência deve chegar ao host por todas as superfícies de roteamento.
+  it.each([
+    "src/index.ts", "src/claudeMd.ts", "src/skill.ts", "hooks/prefer-polyagent.mjs",
+    "README.md", "CLAUDE.md",
+  ])("%s preserves the shared AA v5 statement", (file) => {
+    const text = readFileSync(path.join(repoRoot, file), "utf8");
+    expect(text).toContain("AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated");
+    expect(text).not.toContain("$0.07 → $0.21 (~3×) → $1.82 (~8.7×)");
   });
 
   it("footer orienta a continuar e avaliar a sessão", () => {

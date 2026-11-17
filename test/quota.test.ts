@@ -207,11 +207,11 @@ describe("quotaErrorMessage — erro acionável por tool (US-006)", () => {
     // grok estourou: fora da matriz desde 2026-09-23; o menor restante é low (codex).
     expect(quotaErrorMessage("quota_exhausted", "grok", "delegate", ["codex", "claude"]))
       .toContain('retry with level:"low"');
-    // Codex ocupa low/middle; Claude ocupa high, o menor restante com outra assinatura.
+    // Todos os titulares usam Codex: sem ele, sugerir engine explícita, nunca outro nível.
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["grok", "claude"]))
-      .toContain('retry with level:"high"');
+      .toContain('retry with engine:"grok"');
     expect(quotaErrorMessage("quota_exhausted", "codex", "delegate", ["claude"]))
-      .toContain('retry with level:"high"');
+      .toContain('retry with engine:"claude"');
   });
 
   it("prefere low mesmo quando claude aparece antes na lista de candidatas", () => {
