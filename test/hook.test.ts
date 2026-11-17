@@ -392,6 +392,15 @@ describe("PreToolUse hook modes — Bash search and Agent", () => {
     expect(runHook(evt, env)).toBe("");
   });
 
+  it("sem POLYAGENT_HOOK_MODE o padrão é nudge: sugere, não bloqueia", () => {
+    const evt = { hook_event_name: "PreToolUse", session_id: `test-bash-default-${process.pid}-${Date.now()}`, tool_name: "Bash", tool_input: { command: "rg needle src" } };
+    const env = { ...process.env };
+    delete env.POLYAGENT_HOOK_MODE;
+    const out = JSON.parse(runHook(evt, env)).hookSpecificOutput;
+    expect(out.additionalContext).toMatch(/explore.*read_slice/s);
+    expect(out.permissionDecision).toBeUndefined();
+  });
+
   it("nudge mode emits additionalContext for Bash search without denying", () => {
     const evt = { hook_event_name: "PreToolUse", session_id: `test-bash-nudge-${process.pid}-${Date.now()}`, tool_name: "Bash", tool_input: { command: "rg needle src" } };
     const out = JSON.parse(runHook(evt, { ...process.env, POLYAGENT_HOOK_MODE: "nudge" })).hookSpecificOutput;

@@ -603,7 +603,7 @@ entradas `UserPromptSubmit`, `SessionStart` e `SubagentStart`, todas apontando p
 `hooks/prefer-polyagent.mjs`. O hook orienta o agente para o alias `polyagent` e não menciona
 as tools removidas `plan`/`build`. A renomeação do arquivo exige atualizar caminhos antigos
 em `settings.json`. A variável
-`POLYAGENT_HOOK_MODE` = `off` | `nudge` | `redirect` (padrão **`redirect`**): `off` não emite nada;
+`POLYAGENT_HOOK_MODE` = `off` | `nudge` | `redirect` (padrão **`nudge`** desde 2026-11-16): `off` não emite nada;
 `nudge` usa `additionalContext` sem bloqueio; `redirect` retorna `permissionDecision: "deny"`
 via `denyRedirect()` para WebSearch/WebFetch, Read grande e Bash de busca de código. Em Bash,
 buscas read-only com `grep`/`rg`/`egrep`/`fgrep`/`ag`/`ack`/`find` ou `git grep` redirecionam
@@ -627,7 +627,7 @@ até skills básicas para um worker. Usar `Skill` nativamente é válido; `deleg
 - Pure decision in `decide(input, deps)` with injectable fs — that's what the tests exercise.
   `decide()` returns `{ keys, text, redirect }`. The I/O wrapper (`main`) only runs when invoked as
   a script.
-- **Modo redirect (padrão):** WebSearch/WebFetch → `web_lookup`, Read integral grande
+- **Modo redirect (opt-in):** WebSearch/WebFetch → `web_lookup`, Read integral grande
   (sem offset/limit, ≥ `POLYAGENT_HOOK_MIN_LINES`) → `read_slice`, e Bash de busca de código →
   `explore`/`read_slice` recebem **deny** uma vez. As chaves de dedup da sessão são salvas
   **antes** da emissão; a segunda chamada passa. O motivo termina em `FAILOPEN_SUFFIX` e informa
@@ -644,6 +644,7 @@ até skills básicas para um worker. Usar `Skill` nativamente é válido; `deleg
   `delegate` for simple/urgent work where speed matters more than picking a level.
 - Fail-open on errors: any error → print nothing, exit 0. SubagentStart and SessionStart paths are
   unchanged by redirect mode.
+- Padrão virou `nudge` porque os estudos `research/2026-11-15-piloto-controlado.md` e `research/2026-11-15-limiar-tamanho.md` mediram que delegar tarefa pequena custa mais (tiny +67%) e o bloqueio forçava esse caminho; `redirect` segue disponível por env.
 - Threshold for the large-Read redirect/nudge is `POLYAGENT_HOOK_MIN_LINES` (default 300).
 
 **`SubagentStart` reaches spawned subagents.** Main-loop PreToolUse nudges never reach subagents, so

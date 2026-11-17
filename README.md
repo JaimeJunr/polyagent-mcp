@@ -138,7 +138,7 @@ have their own approval settings — consult the host.
 | `POLYAGENT_JEV_VERIFY` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Judges each successful `delegate`/`fast_delegate` result in the background: does it claim success, report how many items its checks covered, show evidence, and address the task? Logs a `delegate_result_verify_shadow` decision; never delays or changes the result. One decision-model call per worker result. |
 | `POLYAGENT_JEV_MODEL` | `baseten/elephant-1:free` | Decision model for `decide` and the two Jev flags (any `/v1/systemone` model). `typesafe/jev-1.13` restores the paid Jev; see `research/2026-10-24-modelos-decisao-gratis.md`. |
 | `OPENROUTER_API_KEY` | _(unset)_ | Key for `decide` and the Jev flags. Fallbacks, in order: `.openrouter.key` in `~/.local/share/opencode/auth.json`, then the system keyring item stored by `secret-request --keyring openrouter --env OPENROUTER_API_KEY` (read with `secret-tool`). |
-| `POLYAGENT_HOOK_MODE` | `redirect` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task emitem apenas nudge. Skill não é tratada pelo hook desde 2026-10-25: o deny empurrava até skills básicas para um worker; usar Skill nativamente é válido. |
+| `POLYAGENT_HOOK_MODE` | `nudge` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task emitem apenas nudge. Skill não é tratada pelo hook desde 2026-10-25: o deny empurrava até skills básicas para um worker; usar Skill nativamente é válido. |
 | `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
 
 The three Jev flags are on by default (without an OpenRouter key each one falls back to the plain path) and pass truncated worker output or task text through the credential scrubber before sending it to OpenRouter.
@@ -213,10 +213,10 @@ called — the same adoption bug. The remaining secondary tools (`generate_image
 the bridge at the moment it reaches for a native tool — text in a config file loses under
 pressure, a call-time reminder does not. This repo ships one at
 [`hooks/prefer-polyagent.mjs`](hooks/prefer-polyagent.mjs): it runs on `node`
-(already required) and only fires where it pays. Default mode is **`redirect`**
-(`POLYAGENT_HOOK_MODE=redirect`): para WebSearch/WebFetch, Read grande e Bash de busca de código,
-retorna `permissionDecision: "deny"` uma vez e indica a ferramenta do bridge. Os demais casos
-emitem nudges sem bloqueio. Configure no `settings.json` do host Claude Code:
+(already required) and only fires where it pays. Default mode is **`nudge`**
+(`POLYAGENT_HOOK_MODE=nudge`): emite `additionalContext` sem bloquear. Com `POLYAGENT_HOOK_MODE=redirect`,
+WebSearch/WebFetch, Read grande e Bash de busca de código recebem `permissionDecision: "deny"` uma vez
+e a ferramenta do bridge é indicada. Configure no `settings.json` do host Claude Code:
 
 > **Breaking change (US-007):** The hook file was renamed from
 > `hooks/prefer-cursor-bridge.mjs` to `hooks/prefer-polyagent.mjs`. Update any host
@@ -283,7 +283,7 @@ redirect is one-shot and fail-open (a second identical call is allowed through).
 >   ToolSearch first; if the native tool is genuinely needed, call it again and it will be allowed
 >   (critical under headless `-p` so the agent never hard-stalls).
 
-Set `POLYAGENT_HOOK_MODE=nudge` for the old non-blocking behavior, or `off` to disable.
+Set `POLYAGENT_HOOK_MODE=redirect` for the old blocking behavior, or `off` to disable.
 To reset the dedup and see the fires again, start a new session (or delete
 `polyagent-nudged-<session_id>.json` from your OS temp dir — `os.tmpdir()`,
 e.g. `/tmp` on Linux, not necessarily `$TMPDIR`).
