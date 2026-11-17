@@ -67,11 +67,11 @@ describe("decide — Grep/Glob (preload once)", () => {
 });
 
 describe("decide — Read (threshold 300, dedup por arquivo)", () => {
-  it("arquivo de 300 linhas → nudge read_slice", () => {
+  it("arquivo de 300 linhas → nudge read_slice, sem deny (read_slice rebaixada em 2026-11-16)", () => {
     const res = decide({ tool_name: "Read", tool_input: { file_path: "/x/big.ts" }, seen: new Set() }, fakeFs(300));
     expect(res.keys).toContain("read:/x/big.ts");
     expect(res.text).toMatch(/read_slice/);
-    expect(res.redirect).toBe(true);
+    expect(res.redirect).toBe(false);
   });
 
   it("arquivo de 299 linhas → null (abaixo do threshold)", () => {
