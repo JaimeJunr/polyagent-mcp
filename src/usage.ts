@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { scrubSecrets } from "./scrub.js";
-import type { Level } from "./cli.js";
+import type { Level, WorkerUsage } from "./cli.js";
 import { estimateCostPerTask } from "./costs.js";
 
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
@@ -73,6 +73,8 @@ export interface UsageEntry {
   /** Observação opcional de uma avaliação. */
   note?: string;
   decision?: DecisionRecord;
+  /** Tokens/custo que o worker declarou na saída do CLI; ausente em logs antigos ou engine sem dado. */
+  workerUsage?: WorkerUsage;
 }
 
 export interface ToolStats {
@@ -97,6 +99,8 @@ export interface UsageRun {
   durationMs?: number;
   /** Diagnóstico opcional redigido e limitado a 500 caracteres. */
   error?: string;
+  /** Consumo do worker extraído do stdout do CLI (src/cli.ts); nunca contém prompt nem resultado. */
+  workerUsage?: WorkerUsage;
 }
 
 /**
@@ -503,6 +507,58 @@ export function renderEngineHealth(report: EngineHealthReport): string {
   const rows = Object.entries(report).sort(([a], [b]) => a.localeCompare(b)).map(([engine, health]) =>
     `${engine} | ${health.score.toFixed(2)} | ${health.cause} | ${eligibleLabel(health)}`);
   return ["Engine health", "engine | score | cause | eligible again at", "--- | --- | --- | ---", ...rows].join("\n");
+}
+
+export interface WorkerUsageStat {
+  calls: number;
+  /** Chamadas que trouxeram workerUsage; o resto é log antigo ou CLI sem dado. */
+  measured: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  /** Soma só do que o CLI reportou (claude/opencode); compare `measuredCost` com `measured`. */
+  costUsd: number;
+  measuredCost: number;
+}
+
+/** Soma o consumo do worker por `tool|engine|nível`. Entradas sem o campo contam só em `calls`. */
+export function aggregateWorkerUsage(entries: UsageEntry[]): Record<string, WorkerUsageStat> {
+  const out: Record<string, WorkerUsageStat> = {};
+  const num = (v: unknown): number => typeof v === "number" && Number.isFinite(v) ? v : 0;
+  for (const e of entries) {
+    if (e.outcome === "reset" || e.tool === "rate" || e.tool === "decide" || e.tool === "blocked_exfil" || !e.engine) continue;
+    const level = typeof e.requestedLevel === "string" ? e.requestedLevel : "-";
+    const key = `${e.tool}|${e.engine}|${level}`;
+    const s = out[key] ?? { calls: 0, measured: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0, measuredCost: 0 };
+    s.calls += 1;
+    const u = e.workerUsage;
+    if (u && typeof u === "object") {
+      s.measured += 1;
+      s.inputTokens += num(u.inputTokens);
+      s.cachedInputTokens += num(u.cachedInputTokens);
+      s.outputTokens += num(u.outputTokens);
+      if (typeof u.costUsd === "number" && Number.isFinite(u.costUsd)) {
+        s.costUsd += u.costUsd;
+        s.measuredCost += 1;
+      }
+    }
+    out[key] = s;
+  }
+  return out;
+}
+
+/** Tabela de tokens do worker; vazia quando nenhuma chamada foi medida (logs antigos). */
+export function renderWorkerUsage(stats: Record<string, WorkerUsageStat>): string {
+  const keys = Object.keys(stats).filter((k) => stats[k].measured > 0);
+  if (!keys.length) return "";
+  const total = (k: string): number => stats[k].inputTokens + stats[k].outputTokens;
+  const rows = keys.sort((a, b) => total(b) - total(a)).map((k) => {
+    const s = stats[k];
+    const cost = s.measuredCost > 0 ? `$${s.costUsd.toFixed(4)} (${s.measuredCost}/${s.measured})` : "-";
+    return `${k} | ${s.measured}/${s.calls} | ${s.inputTokens} | ${s.cachedInputTokens} | ${s.outputTokens} | ${cost}`;
+  });
+  return ["Worker tokens (tool|engine|level; sums over measured calls)",
+    "group | measured/calls | input | cached | output | reported cost", "--- | --- | --- | --- | --- | ---", ...rows].join("\n");
 }
 
 /** Agrega entradas por tool: nº de chamadas, total e média de chars devolvidos. Função pura. */
