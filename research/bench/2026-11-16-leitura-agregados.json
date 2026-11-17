@@ -1,0 +1,285 @@
+{
+  "log": "/home/jaime/.claude/polyagent-usage.jsonl",
+  "sha256": "218722bbc31b55627319f0e09966610aca126698252d3195afec5b5cc6ec81cb",
+  "fusoMes": "America/Sao_Paulo",
+  "linhasValidas": 5864,
+  "linhasMalformadas": 0,
+  "linhasUnicas": 5788,
+  "porTool": {
+    "explore": {
+      "chamadas": 1373,
+      "chamadasPorMes": {
+        "2026-07": 260,
+        "2026-08": 538,
+        "2026-09": 242,
+        "2026-10": 317,
+        "2026-11": 16
+      },
+      "chamadasDesde14Set": 499,
+      "primeiroDiaComEngine": "2026-09-23",
+      "primeiroDiaComDurationMs": "2026-09-23",
+      "outChars": {
+        "n": 1373,
+        "mediana": 3197,
+        "p90": 8345
+      },
+      "durationMs": {
+        "n": 398,
+        "mediana": 48668,
+        "p90": 136936
+      },
+      "porEngine": {
+        "codex": 348,
+        "opencode": 6,
+        "claude": 42,
+        "grok": 2
+      },
+      "porModelo": {
+        "gpt-6-luna": 348,
+        "openrouter/inception/mercury-2": 5,
+        "haiku": 15,
+        "claude-haiku-5-5": 26
+      },
+      "notasSobreChamadasDesde14Set": 0.04809619238476954,
+      "semEngineRegistrado": 975,
+      "latenciaPorEngineModelo": {
+        "codex|gpt-6-luna": {
+          "n": 348,
+          "medianaMs": 47018
+        },
+        "opencode|openrouter/inception/mercury-2": {
+          "n": 5,
+          "medianaMs": 20776
+        },
+        "opencode|(sem registro)": {
+          "n": 1,
+          "medianaMs": 92842
+        },
+        "claude|haiku": {
+          "n": 15,
+          "medianaMs": 99313
+        },
+        "grok|(sem registro)": {
+          "n": 2,
+          "medianaMs": 195958
+        },
+        "claude|claude-haiku-5-5": {
+          "n": 26,
+          "medianaMs": 82977.5
+        },
+        "claude|(sem registro)": {
+          "n": 1,
+          "medianaMs": 23314
+        }
+      },
+      "notas": {
+        "n": 24,
+        "media": 4.833333333333333,
+        "distribuicao": {
+          "4": 4,
+          "5": 20
+        }
+      }
+    },
+    "read_slice": {
+      "chamadas": 1116,
+      "chamadasPorMes": {
+        "2026-07": 282,
+        "2026-08": 477,
+        "2026-09": 255,
+        "2026-10": 91,
+        "2026-11": 11
+      },
+      "chamadasDesde14Set": 242,
+      "primeiroDiaComEngine": "2026-09-23",
+      "primeiroDiaComDurationMs": "2026-09-23",
+      "outChars": {
+        "n": 1116,
+        "mediana": 4036.5,
+        "p90": 15270
+      },
+      "durationMs": {
+        "n": 154,
+        "mediana": 23480.5,
+        "p90": 69114
+      },
+      "porEngine": {
+        "codex": 121,
+        "grok": 8,
+        "claude": 22,
+        "opencode": 3
+      },
+      "porModelo": {
+        "gpt-6-luna": 121,
+        "haiku": 8,
+        "openrouter/inception/mercury-2": 3,
+        "claude-haiku-5-5": 11
+      },
+      "notasSobreChamadasDesde14Set": 0.06198347107438017,
+      "semEngineRegistrado": 962,
+      "latenciaPorEngineModelo": {
+        "codex|gpt-6-luna": {
+          "n": 121,
+          "medianaMs": 23403
+        },
+        "grok|(sem registro)": {
+          "n": 8,
+          "medianaMs": 40582
+        },
+        "claude|haiku": {
+          "n": 8,
+          "medianaMs": 99592.5
+        },
+        "opencode|openrouter/inception/mercury-2": {
+          "n": 3,
+          "medianaMs": 13567
+        },
+        "claude|(sem registro)": {
+          "n": 3,
+          "medianaMs": 16642
+        },
+        "claude|claude-haiku-5-5": {
+          "n": 11,
+          "medianaMs": 16211
+        }
+      },
+      "notas": {
+        "n": 15,
+        "media": 4.666666666666667,
+        "distribuicao": {
+          "2": 1,
+          "4": 2,
+          "5": 12
+        }
+      }
+    },
+    "run_filtered": {
+      "chamadas": 309,
+      "chamadasPorMes": {
+        "2026-07": 118,
+        "2026-08": 96,
+        "2026-09": 62,
+        "2026-10": 33
+      },
+      "chamadasDesde14Set": 89,
+      "primeiroDiaComEngine": "2026-09-23",
+      "primeiroDiaComDurationMs": "2026-09-23",
+      "outChars": {
+        "n": 309,
+        "mediana": 353,
+        "p90": 1295
+      },
+      "durationMs": {
+        "n": 54,
+        "mediana": 20767,
+        "p90": 56681
+      },
+      "porEngine": {
+        "codex": 50,
+        "opencode": 2,
+        "claude": 2
+      },
+      "porModelo": {
+        "gpt-6-luna": 50,
+        "openrouter/inception/mercury-2": 2,
+        "claude-haiku-5-5": 1
+      },
+      "notasSobreChamadasDesde14Set": 0.06741573033707865,
+      "semEngineRegistrado": 255,
+      "latenciaPorEngineModelo": {
+        "codex|gpt-6-luna": {
+          "n": 50,
+          "medianaMs": 19358.5
+        },
+        "opencode|openrouter/inception/mercury-2": {
+          "n": 2,
+          "medianaMs": 20000.5
+        },
+        "claude|claude-haiku-5-5": {
+          "n": 1,
+          "medianaMs": 36577
+        },
+        "claude|(sem registro)": {
+          "n": 1,
+          "medianaMs": 30648
+        }
+      },
+      "notas": {
+        "n": 6,
+        "media": 4.166666666666667,
+        "distribuicao": {
+          "1": 1,
+          "4": 1,
+          "5": 4
+        }
+      }
+    },
+    "web_lookup": {
+      "chamadas": 525,
+      "chamadasPorMes": {
+        "2026-07": 54,
+        "2026-08": 93,
+        "2026-09": 88,
+        "2026-10": 272,
+        "2026-11": 18
+      },
+      "chamadasDesde14Set": 354,
+      "primeiroDiaComEngine": "2026-09-23",
+      "primeiroDiaComDurationMs": "2026-09-23",
+      "outChars": {
+        "n": 525,
+        "mediana": 2588,
+        "p90": 6012
+      },
+      "durationMs": {
+        "n": 324,
+        "mediana": 39705,
+        "p90": 90225
+      },
+      "porEngine": {
+        "codex": 224,
+        "claude": 54,
+        "grok": 46
+      },
+      "porModelo": {
+        "gpt-6-luna": 270,
+        "haiku": 14,
+        "claude-haiku-5-5": 26
+      },
+      "notasSobreChamadasDesde14Set": 0.1977401129943503,
+      "semEngineRegistrado": 201,
+      "latenciaPorEngineModelo": {
+        "codex|gpt-6-luna": {
+          "n": 224,
+          "medianaMs": 32531
+        },
+        "claude|(sem registro)": {
+          "n": 14,
+          "medianaMs": 54248.5
+        },
+        "grok|gpt-6-luna": {
+          "n": 46,
+          "medianaMs": 83592.5
+        },
+        "claude|haiku": {
+          "n": 14,
+          "medianaMs": 43782.5
+        },
+        "claude|claude-haiku-5-5": {
+          "n": 26,
+          "medianaMs": 44720
+        }
+      },
+      "notas": {
+        "n": 70,
+        "media": 4.214285714285714,
+        "distribuicao": {
+          "2": 2,
+          "3": 5,
+          "4": 39,
+          "5": 24
+        }
+      }
+    }
+  }
+}
