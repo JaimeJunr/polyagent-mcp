@@ -72,3 +72,26 @@ deve ser verificado antes de dar a tarefa por pronta (já está em "After the re
 
 Ainda não medido: cota real da assinatura, outros workers (Claude Haiku, Sol medium) e se um worker mais forte
 elimina as reprovações de medium/batch.
+
+## Adendo 2026-11-16 (2): worker `middle` (GPT-6.1 Sol medium)
+
+Pergunta: as reprovações de `medium` e `batch` eram do worker fraco (Luna)? Mesmo harness, `QUOTA_WORKER=middle`,
+6 repetições; as 24 tentativas `lean` foram reaproveitadas da rodada anterior (outro horário, pareamento menos rigoroso).
+Dados: `research/bench/2026-11-16-limiar-tamanho-middle-results.jsonl`. Todo trial `coarse` delegou.
+
+| Tarefa | Custo host `coarse` vs `lean` | Aceito `coarse` (Sol) | Aceito `coarse` (Luna) |
+|---|---|---|---|
+| tiny | +67,9% | 6/6 | 6/6 |
+| implement | −7,4% | 6/6 | 6/6 |
+| medium | −31,0% | 6/6 | 3/6 |
+| batch | −45,0% | 3/6 | 3/6 |
+
+Total pareado: −15,1%. Aceitos: `lean` 24/24, `coarse` 21/24 (Luna: 18/24).
+
+Leitura:
+- `medium` deixou de reprovar com o Sol (3/6 → 6/6): era limite do worker. `batch` continua 3/6, então a falha ali não se
+  resolve só subindo o worker.
+- A economia do host se mantém (−31% e −45%). Tokens de entrada do worker por trial ficaram na mesma faixa
+  (Sol 87-99 mil, Luna 97-129 mil); a cota gasta no Codex pelo Sol não foi medida.
+- Latência: o `coarse` leva em média 56 s contra 16 s do `lean` (3,5×). Delegar troca tempo por custo do host.
+- Continuam fora do proxy: custo/cota do worker e cota real da assinatura.

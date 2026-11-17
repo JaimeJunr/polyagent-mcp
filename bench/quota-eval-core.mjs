@@ -80,3 +80,15 @@ export function parseRepetitions(raw, fallback) {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`invalid QUOTA_REPETITIONS: received ${raw}, expected a positive integer`);
   return value;
 }
+
+const WORKERS = {
+  low: {level:'low',model:'gpt-6-luna',effort:'medium',suffix:''},
+  middle: {level:'middle',model:'gpt-6.1-sol',effort:'medium',suffix:'-middle'},
+};
+
+/** Worker Codex do braço coarse; `middle` mede o Sol 6.1 em diretório próprio. @param {string|undefined} raw */
+export function resolveWorker(raw) {
+  const name = raw || 'low';
+  if (!(name in WORKERS)) throw new RangeError(`invalid QUOTA_WORKER: received ${raw}, expected one of ${Object.keys(WORKERS).join(', ')}`);
+  return WORKERS[name];
+}

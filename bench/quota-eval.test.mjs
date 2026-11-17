@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, slimDelegateArgs, parseRepetitions } from './quota-eval-core.mjs';
+import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, slimDelegateArgs, parseRepetitions, resolveWorker } from './quota-eval-core.mjs';
 
 test('reconciles streaming snapshots and preserves separate cache categories', () => {
   const events = [2, 7].map(output => ({type:'assistant', message:{id:'m1',model:'fixture-model',usage:{input_tokens:3,output_tokens:output,cache_read_input_tokens:40,cache_creation_input_tokens:5},content:[]}}));
@@ -67,4 +67,12 @@ test('parseRepetitions: usa o padrão se ausente e aceita inteiro positivo', () 
 });
 test('parseRepetitions: rejeita valor inválido com o valor recebido', () => {
   for (const bad of ['-1', '0', '2.5', 'Infinity', 'abc']) assert.throws(() => parseRepetitions(bad, 2), new RegExp(`received ${bad}`));
+});
+
+test('resolveWorker: padrão é Luna (low); middle é Sol 6.1 com sufixo próprio', () => {
+  assert.deepEqual(resolveWorker(undefined), {level:'low',model:'gpt-6-luna',effort:'medium',suffix:''});
+  assert.deepEqual(resolveWorker('middle'), {level:'middle',model:'gpt-6.1-sol',effort:'medium',suffix:'-middle'});
+});
+test('resolveWorker: rejeita nível desconhecido com o valor recebido', () => {
+  assert.throws(() => resolveWorker('high'), /received high, expected one of low, middle/);
 });
