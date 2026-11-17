@@ -107,9 +107,9 @@ Pass the name as a quoted JSON string: \`{"level": "<name>"}\` with \`"low"\`, \
 without quotes is invalid JSON and the host
 rejects the call before it reaches polyagent.
 
-AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Start at the lowest level that can do it; low and
+AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated. Start at the lowest level that can do it; low and
 middle cover most implementation. Go to high only after a cheaper level failed, or for a frontier verdict
-(hard debugging, cross-file impact, merge/no-merge). High shares the Claude Code subscription with you.
+(hard debugging, cross-file impact, merge/no-merge). High runs on codex; its reserve shares the Claude Code subscription with you.
 
 For \`fan_out\`, start with \`levels: ["low", "middle"]\`; add \`"high"\` only when they disagree or the verdict is costly.
 

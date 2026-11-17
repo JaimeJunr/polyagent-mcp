@@ -170,24 +170,25 @@ is rejected. Reason (2026-10-25): a resumed or forked session keeps the old inte
 reload refreshes it, so rejecting numbers left those sessions with no `delegate` at all.
 `notifications/tools/list_changed` would not help them: the stale schema lives in the transcript,
 and a fresh connection already lists tools on initialize.
-All three defaults use subscriptions (codex + claude), with AA quota proxies
-$0.07 → $0.21 (~3×) → $1.82 (~8.7×): low=GPT-6 Luna max (codex, AA 38),
-middle=GPT-6.1 Sol medium (codex, AA 48), high=Claude Opus 5.5 high (claude, AA 54).
-Reserves (owner decision 2026-10-25, `research/2026-10-25-reserva-por-nivel.md`):
+All three primaries use the codex subscription: low=GPT-6 Luna max (codex),
+middle=GPT-6.2 Sol medium (codex), high=GPT-6.2 Astra xhigh (codex).
+AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated.
+Reserves (owner decisions 2026-10-25 and 2026-11-17):
 low → claude `claude-haiku-5-5` xhigh; middle → claude `claude-haiku-5-5` max;
-high → codex `gpt-6.1-sol` max. Each reserve uses the other subscription.
-Decision and evidence for primaries: `research/2026-10-23-tres-niveis.md`. The five-level ladder made the host
-keep choosing among the cheapest options; three names simplify that choice. Sol xhigh and Opus
-max are no longer delegate levels; explicit model/effort overrides and historical costs remain.
+high → claude `claude-opus-5-5` high. Each reserve uses the other subscription.
+Decision and evidence: `research/2026-11-17-gpt-6-2-sol-astra.md`.
+Three names simplify the host's choice; explicit model/effort overrides and historical costs remain.
 
-Ids confirmed in real execution: `gpt-6-luna` on 2026-09-23; `gpt-6.1-sol` on 2026-09-30
-(codex-cli 0.159.2); `claude-opus-5-5` with high effort on 2026-09-26 (`modelUsage`).
+Ids confirmed in real execution: `gpt-6-luna` on 2026-09-23; `gpt-6.2-sol` and
+`gpt-6.2-astra` on 2026-11-17 with codex-cli 0.169.0 at low, medium and max effort.
+Xhigh was not run individually; `models_cache.json` lists low..ultra for both.
+`claude-opus-5-5` with high effort was confirmed on 2026-09-26 (`modelUsage`).
 The alias `opus` still resolves to the old `claude-opus-5` — use the full id.
-**Custo:** high é caro e compartilha a assinatura Claude do host Claude Code. Low/middle dão
-conta da maior parte do trabalho, implementação inclusa. Escalar para high só depois de um nível
-barato falhar ou para raciocínio de fronteira/veredito caro. Codex concentra low/middle: cota
-esgotada nele afeta os dois titulares, que passam à reserva Claude. Claude concentra high e o
-host: cota esgotada afeta ambos juntos, enquanto high pode passar à reserva Codex.
+**Custo:** high é caro e usa Codex; a reserva Claude compartilha a assinatura do host Claude Code.
+Low/middle dão conta da maior parte do trabalho, implementação inclusa. Escalar para high só
+depois de um nível barato falhar ou para raciocínio de fronteira/veredito caro.
+Codex concentra os três titulares: cota esgotada afeta todos os níveis, que passam às reservas
+Claude. Cota esgotada no Claude afeta as reservas e o host juntos.
 Grok continua fora da matriz padrão.
 `resolveTier(level, has, cursorEnabled)` uses the preferred healthy CLI when present. If it is
 missing or unhealthy, it tries the level reserve when installed and healthy, recording the primary

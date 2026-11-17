@@ -88,9 +88,9 @@ export function delegateShadowRequest(prompt: string): AskJevParams {
         type: "choice",
         instructions: "Which difficulty level fits this task? Choose the lowest level likely to complete it well.",
         criteria: {
-          low: "Mechanical work and routine implementation; GPT-6 Luna max, $0.07/task AA quota proxy.",
-          middle: "Implementation or reasoning beyond low; GPT-6.1 Sol medium, $0.21/task AA quota proxy. Low/middle cover most work.",
-          high: "Hard debugging, cross-file impact or a costly verdict after cheaper levels fail; expensive Claude Opus 5.5 high, $1.82/task AA quota proxy, sharing the Claude Code host subscription.",
+          low: "Mechanical work and routine implementation; GPT-6 Luna max (codex), AA index v5 28 / US$0.15.",
+          middle: "Implementation or reasoning beyond low; GPT-6.2 Sol medium (codex), AA index v5 53 / cost not published. Low/middle cover most work.",
+          high: "Hard debugging, cross-file impact or a costly verdict after cheaper levels fail; expensive GPT-6.2 Astra xhigh (codex), AA index v5 62 / ~US$2.5 estimated; its Claude reserve shares the Claude Code host subscription.",
         },
       },
       ...CLARITY_QUESTIONS,

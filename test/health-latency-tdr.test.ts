@@ -12,16 +12,16 @@ function rec(durationMs: number): UsageEntry[] {
 }
 
 describe("regressão: latência sozinha nunca derruba uma engine abaixo do threshold", () => {
-  // High usa Claude; health do codex não deve derrubá-lo.
-  it("high usa health do Claude e preserva sucesso lento", () => {
+  // High agora usa Codex; sucesso lento mantém o titular e cota aciona a reserva Claude.
+  it("high usa health do Codex e preserva sucesso lento", () => {
     const records: UsageEntry[] = [
-      { ts: NOW - 1000, tool: "delegate", outChars: 10, engine: "claude", outcome: "success", durationMs: 22 * 60_000 },
-      { ts: NOW - 1000, tool: "delegate", outChars: 0, engine: "codex", outcome: "quota", durationMs: 1000 },
+      { ts: NOW - 1000, tool: "delegate", outChars: 10, engine: "codex", outcome: "success", durationMs: 22 * 60_000 },
+      { ts: NOW - 1000, tool: "delegate", outChars: 0, engine: "claude", outcome: "quota", durationMs: 1000 },
     ];
     const health = computeEngineHealth(records, NOW, WINDOW, TIMEOUT);
-    expect(resolveTier("high", all, false, health)).toEqual({ engine: "claude", model: "claude-opus-5-5", effort: "high" });
-    expect(resolveTier("high", all, false, { codex: 1, claude: 0 })).toEqual({
-      engine: "codex", model: "gpt-6.1-sol", effort: "max", skipped: [{ engine: "claude", cause: "failures" }],
+    expect(resolveTier("high", all, false, health)).toEqual({ engine: "codex", model: "gpt-6.2-astra", effort: "xhigh" });
+    expect(resolveTier("high", all, false, { codex: 0, claude: 1 })).toEqual({
+      engine: "claude", model: "claude-opus-5-5", effort: "high", skipped: [{ engine: "codex", cause: "failures" }],
     });
   });
 

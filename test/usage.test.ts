@@ -24,12 +24,26 @@ describe("estimateCostPerTask", () => {
     expect(estimateCostPerTask("claude", "claude-sonnet-5-5", "max")).toBe(7.60);
   });
 
-  it("uses the published GPT-6.1 Sol medium cost for middle", () => {
+  it("preserves the historical GPT-6.1 Sol medium cost", () => {
     expect(estimateCostPerTask("codex", "gpt-6.1-sol", "medium")).toBe(0.21);
   });
 
-  it("uses the published GPT-6.1 Sol xhigh cost for explicit xhigh overrides", () => {
+  it("preserves the historical GPT-6.1 Sol xhigh cost for explicit overrides", () => {
     expect(estimateCostPerTask("codex", "gpt-6.1-sol", "xhigh")).toBe(0.39);
+  });
+
+  // Custos não publicados não podem herdar o max nem uma estimativa inventada.
+  it.each(["low", "medium", "high", "xhigh"])("leaves GPT-6.2 Sol %s cost undefined", (effort) => {
+    expect(estimateCostPerTask("codex", "gpt-6.2-sol", effort)).toBeUndefined();
+  });
+
+  it.each([
+    ["gpt-6.2-sol", "max", 1.01],
+    ["gpt-6.2-astra", "max", 4.00],
+    ["gpt-6.2-astra", "xhigh", 2.5],
+    ["gpt-6.2-astra", "high", 2.1],
+  ] as const)("looks up GPT-6.2 %s %s cost", (model, effort, cost) => {
+    expect(estimateCostPerTask("codex", model, effort)).toBe(cost);
   });
 
   it("uses the published extended-thinking cost for Haiku 4.5 at any effort", () => {

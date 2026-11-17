@@ -30,8 +30,8 @@ describe("renderPolyagentSkill", () => {
   });
 
   it("carries the tier table and the usage rules the always-loaded block has no room for", () => {
-    expect(SKILL).toContain("middle=codex gpt-6.1-sol medium");
-    expect(SKILL).toContain("high=claude claude-opus-5-5 high");
+    expect(SKILL).toContain("middle=codex gpt-6.2-sol medium");
+    expect(SKILL).toContain("high=codex gpt-6.2-astra xhigh");
     expect(SKILL).toMatch(/deny/);
     expect(SKILL).toMatch(/mode: ?"ask"/);
     expect(SKILL).toMatch(/rate\(/);

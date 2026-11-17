@@ -132,15 +132,15 @@ describe("sessionStartContext — preload injetado no início da sessão", () =>
     expect(text).toMatch(/grunt|commits\b/i);
   });
 
-  it("enquadra delegate como executor E juiz (high = Opus high), Task só pra subagent especializado", () => {
+  it("enquadra delegate como executor E juiz (high = Astra xhigh), Task só pra subagent especializado", () => {
     const text = sessionStartContext();
     expect(text).toMatch(/delegate\(prompt, level\)/);
     expect(text).toMatch(/DEFAULT/);
-    // O high preserva o julgamento caro, com cota do host.
+    // High preserva o julgamento caro no Codex; só a reserva usa cota Claude do host.
     expect(text).toMatch(/judgment/i);
     expect(text).toMatch(/high/i);
-    expect(text).toMatch(/Opus 5\.5 high/i);
-    expect(text).toContain("middle (GPT-6.1 Sol medium on codex)");
+    expect(text).toMatch(/GPT-6\.2 Astra xhigh/i);
+    expect(text).toContain("middle (GPT-6.2 Sol medium on codex)");
     // Task fica só pra subagent com toolset próprio, não pra julgamento genérico
     expect(text).toMatch(/specialized|toolset/i);
   });
@@ -581,8 +581,8 @@ describe("UserPromptSubmit — contexto de rota (subprocess)", () => {
 describe("hook named delegate levels", () => {
   it.each([sessionStartContext(), subagentStartContext("Explore")])("advertises the three names without removed variants", (text) => {
     expect(text).toMatch(/low.*GPT-6 Luna max/);
-    expect(text).toMatch(/middle.*GPT-6.1 Sol medium/);
-    expect(text).toMatch(/high.*Claude Opus/);
+    expect(text).toMatch(/middle.*GPT-6.2 Sol medium/);
+    expect(text).toMatch(/high.*GPT-6\.2 Astra/);
     expect(text).not.toMatch(/level[s]? [1-5]|medium\/xhigh|Opus 5\.5 max/);
   });
 });

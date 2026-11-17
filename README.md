@@ -30,7 +30,7 @@ The server exposes twelve tools:
 
 | Tool | Purpose |
 |------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: low=GPT-6 Luna max (codex), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). **Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`, and `deny` (commands such as `git push`, `rm`, `make db-up` or `npx prisma migrate`; args match as an ordered subsequence outside git) to block inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary; requires bwrap. |
+| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: low=GPT-6 Luna max (codex), middle=GPT-6.2 Sol medium (codex), high=GPT-6.2 Astra xhigh (codex). **Low/middle cover most work. High is expensive and runs on codex; its reserve shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`, and `deny` (commands such as `git push`, `rm`, `make db-up` or `npx prisma migrate`; args match as an ordered subsequence outside git) to block inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary; requires bwrap. |
 | `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
 | `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade: codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
@@ -363,19 +363,19 @@ own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent route
 
 ```
 You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
-`level` is required: low=GPT-6 Luna max (codex), middle=GPT-6.1 Sol medium (codex),
-high=Claude Opus 5.5 high (claude). Numeric levels are rejected. Low/middle cover most work;
-high is expensive and shares the Claude Code host subscription, so reserve it for tasks cheaper
-levels cannot do. Exhausted Codex quota removes low/middle; exhausted Claude quota removes high
-and affects that host together. The worker has full read/edit/shell access
+`level` is required: low=GPT-6 Luna max (codex), middle=GPT-6.2 Sol medium (codex),
+high=GPT-6.2 Astra xhigh (codex). Numeric levels are rejected. Low/middle cover most work;
+high is expensive and runs on codex; its reserve shares the Claude Code host subscription, so reserve it for tasks cheaper
+levels cannot do. Codex holds all three primaries: exhausted Codex quota sends every level to its Claude reserve.
+Exhausted Claude quota affects those reserves and the Claude Code host together. The worker has full read/edit/shell access
 in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
 your context. Delegate it, then review the result; edit inline only for a quick one-off you're
 already positioned for. Use delegate(prompt, level) for self-contained work. Pass agent:"name" or agent:{prompt:"..."} when the worker
 needs a specialized persona.
 ```
 
-The AA cost ladder (quota proxies, not per-call bills) is $0.07 → $0.21 (~3×) → $1.82 (~8.7×).
-See the [three-level decision](research/2026-10-23-tres-niveis.md).
+AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated.
+See the [GPT-6.2 decision and evidence](research/2026-11-17-gpt-6-2-sol-astra.md).
 
 ## Develop
 

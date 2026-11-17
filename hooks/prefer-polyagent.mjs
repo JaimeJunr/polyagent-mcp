@@ -237,7 +237,7 @@ const EDIT_DELEGATE_TEXT =
   "polyagent available: if this edit is part of a self-contained task (a feature, a bugfix, a " +
   "mechanical change across files, or running/fixing a build), hand the WHOLE task to " +
   "delegate(prompt, level) — the worker has full read/edit/shell access in cwd and runs cheap " +
-  "(low = GPT-6 Luna max on codex; middle = GPT-6.1 Sol medium on codex; high = Claude Opus 5.5 high on claude) — instead of implementing " +
+  "(low = GPT-6 Luna max on codex; middle = GPT-6.2 Sol medium on codex; high = GPT-6.2 Astra xhigh on codex) — instead of implementing " +
   "it yourself on expensive orchestrator tokens. You stay the orchestrator and verify the result. " +
   "Keep editing inline only for a quick one-off you're already positioned for.";
 
@@ -299,12 +299,12 @@ export function sessionStartContext() {
     "prefer explore/read_slice/run_filtered/web_lookup over Read, Grep, or Bash grep. " +
     "You are the ORCHESTRATOR, not the implementer: delegate(prompt, level) is your DEFAULT for BOTH " +
     "execution AND judgment. For a tiny or one-line fix do it yourself: delegating cost more in the size experiment. low (GPT-6 Luna max on codex) for mechanical work — features, bugfixes, multi-file " +
-    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. middle (GPT-6.1 Sol medium on codex) handles harder implementation and analysis. " +
-    "Low/middle cover most work. high (Claude Opus 5.5 high on claude) is EXPENSIVE and shares the Claude Code host subscription. " +
-    "AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Reserve high for tasks a cheaper level already failed or for a costly verdict — code review, cross-file impact analysis, hard debugging. The worker " +
+    "edits, commits, PRs, tickets, grunt-work, running/fixing builds. middle (GPT-6.2 Sol medium on codex) handles harder implementation and analysis. " +
+    "Low/middle cover most work. high (GPT-6.2 Astra xhigh on codex) is EXPENSIVE and runs on codex; its reserve shares the Claude Code host subscription. " +
+    "AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated. Reserve high for tasks a cheaper level already failed or for a costly verdict — code review, cross-file impact analysis, hard debugging. The worker " +
     "runs with full read/edit/shell access in cwd. The win of delegating execution AND judgment is context " +
     "economy: the worker's file reading and raw output never enter your context, whatever the tier. Hand " +
-    "execution (low/middle) and judgment (high, Opus 5.5 high) to delegate, then review the result; edit " +
+    "execution (low/middle) and judgment (high, GPT-6.2 Astra xhigh) to delegate, then review the result; edit " +
     "inline only for a quick one-off you're already positioned for. Only spawn a Task subagent when you " +
     "need a SPECIALIZED agent with its own toolset (e.g. Playwright/MCP-backed reviewers). " +
     'polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named "codex" failing to ' +
@@ -336,9 +336,9 @@ const AGENT_PREF_BODY =
   'deferred; load one with ToolSearch("select:mcp__polyagent__generate_image,mcp__polyagent__follow_up,' +
   'mcp__polyagent__bridge_stats,mcp__polyagent__decide") when needed. If you WILL edit a file, native Read is correct. This complements the context-mode ' +
   "routing above — both keep raw output out of your context; when both fit, either is fine. " +
-  "delegate uses three named levels: low = GPT-6 Luna max on codex, middle = GPT-6.1 Sol medium on codex, " +
-  "high = Claude Opus 5.5 high on claude. Low/middle cover most work; high is expensive and shares the Claude Code host subscription. " +
-  "AA quota proxies: $0.07 → $0.21 (~3×) → $1.82 (~8.7×). " +
+  "delegate uses three named levels: low = GPT-6 Luna max on codex, middle = GPT-6.2 Sol medium on codex, " +
+  "high = GPT-6.2 Astra xhigh on codex. Low/middle cover most work; high is expensive and runs on codex; its reserve shares the Claude Code host subscription. " +
+  "AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated. " +
   "For a tiny or one-line fix do it yourself: delegating cost more in the size experiment.";
 
 // Reforço só para o subagente Explore: ele foi spawnado no modelo caro do orquestrador

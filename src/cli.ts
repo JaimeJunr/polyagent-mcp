@@ -2044,30 +2044,31 @@ export function legacyLevel(value: unknown): unknown {
 }
 
 /**
- * Matriz do `delegate`: decisão do dono em research/2026-10-23-tres-niveis.md.
- * Três nomes reduzem a indecisão do host: Luna max (AA 38/$0,07), Sol medium (48/$0,21)
- * e Opus high (54/$1,82). Escada de cota $0,07 → $0,21 (~3×) → $1,82 (~8,7×).
- * Codex concentra low/middle; high usa a assinatura Claude do host Claude Code.
+ * Matriz do `delegate`: decisão do dono em research/2026-11-17-gpt-6-2-sol-astra.md.
+ * AA v5: Luna max 28/US$0,15; Sol 6.2 medium 53/custo não publicado;
+ * Astra xhigh 62/~US$2,5 (estimativa do gráfico). Sem custo do middle, não há razão de custos calculável.
+ * Codex concentra os três titulares: cota esgotada afeta todos os níveis e aciona reservas Claude.
  * Low/middle cobrem a maior parte do trabalho; high é caro e fica para escalada justificada.
- * Ids confirmados: Luna em 2026-09-23, Sol 6.1 em 2026-09-30 (codex-cli 0.159.2),
- * Opus 5.5 high em 2026-09-26 (modelUsage). O alias `opus` ainda aponta ao Opus antigo.
+ * Ids confirmados: Luna em 2026-09-23; Sol 6.2 e Astra 6.2 em 2026-11-17,
+ * codex-cli 0.169.0, efforts low/medium/max. Xhigh não foi executado individualmente;
+ * models_cache.json lista low..ultra para ambos. Opus 5.5 high confirmado em 2026-09-26.
  * Cursor permanece legado e opt-in: conservam-se os ids dos três tiers retidos, sem refresh.
  */
 export const TIERS: Record<Level, TierEntry> = {
-  // Reservas em outra assinatura: decisão do dono em research/2026-10-25-reserva-por-nivel.md.
+  // Reservas em outra assinatura: decisões de 2026-10-25 e 2026-11-17 (estudos em research/).
   low: {
     primary: { engine: "codex", model: "gpt-6-luna", effort: "max" },
     reserve: { engine: "claude", model: "claude-haiku-5-5", effort: "xhigh" },
     cursorModel: "gpt-5.6-luna-max-fast",
   },
   middle: {
-    primary: { engine: "codex", model: "gpt-6.1-sol", effort: "medium" },
+    primary: { engine: "codex", model: "gpt-6.2-sol", effort: "medium" },
     reserve: { engine: "claude", model: "claude-haiku-5-5", effort: "max" },
     cursorModel: "gpt-5.6-sol-xhigh-fast",
   },
   high: {
-    primary: { engine: "claude", model: "claude-opus-5-5", effort: "high" },
-    reserve: { engine: "codex", model: "gpt-6.1-sol", effort: "max" },
+    primary: { engine: "codex", model: "gpt-6.2-astra", effort: "xhigh" },
+    reserve: { engine: "claude", model: "claude-opus-5-5", effort: "high" },
     cursorModel: "gpt-6-astra-max-fast",
   },
 };
