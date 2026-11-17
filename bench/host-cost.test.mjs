@@ -118,3 +118,48 @@ test('transcript sem result.modelUsage segue usando os tokens do streaming', () 
   const host = hostFromTranscript([turn('m1', '2026-11-17T10:00:00.000Z', { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })]);
   assert.equal(host.tokens.output_tokens, 3);
 });
+
+import { transcriptMayHoldDay, workerSessionIds } from './host-cost-core.mjs';
+
+test('transcript modificado depois do dia ainda é candidato; o anterior ao dia não', () => {
+  const nextDay = new Date(2026, 10, 17, 9, 0).getTime();
+  const sameDay = new Date(2026, 10, 16, 22, 0).getTime();
+  const dayBefore = new Date(2026, 10, 15, 23, 59).getTime();
+  assert.equal(transcriptMayHoldDay(nextDay, '2026-11-16'), true); // sessão cruzou a meia-noite / foi retomada
+  assert.equal(transcriptMayHoldDay(sameDay, '2026-11-16'), true);
+  assert.equal(transcriptMayHoldDay(dayBefore, '2026-11-16'), false);
+  assert.equal(transcriptMayHoldDay(Number.NaN, '2026-11-16'), false);
+});
+
+test('workerSessionIds extrai o id dos handles do log e ignora lixo', () => {
+  const ids = workerSessionIds([{ sessionId: 'claude:w1' }, { sessionId: 'codex:c9' }, { sessionId: 'sem-prefixo' }, null, { sessionId: 7 }, {}]);
+  assert.deepEqual([...ids].sort(), ['c9', 'w1']);
+});
+
+test('daySummary: transcript de worker Claude (id no log) não entra como host', () => {
+  const host = { id: 'host-1', events: [turn('h1', at(0), { input_tokens: 10, output_tokens: 2 })] };
+  const worker = { id: 'w1', events: [turn('w1m', at(1), { input_tokens: 1000, output_tokens: 1000 })] };
+  const day = daySummary([host, worker], [{ tool: 'delegate', engine: 'claude', sessionId: 'claude:w1', ts: T0 + 30_000, workerUsage: wu(2000, 0, 0) }]);
+  assert.equal(day.sessions.length, 1);
+  assert.equal(day.hostTotal.tokens.input_tokens + day.hostTotal.tokens.output_tokens, 12); // 10 + 2, sem os 2.000 do worker
+});
+
+test('total do dia deduplica message.id repetido entre transcripts (cópia/retomada)', () => {
+  const a = { id: 'a', events: [turn('m1', at(0), { input_tokens: 5, output_tokens: 3 }), turn('m2', at(5), { input_tokens: 1, output_tokens: 1 })] };
+  const b = { id: 'b', events: [turn('m1', at(1), { input_tokens: 5, output_tokens: 9 })] }; // mesma resposta, snapshot maior
+  const day = daySummary([a, b], []);
+  assert.equal(day.hostTotal.tokens.output_tokens, 10); // m1 pelo máximo (9) + m2 (1), não 3+1+9
+  assert.equal(day.hostTotal.tokens.input_tokens, 6);
+  assert.match(renderDayReport(day), new RegExp(`Total host: ${Math.round(day.hostTotal.units)} unidades`));
+});
+
+test('total do dia preserva o total final do CLI (result.modelUsage) e bate com a linha da sessão', () => {
+  const s = { id: 'f', events: [
+    turn('m1', at(0), { input_tokens: 10, output_tokens: 160, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }),
+    { type: 'result', timestamp: at(1), modelUsage: { 'claude-x': { inputTokens: 10, outputTokens: 1049, cacheReadInputTokens: 100, cacheCreationInputTokens: 0 } } },
+  ] };
+  const day = daySummary([s], []);
+  assert.equal(day.sessions[0].host.tokens.output_tokens, 1049);
+  assert.equal(day.hostTotal.tokens.output_tokens, 1049);
+  assert.equal(day.hostTotal.units, day.sessions[0].host.units);
+});
