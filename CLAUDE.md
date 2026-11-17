@@ -43,10 +43,10 @@ the **pure logic is testable without spawning a worker process**:
   SKILL.md body; only MCP/browser steps stay on the host). Measured live 2026-09-27: an inline persona
   is followed, the repo's `.claude/skills` is visible (inside cwd), `~/.claude/skills` and
   `~/.claude/plugins` are not — a skill's bundled files outside cwd never reach the worker. `sessionStartContext` and
-  the managed CLAUDE.md block carry the same two points. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
-  `web_lookup`) plus `fan_out`, and `rate` register with
+  the managed CLAUDE.md block carry the same two points. `delegate`, `explore`, `run_filtered`,
+  `web_lookup`, `fan_out` and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas.
-  Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred.
+  Secondary tools (`read_slice` since 2026-11-16, `generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred.
   `fan_out` was deferred and never got called — the same adoption bug that
   motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
@@ -564,14 +564,15 @@ points, all in `cli.ts`:
   `execvp`) e o fallback de engine continua decidindo pelo
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
-- **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
-  `run_filtered`, `web_lookup`) plus `fan_out`, and `rate` register with
+- **Core tools are `alwaysLoad`.** `delegate`, `explore`, `run_filtered`, `web_lookup`,
+  `fan_out` and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas
   instead of deferring them. Deferred tools lose to always-loaded native Read/Grep — that was the
   root adoption bug. `fan_out` hit it while deferred (the agent never called
-  them). Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred. Do
-  not strip `alwaysLoad` from the core five, `fan_out`, or `rate`, or add it to the
-  remaining secondary set, without intent.
+  them). Secondary tools (`read_slice`, `generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred. Do
+  not strip `alwaysLoad` from the six above, or add it to the secondary set, without intent.
+  `read_slice` was demoted on 2026-11-16 (`research/2026-11-16-ferramentas-de-leitura.md`): same lines as
+  `Read` with `offset`/`limit`, 23 s median wait; the hook's big-`Read` case is now a nudge, never a deny.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
   overridable via `POLYAGENT_TIMEOUT_MS`. Two pure helpers append notes to the prompt of the two
   **execution** tools (`delegate`): `budgetNote(timeoutMs)` appends a

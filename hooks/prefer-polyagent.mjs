@@ -441,9 +441,10 @@ function baseDecision(input, { stat, read, minLines, handoff }, seen) {
     const key = `read:${file}`;
     if (seen.has(key)) return null;
     const shown = lines === Infinity ? "very large" : `${lines}-line`;
+    // Sem deny: read_slice foi rebaixada (2026-11-16); só sugere.
     return {
       key,
-      redirect: true,
+      redirect: false,
       text:
         `polyagent available: ${file} is a ${shown} file. If you will NOT Edit it, use ` +
         `read_slice(files, want) to load only the needed lines instead of Read (which puts the whole ` +

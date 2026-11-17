@@ -201,11 +201,11 @@ Registering the tools is not enough. Two structural forces push the agent back t
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
 tools used to be **deferred** — the agent had to run a tool-search to load their schemas,
 so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
-**startup `instructions`** (routing boundary) and marks the five core tools,
+**startup `instructions`** (routing boundary) and marks `delegate`, `explore`, `run_filtered`, `web_lookup`,
 `fan_out`, and `rate` with
 `_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
 eagerly. `fan_out` joined them after it was deferred and never got
-called — the same adoption bug. The remaining secondary tools (`generate_image`, `follow_up`,
+called — the same adoption bug. The remaining secondary tools (`read_slice`, `generate_image`, `follow_up`,
 `bridge_stats`, `decide`) stay deferred. Four fixes, strongest first:
 
 **1. Call-time hook (recommended).** A `PreToolUse` hook that steers the agent toward
@@ -336,9 +336,9 @@ keep the expensive shell to orchestration only.
 > so they coexist cleanly — no `updatedInput` race, no delay, no import of
 > context-mode's routing.
 
-**2. Load deferred tools when needed.** The five core tools, `fan_out`, and
+**2. Load deferred tools when needed.** `delegate`, `explore`, `run_filtered`, `web_lookup`, `fan_out`, and
 `rate` are `alwaysLoad` on Claude Code ≥2.1.121. Older hosts may still defer their schemas. The
-secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) remain deferred; load only
+secondary tools (`read_slice`, `generate_image`, `follow_up`, `bridge_stats`, `decide`) remain deferred; load only
 the ones a task needs. Add to your `CLAUDE.md`/`AGENTS.md`:
 
 ```

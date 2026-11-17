@@ -115,16 +115,16 @@ describe("tool surface (US-003)", () => {
     expect(delegate).toContain("withDelegateShadow(verified, prompt, level");
   });
 
-  it("alwaysLoad inclui as cinco core, fan_out e rate", () => {
-    // fan_out segue na lista; fast_delegate foi removido em 2026-11-16.
+  it("alwaysLoad inclui delegate, explore, run_filtered, web_lookup, fan_out e rate", () => {
+    // fast_delegate removido e read_slice rebaixada (deferred) em 2026-11-16.
     const alwaysLoad = [
-      "delegate", "explore", "read_slice", "run_filtered", "web_lookup",
+      "delegate", "explore", "run_filtered", "web_lookup",
       "fan_out", "rate",
     ];
     for (const tool of alwaysLoad) {
       expect(registeredToolBlock(tool)).toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
     }
-    for (const tool of ["generate_image", "follow_up", "bridge_stats", "decide"]) {
+    for (const tool of ["read_slice", "generate_image", "follow_up", "bridge_stats", "decide"]) {
       expect(registeredToolBlock(tool)).not.toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
     }
   });

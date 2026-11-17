@@ -351,7 +351,7 @@ server.registerTool(
 server.registerTool(
   "read_slice",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    // Deferred desde 2026-11-16: Read com offset/limit devolve o mesmo texto sem espera (research/2026-11-16-ferramentas-de-leitura.md).
     description:
       `Read-only surgical read: the worker reads the given file(s) and returns ONLY the code relevant to \`want\` (exact lines with file:line), never the whole file. On Codex, the default is ${EXPLORE_MODEL} with explicit ${EXPLORE_EFFORT} effort (override with POLYAGENT_EXPLORE_EFFORT). Full-file/verbatim dump requests are refused by design and enforced before the worker is spawned. Use instead of Read when you need a specific function/section from large files — the full file never enters your context.`,
     inputSchema: {
