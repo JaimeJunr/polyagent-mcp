@@ -55,9 +55,8 @@ describe("fan_out named levels schema", () => {
     expect(schema("fan_out").parse({ prompt: "task", levels: [1, "middle", 5] }).levels).toEqual(["low", "middle", "high"]);
   });
 
-  it("keeps fast_delegate level-free", () => {
-    expect(captured.tools.size).toBe(12);
-    expect(captured.tools.get("fast_delegate")!.inputSchema).not.toHaveProperty("level");
-    expect(schema("fast_delegate").parse({ prompt: "task" })).toEqual({ prompt: "task" });
+  it("não registra mais fast_delegate", () => {
+    expect(captured.tools.size).toBe(11);
+    expect(captured.tools.has("fast_delegate")).toBe(false);
   });
 });

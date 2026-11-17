@@ -73,7 +73,6 @@ sandbox, and only the worker's conclusion enters your context. Your job is to ro
 | Run a build, test or log command and keep only the signal | \`run_filtered(command, want)\` |
 | Docs, API reference, error message, current version | \`web_lookup(query)\` |
 | Self-contained execution: code, edits, commits, PRs, fix a build | \`delegate(prompt, level)\` |
-| Simple or urgent execution where speed beats picking a level | \`fast_delegate(prompt)\` |
 | Choose between 2+ options, or a verdict costly to get wrong | \`fan_out(prompt, levels, mode: "consensus")\` |
 | First acceptable answer across engines | \`fan_out(prompt, levels, mode: "race")\` |
 
@@ -116,11 +115,11 @@ For \`fan_out\`, start with \`levels: ["low", "middle"]\`; add \`"high"\` only w
 
 ## Guardrails
 
-- \`deny\` on \`delegate\`/\`fast_delegate\` blocks commands inside the sandbox (exit 126):
+- \`deny\` on \`delegate\` blocks commands inside the sandbox (exit 126):
   \`deny: ["git push", "git merge", "rm", "npx prisma migrate"]\`. Rules are a command plus the args that
   identify it. It catches commands on PATH, not scripts run by path (\`./manage.py\`) or indirect runs
   (\`npm run migrate\`). It is a guardrail against accidents, not a security boundary.
-- \`explore\`, \`read_slice\` and \`web_lookup\` are read-only. \`delegate\`, \`fast_delegate\` and \`run_filtered\`
+- \`explore\`, \`read_slice\` and \`web_lookup\` are read-only. \`delegate\` and \`run_filtered\`
   have full access.
 
 ## Hand over subagents and skills

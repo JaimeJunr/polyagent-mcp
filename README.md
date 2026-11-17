@@ -31,10 +31,9 @@ The server exposes twelve tools:
 | Tool | Purpose |
 |------|---------|
 | `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: low=GPT-6 Luna max (codex), middle=GPT-6.1 Sol medium (codex), high=Claude Opus 5.5 high (claude). **Low/middle cover most work. High is expensive and shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`, and `deny` (commands such as `git push`, `rm`, `make db-up` or `npx prisma migrate`; args match as an ordered subsequence outside git) to block inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary; requires bwrap. |
-| `fast_delegate` | Same full **read/edit/shell** access as `delegate`, but with no `level` to pick: it routes to whichever CLI is currently the fastest **and** healthy. Prefer it over `delegate` when the task is simple or urgent and picking a level is not worth it. First two candidates are subscriptions (GPT-6 Luna medium on codex, then Claude Haiku 5.5 medium); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, only after codex and claude are missing, quota-exhausted or unhealthy. The accepted Claude-subscription cost is the same one used by a Claude Code host orchestrator. Optionally accepts an `agent` persona and the same `deny` list. |
 | `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
 | `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
-| `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade as `fast_delegate`: codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
+| `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade: codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
 | `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. Falls back to Claude Haiku 5.5 medium (native WebSearch) when codex is unhealthy or out of quota. |
 | `decide` | Ask a System One decision model (default `baseten/elephant-1:free`; `typesafe/jev-1.13` via `POLYAGENT_JEV_MODEL`) for calibrated probabilities or a typed choice label through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
 | `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
@@ -44,7 +43,7 @@ The server exposes twelve tools:
 | `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
 
 Worker tools accept `cwd`, `model`, and `effort` where applicable. `delegate` requires a **level**
-("low", "middle", or "high"); `fast_delegate` has none and picks the fastest healthy engine. Explicit `model`/`effort`
+("low", "middle", or "high"). Explicit `model`/`effort`
 values override the selected tier.
 
 ### When an engine runs out of quota
@@ -53,7 +52,7 @@ A call that fails because the engine's plan quota is exhausted does **not** sile
 another engine — spending the next subscription is your decision. The call fails with an actionable
 error naming the engines still available (installed, enabled, and capable of what that tool needs)
 and how to switch: `engine:"<x>"` on the four auxiliary tools and `delegate`, or the lowest
-still-usable `level:"<name>"` when a tier engine remains. Tools that pick the engine themselves (`fast_delegate`, `fan_out`) and `follow_up`
+still-usable `level:"<name>"` when a tier engine remains. Tools that pick the engine themselves (`fan_out`) and `follow_up`
 (pinned to the resumed session's engine) report the quota without suggesting a parameter, and
 `generate_image` reports it against the two engines that have an image tool at all (codex, grok). A transient rate limit is reported separately and asks you to wait, since switching
 engines would not help. Anything the classifier does not recognize — an expired login, for one —
@@ -104,7 +103,7 @@ claude mcp add polyagent -s user -- node /abs/path/to/polyagent-mcp/dist/index.j
 **Permissions (Claude Code):** `claude mcp add` registers the server but does **not** grant
 tool permission — without an allowlist every bridge call prompts for approval. After
 registering, add either `"mcp__polyagent__*"` (full; also auto-approves mutating tools
-`delegate`/`fast_delegate`/`run_filtered`/`follow_up`) or a read-only subset
+`delegate`/`run_filtered`/`follow_up`) or a read-only subset
 (`explore`/`read_slice`/`web_lookup`/`bridge_stats`) under
 `permissions.allow` in `settings.json`. Full options and trade-offs:
 [INSTALL.md §3](INSTALL.md#3-allowlist-the-bridge-tools-claude-code). Cursor/Codex/other hosts
@@ -123,19 +122,19 @@ have their own approval settings — consult the host.
 | `POLYAGENT_MODEL` | `composer-2.5-fast` | Default model for the optional Cursor path. |
 | `POLYAGENT_EXPLORE_MODEL` | `gpt-6-luna` | Codex model for `explore`, `read_slice`, and `web_lookup` when neither the call nor the tool-specific `_MODEL` sets one. `run_filtered` defaults to the `fast_delegate` cascade, not this. |
 | `POLYAGENT_EXPLORE_EFFORT` | `medium` | Explicit Codex effort for `explore`, `read_slice`, and `web_lookup` when the call omits `effort`; ignored for non-Codex engines and does not set the `run_filtered` cascade. |
-| `POLYAGENT_<TOOL>_ENGINE` | cascade | Per-tool engine for the four auxiliary tools — `<TOOL>` is `EXPLORE`, `READ_SLICE`, `RUN_FILTERED`, or `WEB_LOOKUP`. The call's own `engine` parameter beats it. Unset, all four use the `fast_delegate` cascade (codex first), skipping engines that are missing, unhealthy or out of quota, and engines that lack what the tool needs. Refused when the engine lacks what the tool needs: read-only (`explore`/`read_slice`/`web_lookup`, which outside codex comes from the sandbox) or web search (`web_lookup`, codex or claude). |
+| `POLYAGENT_<TOOL>_ENGINE` | cascade | Per-tool engine for the four auxiliary tools — `<TOOL>` is `EXPLORE`, `READ_SLICE`, `RUN_FILTERED`, or `WEB_LOOKUP`. The call's own `engine` parameter beats it. Unset, all four use the FAST_CANDIDATES cascade (codex first), skipping engines that are missing, unhealthy or out of quota, and engines that lack what the tool needs. Refused when the engine lacks what the tool needs: read-only (`explore`/`read_slice`/`web_lookup`, which outside codex comes from the sandbox) or web search (`web_lookup`, codex or claude). |
 | `POLYAGENT_<TOOL>_MODEL` | _(see above)_ | Per-tool model, same four names. The call's `model` beats it. With a non-codex engine and no model set anywhere, the engine's own default model is used. |
 | `POLYAGENT_AGENT_PATHS` | _(off)_ | Additional `:`-separated roots for named agent personas, searched before project/home `.claude/agents` and `~/.claude/plugins`. |
 | `POLYAGENT_SANDBOX` | `bwrap` | Isolates every engine in a bubblewrap sandbox with an empty `$HOME`, preventing global config, MCP servers, hooks, and skills from loading. Only auth, required engine state, and toolchains are bound in. Set `off`/`0` to disable explicitly — with the sandbox off, the read-only tools (`explore`, `read_slice`, `web_lookup`) accept only the codex engine. A missing `bwrap` is a startup error, never a silent downgrade. |
 | `POLYAGENT_FORCE` | _(off)_ | If `1`/`true`, force-enable non-interactive approval for Cursor, Claude, and OpenCode runs. |
-| `POLYAGENT_TIMEOUT_MS` | `1800000` (30 min) | Per-call safety-net timeout (not a work budget). Execution tools (`delegate`/`fast_delegate`) also get a prompt note so the worker returns partial results before being killed. |
+| `POLYAGENT_TIMEOUT_MS` | `1800000` (30 min) | Per-call safety-net timeout (not a work budget). Execution tools (`delegate`) also get a prompt note so the worker returns partial results before being killed. |
 | `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, calls log `{tool, outChars}` for `bridge_stats`. Internal Jev attempts also write `tool:"decide"`, `engine:"jev"`, zero returned chars, and a `decision` record with choice, confidence, acceptance, fallback, latency, cost, and requested level for shadow. |
 | `POLYAGENT_JEV_FANOUT` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Asks Jev whether 2+ successful `fan_out` consensus outputs substantially agree. At or above the threshold, return the first worker and session handles without the Codex arbiter. On low confidence, invalid answer, missing key, Jev error, or a 5-second timeout, use the arbiter. OpenRouter call (free with the default model; spends the daily `:free` quota). |
 | `POLYAGENT_JEV_FANOUT_THRESHOLD` | `0.85` | Minimum Jev agreement probability for skipping the arbiter; invalid values use 0.85. |
 | `POLYAGENT_CLAUDE_MD` | _(on)_ | Set to `off`/`0`/`false`/`no` to stop the server from refreshing an installed `CLAUDE.md` block on start. |
 | `POLYAGENT_CLAUDE_MD_PATH` | `~/.claude/CLAUDE.md` | File that holds the managed block. |
 | `POLYAGENT_JEV_SHADOW` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Asks Jev for a `delegate` level and a prompt-clarity check (target named, done defined, single task) in one parallel call with the worker. The suggestion never changes the requested level; a pending Jev call adds at most 5 seconds after the worker ends. OpenRouter call (free with the default model; spends the daily `:free` quota). |
-| `POLYAGENT_JEV_VERIFY` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Judges each successful `delegate`/`fast_delegate` result in the background: does it claim success, report how many items its checks covered, show evidence, and address the task? Logs a `delegate_result_verify_shadow` decision; never delays or changes the result. One decision-model call per worker result. |
+| `POLYAGENT_JEV_VERIFY` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Judges each successful `delegate` result in the background: does it claim success, report how many items its checks covered, show evidence, and address the task? Logs a `delegate_result_verify_shadow` decision; never delays or changes the result. One decision-model call per worker result. |
 | `POLYAGENT_JEV_MODEL` | `baseten/elephant-1:free` | Decision model for `decide` and the two Jev flags (any `/v1/systemone` model). `typesafe/jev-1.13` restores the paid Jev; see `research/2026-10-24-modelos-decisao-gratis.md`. |
 | `OPENROUTER_API_KEY` | _(unset)_ | Key for `decide` and the Jev flags. Fallbacks, in order: `.openrouter.key` in `~/.local/share/opencode/auth.json`, then the system keyring item stored by `secret-request --keyring openrouter --env OPENROUTER_API_KEY` (read with `secret-tool`). |
 | `POLYAGENT_HOOK_MODE` | `nudge` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task emitem apenas nudge. Skill não é tratada pelo hook desde 2026-10-25: o deny empurrava até skills básicas para um worker; usar Skill nativamente é válido. |
@@ -174,7 +173,7 @@ setting one has zero effect (no fallback, no warning). Update your host config (
 "cursor" survives only where it names the actual Cursor engine (`POLYAGENT_CURSOR_BIN`,
 `POLYAGENT_ENABLE_CURSOR`).
 
-> **Security:** `delegate`, `fast_delegate`, and `run_filtered` have full access and auto-approve
+> **Security:** `delegate` and `run_filtered` have full access and auto-approve
 > their work. `explore`, `read_slice`, and `web_lookup` use Codex's read-only sandbox. Named agents
 > are resolved on the host, reject path traversal, and are injected without mounting agent
 > directories.
@@ -202,10 +201,10 @@ Registering the tools is not enough. Two structural forces push the agent back t
 native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
 tools used to be **deferred** — the agent had to run a tool-search to load their schemas,
 so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
-**startup `instructions`** (routing boundary) and marks the five core tools, `fast_delegate`,
+**startup `instructions`** (routing boundary) and marks the five core tools,
 `fan_out`, and `rate` with
 `_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
-eagerly. Both `fast_delegate` and `fan_out` joined them after they were deferred and never got
+eagerly. `fan_out` joined them after it was deferred and never got
 called — the same adoption bug. The remaining secondary tools (`generate_image`, `follow_up`,
 `bridge_stats`, `decide`) stay deferred. Four fixes, strongest first:
 
@@ -265,7 +264,7 @@ redirect is one-shot and fail-open (a second identical call is allowed through).
 >   `npm test | grep FAIL` e `ps aux | grep x` não disparam. Comandos que também gravam artefatos
 >   não são redirecionados. O nudge existente de `git commit`/`push`, `git worktree add`,
 >   `gh pr create`, `gh issue create`, `bkt pr create` tem prioridade.
-> - **`Agent`/`Task`** → nudge uma vez por sessão para `delegate`/`fast_delegate` com
+> - **`Agent`/`Task`** → nudge uma vez por sessão para `delegate` com
 >   `agent: "<subagent name>"`. A ferramenta nativa fica para etapas que exigem MCP servers ou
 >   browser. Helpers `claude-code-guide` e
 >   `statusline-setup` são isentos.
@@ -337,14 +336,14 @@ keep the expensive shell to orchestration only.
 > so they coexist cleanly — no `updatedInput` race, no delay, no import of
 > context-mode's routing.
 
-**2. Load deferred tools when needed.** The five core tools, `fast_delegate`, `fan_out`, and
+**2. Load deferred tools when needed.** The five core tools, `fan_out`, and
 `rate` are `alwaysLoad` on Claude Code ≥2.1.121. Older hosts may still defer their schemas. The
 secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) remain deferred; load only
 the ones a task needs. Add to your `CLAUDE.md`/`AGENTS.md`:
 
 ```
 If a required core schema is missing on an older host, run tool-search for
-`delegate, fast_delegate, explore, read_slice, run_filtered, web_lookup, fan_out, rate`.
+`delegate, explore, read_slice, run_filtered, web_lookup, fan_out, rate`.
 For secondary tools, load `generate_image`, `follow_up`, `bridge_stats`, or `decide` only when needed.
 ```
 
@@ -371,8 +370,7 @@ levels cannot do. Exhausted Codex quota removes low/middle; exhausted Claude quo
 and affects that host together. The worker has full read/edit/shell access
 in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
 your context. Delegate it, then review the result; edit inline only for a quick one-off you're
-already positioned for. Use fast_delegate(prompt) when the work is self-contained and you just want
-the fastest healthy worker. Pass agent:"name" or agent:{prompt:"..."} when the worker
+already positioned for. Use delegate(prompt, level) for self-contained work. Pass agent:"name" or agent:{prompt:"..."} when the worker
 needs a specialized persona.
 ```
 

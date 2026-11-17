@@ -49,7 +49,7 @@ beforeAll(async () => {
   await import("../src/index.js");
 });
 
-describe.each(["delegate", "fast_delegate"])("%s entrega skill ao worker", (toolName) => {
+describe.each(["delegate"])("%s entrega skill ao worker", (toolName) => {
   let root: string;
   let project: string;
   let home: string;

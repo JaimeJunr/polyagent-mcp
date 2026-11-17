@@ -29,7 +29,7 @@ There is no linter configured. `npm run build` (tsc, `strict: true`) is the type
 Small modules under `src/`, with pure logic covered by `test/*.test.ts`. The split exists so
 the **pure logic is testable without spawning a worker process**:
 
-- `index.ts` — MCP server + tool registrations (twelve tools: `delegate`, `fast_delegate`, `explore`,
+- `index.ts` — MCP server + tool registrations (eleven tools: `delegate`, `explore`,
   `read_slice`, `run_filtered`, `web_lookup`, `fan_out`, `generate_image`, `follow_up`,
   `bridge_stats`, `decide`, `rate`).
   Owns tool descriptions and the shared `routing` params (`cwd`/`model`/`effort`). The second arg
@@ -44,13 +44,13 @@ the **pure logic is testable without spawning a worker process**:
   is followed, the repo's `.claude/skills` is visible (inside cwd), `~/.claude/skills` and
   `~/.claude/plugins` are not — a skill's bundled files outside cwd never reach the worker. `sessionStartContext` and
   the managed CLAUDE.md block carry the same two points. The five core tools (`delegate`, `explore`, `read_slice`, `run_filtered`,
-  `web_lookup`) plus `fast_delegate`, `fan_out`, and `rate` register with
+  `web_lookup`) plus `fan_out`, and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas.
   Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred.
-  `fast_delegate` and `fan_out` were deferred and never got called — the same adoption bug that
+  `fan_out` was deferred and never got called — the same adoption bug that
   motivated alwaysLoad on the core five. `format()` appends the `session_id`
   footer and logs usage;
-  `delegate`/`fast_delegate` accept an optional `deny: string[]` (own `inputSchema`, not `routing`) —
+  `delegate` accepts an optional `deny: string[]` (own `inputSchema`, not `routing`) —
   see "`deny` blocks commands via shims" in the sandbox section;
   `fan_out` consensus can use the optional Jev agreement gate before its Codex arbiter; a Jev
   failure or low agreement keeps the existing arbiter path.
@@ -64,7 +64,7 @@ the **pure logic is testable without spawning a worker process**:
   dispatcher), `resolveModel()`, `parseCliJson()`/`parseCodexJsonl()`/`parseOpencodeJsonl()`/`parseKimiJsonl()`/`parseMuseJsonl()` (+ `parseOutput` dispatcher),
   `resolveTier()`, `resolveDelegate()`, `resolveFastTier()`, `resolveAuxTool()`, `resolveReadTool()`, `resolveRunFiltered()`, `hasEngine()`, `binExists()`, `budgetNote()`, `evidenceNote()`
   are **pure** and unit-tested. Keep the spawn boundary here — do not spawn from elsewhere.
-- `agents.ts` — resolves an optional `delegate`/`fast_delegate` persona on the host. A name such as
+- `agents.ts` — resolves an optional `delegate` persona on the host. A name such as
   `pit:issue-investigator` searches the worker `cwd`'s `.claude/agents`, then the host project's
   (`process.cwd()` of the MCP server — the host often points `cwd` at a sibling worktree, 2026-10-28),
   then home `.claude/agents` and `~/.claude/plugins`; plugin
@@ -72,7 +72,7 @@ the **pure logic is testable without spawning a worker process**:
   body crosses into the worker, and names containing `/` or `..` are rejected. `{ skill: "plugin:name" }`
   resolves `skills/<name>/SKILL.md` (worker cwd `.claude/skills`, host project `.claude/skills`, `~/.claude/skills`, then `~/.claude/plugins`,
   newest by mtime, plugin prefix filters the path): the body becomes the persona and the canonical skill
-  folder comes back as `mountRo`, which `delegate`/`fast_delegate` pass as `RunOpts.roBinds` — the one
+  folder comes back as `mountRo`, which `delegate` passes as `RunOpts.roBinds` — the one
   exception to "no new bind", so the skill's `scripts/`/`references/` are readable (RO) in the sandbox.
   Motivated by handoff 0/2 in `research/2026-09-30-adoption-handoff.md`.
 - `claudeMd.ts` — managed routing block in the user's global `~/.claude/CLAUDE.md` (override path
@@ -217,7 +217,7 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
 - `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` and `rate` tools.
-  New delegate/fan_out receipts store named `requestedLevel`; `fast_delegate` keeps neutral `0`.
+  New delegate/fan_out receipts store named `requestedLevel`; old `fast_delegate` receipts keep neutral `0`.
   Readers/stats tolerate numeric `requestedLevel` in old logs and skip malformed JSONL lines.
   `bridge_stats` mostra tabela de saúde só das engines vistas no log (score com duas casas,
   causa e elegibilidade HH:MM local). `reset_health: ["codex"]` valida nomes e persiste eventos
@@ -267,7 +267,7 @@ idea): a second record, `delegate_prompt_clarity_shadow`, is `clear` only when e
 `decision.session` (read from the `format()` footer) — never in the top-level `sessionId`, which
 would steal the `ratingStats` join from the worker's own entry. `askJev` rejects a response missing
 any question, so a partial answer nulls both records. Shadow only: it never blocks a prompt. `POLYAGENT_JEV_VERIFY`
-runs `withDelegateVerify` around `delegate` and `fast_delegate`: after a successful
+runs `withDelegateVerify` around `delegate`: after a successful
 worker result it asks four noul questions (`claims_success`, `reports_denominator`,
 `evidence_shown`, `addresses_task`) over the scrubbed prompt plus the head+tail-clipped result, and
 logs `delegate_result_verify_shadow` (`supported`/`unsupported`/`no_claim`, with `session`). It is
@@ -352,7 +352,7 @@ points, all in `cli.ts`:
   monta a lista de engines instaladas, habilitadas (`CURSOR_ENABLED`) e capazes do que a tool exige
   (intersecção com `AUX_TOOL_REQUIREMENTS`/`ENGINE_CAPABILITIES`), e `quotaErrorMessage` escolhe a
   forma da sugestão pela superfície da tool: `engine:"<x>"` nas quatro auxiliares, `level:"<name>"` (menor
-  nível cuja engine primária sobrou) no `delegate`, nenhuma em `fast_delegate`/`fan_out`, a lista
+  nível cuja engine primária sobrou) no `delegate`, nenhuma em `fan_out`, a lista
   restrita a codex/grok em `generate_image` (as duas com tool de imagem própria), e "presa à sessão"
   em `follow_up`. `RunOpts.tool` também restringe o fallback de ambiente, além de definir a
   forma do erro. `rate_limited` pede espera e **nunca** sugere troca de engine.
@@ -388,7 +388,7 @@ points, all in `cli.ts`:
   RO per call via `RunOpts.roBinds` (skill folders), or RW via `POLYAGENT_SANDBOX_EXTRA` (`:`-separated absolute paths); `buildSandboxSpec` keeps only
   the ones that exist and aren't the workspace, and `buildSandboxArgs` binds them **after** the HOME
   overlays but **before** the workspace, so the workspace stays the last (never-shadowed) bind.
-- **`deny` blocks commands via shims (`delegate`/`fast_delegate`, `RunOpts.deny`).** Each entry is a
+- **`deny` blocks commands via shims (`delegate`, `RunOpts.deny`).** Each entry is a
   command + the args that identify it (`"git push"`, `"rm"`, `"make db-up"`, `"python manage.py migrate"`);
   matching in the shim: **git** compares the leading tokens after global options/alias resolution (so
   `git commit -m push` passes), **every other command** matches the rule args as an **ordered
@@ -477,7 +477,7 @@ points, all in `cli.ts`:
   workers e árbitro do `fan_out`. Erros mostram causa, hora local HH:MM e `bridge_stats reset_health`.
   Cascatas devolvem `skipped`; o resultado mostra uma única linha antes do footer quando houve salto.
   Sem `POLYAGENT_LOG` não há memória de saúde; engine sem histórico é saudável por omissão.
-- **`fast_delegate` is speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna medium
+- **`fast_delegate` foi removido em 2026-11-16 (a cascata `FAST_CANDIDATES` fica).** Medido em `research/2026-11-15-limiar-tamanho.md`: delegar tarefa pequena custa mais (tiny +67%, implement −7%), e o dono decidiu que a tool não precisava existir. `resolveFastTier` e `FAST_CANDIDATES` seguem servindo `explore`/`read_slice`/`run_filtered`; o texto abaixo descreve a cascata, não uma tool registrada. Antes: **speed-first and alwaysLoad.** `FAST_CANDIDATES` is ordered GPT-6 Luna medium
   → Claude Haiku 5.5 medium → OpenCode `openrouter/inception/mercury-2` → Grok 4.5 low. `resolveFastTier`
   skips missing or unhealthy native engines before the opt-in Cursor fallback. Keep it level-free,
   with the neutral usage receipt `{ requestedLevel: 0, matchedRequest: true }`. It IS marked
@@ -528,7 +528,7 @@ points, all in `cli.ts`:
   homonym: `RunOpts.mode: "plan" | "ask"` in `cli.ts` and `ExploreMode` in `prompts.ts` are the codex
   read-only mode (`-s read-only`), used by `explore`/`read_slice`/`web_lookup` and `follow_up` — do
   not delete them chasing the removed tool. `test/tools.test.ts` pins the twelve-tool surface.
-- **Agent personas are additive and cross-engine.** `delegate` and `fast_delegate` accept a named or
+- **Agent personas are additive and cross-engine.** `delegate` accepts a named or
   inline agent. Resolve it on the host in `agents.ts`, then pass its body via `RunOpts.agentPrompt`: Claude
   `--append-system-prompt`, Grok `--rules`, Codex `-c developer_instructions=` encoded by
   `tomlString`, Cursor/OpenCode/Kimi/Muse prompt prefix. Do not mount agent directories
@@ -565,16 +565,16 @@ points, all in `cli.ts`:
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **Core tools are `alwaysLoad`.** The five core tools (`delegate`, `explore`, `read_slice`,
-  `run_filtered`, `web_lookup`) plus `fast_delegate`, `fan_out`, and `rate` register with
+  `run_filtered`, `web_lookup`) plus `fan_out`, and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas
   instead of deferring them. Deferred tools lose to always-loaded native Read/Grep — that was the
-  root adoption bug. `fast_delegate` and `fan_out` both hit it while deferred (the agent never called
+  root adoption bug. `fan_out` hit it while deferred (the agent never called
   them). Secondary tools (`generate_image`, `follow_up`, `bridge_stats`, `decide`) stay deferred. Do
-  not strip `alwaysLoad` from the core five, `fast_delegate`, `fan_out`, or `rate`, or add it to the
+  not strip `alwaysLoad` from the core five, `fan_out`, or `rate`, or add it to the
   remaining secondary set, without intent.
 - **Timeout is a safety net, not a work budget.** `DEFAULT_TIMEOUT_MS` is 30 min (`1_800_000`),
   overridable via `POLYAGENT_TIMEOUT_MS`. Two pure helpers append notes to the prompt of the two
-  **execution** tools (`delegate`, `fast_delegate`): `budgetNote(timeoutMs)` appends a
+  **execution** tools (`delegate`): `budgetNote(timeoutMs)` appends a
   `[Time budget: ~N min ... return partial results ...]` note so the worker self-manages instead of
   being killed blind; `evidenceNote()` appends an `[Evidence: ...]` note demanding
   the **denominator** — how many candidates the check actually scanned — not just the result. A real
@@ -640,7 +640,7 @@ até skills básicas para um worker. Usar `Skill` nativamente é válido; `deleg
   via `PreToolUse`, mas o lembrete no início da sessão chega antes da escolha da ferramenta.
   `sessionStartContext()` injects it as `additionalContext` before the first tool decision and
   pre-marks `preload` in the dedup file so the PreToolUse piggyback never repeats it.
-  `sessionStartContext()` and `AGENT_PREF_BODY` also name `fast_delegate`: prefer it over
+  `sessionStartContext()` and `AGENT_PREF_BODY` não citam mais `fast_delegate` (removido); antes: prefer it over
   `delegate` for simple/urgent work where speed matters more than picking a level.
 - Fail-open on errors: any error → print nothing, exit 0. SubagentStart and SessionStart paths are
   unchanged by redirect mode.

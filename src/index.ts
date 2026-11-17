@@ -44,7 +44,7 @@ const server = new McpServer(
   { name: "polyagent-mcp", version: "0.5.0" },
   {
     instructions:
-      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (three named levels: low=GPT-6 Luna max, middle=GPT-6.1 Sol medium, high=Claude Opus 5.5 high; AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×); high is expensive and shares the Claude Code host subscription, while low/middle cover most work); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. fast_delegate's healthy candidate order is GPT-6 Luna medium, Claude Haiku 5.5 medium, OpenCode mercury-2, then Grok 4.5 low. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with agent: { skill: 'plugin:name' } (its SKILL.md becomes the persona and its folder, with scripts/ and references/, is mounted read-only for the worker). A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. For a self-contained task of medium size or larger (several functions plus tests, or a batch), call delegate with the full task BEFORE exploring or reading the repo yourself — measured pilots (research/2026-11-15-piloto-controlado.md, research/2026-11-15-limiar-tamanho.md) found delegating upfront cuts the host's API-cost proxy 25-48% there; for a one-line or tiny fix, do it yourself, because delegating cost more in the size experiment; merely having polyagent available with no upfront delegation did not save anything by itself. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
+      "polyagent-mcp offloads work to cheap headless CLIs so you do not spend your own context. Routing: pure reading or locating a specific slice → read_slice; mapping or searching the codebase → explore; running a noisy command and keeping only the signal → run_filtered; web or docs lookup → web_lookup; self-contained implementation, commits, PRs, multi-file edits, or running and fixing a build → delegate (three named levels: low=GPT-6 Luna max, middle=GPT-6.1 Sol medium, high=Claude Opus 5.5 high; AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×); high is expensive and shares the Claude Code host subscription, while low/middle cover most work); comparing 2+ approaches or cross-checking a risky verdict → fan_out (mode consensus) instead of judging alone or comparing several delegate runs yourself. Prefer these tools over native Read, Grep, WebSearch, or Bash for pure reading, locating, web lookup, and grunt work; use native Read only when you are about to edit that file. polyagent spawns each engine CLI itself (codex exec, claude -p): an MCP server named \"codex\" failing to connect says nothing about polyagent, so call the tool instead of guessing. Workers have no MCP servers or browser and do not load your subagents or global/plugin skills on their own, but you can hand them over through delegate's agent param: a subagent with agent: '<name>' (resolved from .claude/agents and plugins), a skill with agent: { skill: 'plugin:name' } (its SKILL.md becomes the persona and its folder, with scripts/ and references/, is mounted read-only for the worker). A task is not all-or-nothing: only steps that need an MCP server or a browser stay with you; delegate the rest. For a self-contained task of medium size or larger (several functions plus tests, or a batch), call delegate with the full task BEFORE exploring or reading the repo yourself — measured pilots (research/2026-11-15-piloto-controlado.md, research/2026-11-15-limiar-tamanho.md) found delegating upfront cuts the host's API-cost proxy 25-48% there; for a one-line or tiny fix, do it yourself, because delegating cost more in the size experiment; merely having polyagent available with no upfront delegation did not save anything by itself. Worker tools return a session_id for follow_up; decide returns structured JSON. Results can be graded with rate.",
   },
 );
 
@@ -63,7 +63,7 @@ function askInternalJev(params: AskJevParams) {
   return askJev(params, { fetch: (url, init) => globalThis.fetch(url, init), key });
 }
 
-// POLYAGENT_JEV_VERIFY: grava um veredito shadow sobre o resultado de delegate/fast_delegate.
+// POLYAGENT_JEV_VERIFY: grava um veredito shadow sobre o resultado de delegate.
 function verifyingWorker<T>(work: () => Promise<T>, prompt: string): () => Promise<T> {
   return JEV_VERIFY_ENABLED
     ? () => withDelegateVerify(work, prompt, { ask: askInternalJev, log: logDecision, sessionOf: footerSession })
@@ -83,7 +83,7 @@ const routing = {
     .describe("Reasoning effort for parameterized models (e.g. 'low'|'high'). Ignored by 'auto'."),
 };
 
-// Persona especializada, resolvida no host por resolveAgent. Compartilhada por delegate/fast_delegate.
+// Persona especializada, resolvida no host por resolveAgent. Compartilhada por delegate.
 const agentSchema = z.union([
   z.string(),
   z.object({ prompt: z.string(), name: z.string().optional(), model: z.string().optional() }),
@@ -92,7 +92,7 @@ const agentSchema = z.union([
 const agentDescription =
   "Run the worker as a specialized agent/persona. A name (e.g. 'pit:issue-investigator' or 'code-reviewer') is resolved from .claude/agents (project + home) and ~/.claude/plugins — its system prompt is injected via each engine's channel (claude --append-system-prompt, grok --rules, codex developer_instructions, cursor/opencode/kimi/muse prompt prefix). Or pass an inline { prompt } to skip file lookup. Works on every level/engine, not just claude. To hand over a skill, pass { skill: 'plugin:name' } (e.g. { skill: 'ivt-quality:security-audit' }): its SKILL.md becomes the persona and its folder (scripts/, references/) is mounted read-only in the worker sandbox.";
 
-// Comandos bloqueados no sandbox. Só delegate/fast_delegate (as que executam): fora do `routing`.
+// Comandos bloqueados no sandbox. Só delegate (as que executam): fora do `routing`.
 const denySchema = z.array(z.string());
 const denyDescription =
   "Commands to block inside the worker's sandbox: a command plus the args that identify it, e.g. ['git push', 'rm', 'make db-up', 'npx prisma migrate', 'python manage.py migrate', 'docker compose down']. Outside git the args match as an ordered subsequence of the call's tokens (so `make -j4 db-up` and `docker compose -f x.yml down` are caught; `db-up2` is not); git matches the subcommand after its global options. Only commands on PATH are caught, not scripts run by path (`bin/rails`, `./manage.py`) nor indirect runs (`npm run migrate`). A matching call fails with exit 126 and the worker is told up front. A guardrail against accidents, not a security boundary (the worker could still reach the binary some other way). Requires the bwrap sandbox: refused when POLYAGENT_SANDBOX=off.";
@@ -129,7 +129,7 @@ function actualRunMetadata(
  * Formata o resultado do Cursor: passa o texto pelo egress scrubber (scrubSecrets) antes do footer
  * de session_id, loga os chars devolvidos ao contexto (custo real) e — quando algo foi redigido —
  * loga também um evento "blocked_exfil". `tier` (opcional) carrega o tier-integrity receipt de
- * quem chamou o resolver (delegate/fast_delegate); tools sem tier omitem.
+ * quem chamou o resolver (delegate); tools sem tier omitem.
  */
 function format(
   tool: string,
@@ -305,56 +305,6 @@ server.registerTool(
 );
 
 server.registerTool(
-  "fast_delegate",
-  {
-    _meta: { "anthropic/alwaysLoad": true },
-    description:
-      "Delegate a task to whichever coding-agent CLI is currently the fastest AND healthy — no level to pick. COST: the first two candidates are subscriptions (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, both marginal-zero); pay-per-token OpenRouter (mercury-2) is the 3rd fallback, used only when codex and claude are missing, quota-exhausted or unhealthy. The accepted cost of the Claude candidate is the subscription also used by a Claude Code host orchestrator. Same full read/edit/shell access as delegate, same worker (does not see your context). Prefer this over delegate for simple or urgent work where speed matters more than picking a level; use delegate with an explicit level when you need a specific difficulty/quality tier. Optional `deny` blocks commands (e.g. 'git push', 'rm', 'make db-up', 'npx prisma migrate') inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary.",
-    inputSchema: {
-      prompt: z.string().describe("The complete task prompt for the worker agent."),
-      agent: agentSchema.optional().describe(agentDescription),
-      deny: denySchema.optional().describe(denyDescription),
-      timeout_ms: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Max wall-clock ms for this delegation. Default 1800000 (30 min). Raise for unusually long build-heavy tasks."),
-      ...routing,
-    },
-  },
-  // A ordem observada escolhe engine+modelo+effort; overrides explícitos continuam vencendo.
-  async ({ prompt, agent, deny, timeout_ms, cwd, model, effort }) => {
-    const tier = resolveFastTier(hasEngine, CURSOR_ENABLED, currentEngineHealth());
-    const selectedModel = model ?? tier.model;
-    const selectedEffort = effort ?? tier.effort;
-    const resolved = agent ? resolveAgent(agent, cwd ?? process.cwd()) : undefined;
-    return verifyingWorker(() => formatRun(
-      "fast_delegate",
-      tier.engine,
-      () => runCursor({
-        prompt: prompt + budgetNote(timeout_ms ?? DEFAULT_TIMEOUT_MS) + evidenceNote() + denyNote(deny),
-        cwd,
-        engine: tier.engine,
-        model: selectedModel,
-        effort: selectedEffort,
-        agentPrompt: withTerseStyle(resolved?.prompt),
-        roBinds: resolved?.mountRo ? [resolved.mountRo] : undefined,
-        deny,
-        force: true,
-        timeoutMs: timeout_ms,
-        tool: "fast_delegate",
-      }),
-      // matchedRequest reflete se saiu uma engine nativa (FAST_CANDIDATES) ou o fallback pro cursor
-      // — sem isso, o downgrade pro cursor ficava indistinguível de um roteamento nativo no log.
-      { requestedLevel: 0, matchedRequest: FAST_CANDIDATES.some((c) => c.engine === tier.engine) },
-      { model: selectedModel, effort: selectedEffort },
-      tier.skipped,
-    ), prompt)();
-  },
-);
-
-server.registerTool(
   "explore",
   {
     _meta: { "anthropic/alwaysLoad": true },
@@ -376,7 +326,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); explore is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_EXPLORE_ENGINE. When omitted, uses the FAST_CANDIDATES cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); explore is read-only: a non-codex engine needs the sandbox on."),
       ...routing,
     },
   },
@@ -409,7 +359,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. When omitted, uses the fast_delegate cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); read_slice is read-only: a non-codex engine needs the sandbox on."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_READ_SLICE_ENGINE. When omitted, uses the FAST_CANDIDATES cascade, skipping unhealthy/quota-exhausted engines (codex POLYAGENT_EXPLORE_MODEL + POLYAGENT_EXPLORE_EFFORT, then Claude Haiku 5.5 medium, then OpenRouter mercury-2); read_slice is read-only: a non-codex engine needs the sandbox on."),
       want: z.string().describe("What to extract, e.g. 'the login handler and its imports'."),
       ...routing,
     },
@@ -452,7 +402,7 @@ server.registerTool(
       engine: z
         .string()
         .optional()
-        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade as fast_delegate (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2). run_filtered accepts any engine."),
+        .describe("Engine override for this call: 'codex', 'grok', 'claude', 'opencode', 'kimi', 'muse' or 'cursor'. Beats POLYAGENT_RUN_FILTERED_ENGINE. When omitted, uses the same FAST_CANDIDATES cascade (codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2). run_filtered accepts any engine."),
       want: z.string().optional().describe("What matters in the output, e.g. 'only failing tests'. Omit for meaningful-signal-only."),
       ...routing,
     },
@@ -460,7 +410,7 @@ server.registerTool(
   async ({ command, want, cwd, model, effort, engine: engineParam }) => {
     // sem mode → bypass total: rodar o comando (que pode escrever) É o propósito do tool.
     // force mantém a paridade quando o fallback é cursor. O worker filtra o output por relevância.
-    // Default = cascata do fast_delegate (resolveFastTier); param/env ainda vencem.
+    // Default = cascata FAST_CANDIDATES (resolveFastTier); param/env ainda vencem.
     const health = currentEngineHealth();
     const { engine, model: auxModel, effort: auxEffort, skipped } = resolveRunFiltered(
       { engine: engineParam, model, effort },
@@ -516,7 +466,7 @@ server.registerTool(
 server.registerTool(
   "fan_out",
   {
-    // Schemas deferidos perdem adoção, o mesmo problema que levou fast_delegate a alwaysLoad.
+    // Schemas deferidos perdem adoção, o mesmo problema que levou as core a alwaysLoad.
     _meta: { "anthropic/alwaysLoad": true },
     description:
       "Use for independent second opinions, comparing 2+ approaches/designs/options/alternatives, cross-checking a risky verdict before acting (mode:'consensus'), or broad research that splits into independent parts. Do not use for simple lookups, single-file edits, or tightly coupled sequential work: it runs several workers and costs several times a single delegate. Levels: low=GPT-6 Luna max ($0.07/task), middle=GPT-6.1 Sol medium ($0.21), high=Claude Opus 5.5 high ($1.82); AA quota proxies $0.07 → $0.21 (~3×) → $1.82 (~8.7×). Start with low/middle, which cover most work; add high only after a cheaper consensus disagreed or for a costly verdict. High is expensive and shares the Claude Code host subscription. It returns a compact digest; mode:'race' returns the first success, while mode:'consensus' compares all outputs and returns agreement/disagreement plus worker session_ids for follow_up.",
