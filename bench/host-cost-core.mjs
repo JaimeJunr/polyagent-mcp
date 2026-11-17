@@ -28,6 +28,35 @@ export function hostFromTranscript(events) {
   };
 }
 
+/** Início (hora local) do dia AAAA-MM-DD, em ms. */
+export function startOfDayMs(day) {
+  const [y, m, d] = String(day).split('-').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+/**
+ * Um transcript pode ter eventos do dia se foi escrito nele ou depois (sessão que cruzou a meia-noite
+ * ou foi retomada). Só descarta o que parou antes do dia; o filtro por timestamp de evento decide o resto.
+ */
+export function transcriptMayHoldDay(mtimeMs, day) {
+  return Number.isFinite(mtimeMs) && mtimeMs >= startOfDayMs(day);
+}
+
+/**
+ * Ids de sessão de worker registrados no log (`sessionId` = `<engine>:<id>`). O sandbox grava o transcript
+ * do worker Claude em ~/.claude/projects, ao lado dos do host; sem excluir, o worker contaria como host.
+ */
+export function workerSessionIds(logEntries) {
+  const ids = new Set();
+  for (const entry of Array.isArray(logEntries) ? logEntries : []) {
+    const handle = entry?.sessionId;
+    if (typeof handle !== 'string') continue;
+    const at = handle.indexOf(':');
+    if (at > 0 && at < handle.length - 1) ids.add(handle.slice(at + 1));
+  }
+  return ids;
+}
+
 /** Soma o workerUsage do POLYAGENT_LOG dentro da janela da sessão. Entrada sem o campo conta só em `calls`. */
 export function workersInWindow(entries, startMs, endMs) {
   const total = { calls: 0, measured: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0, measuredCost: 0 };
@@ -91,10 +120,14 @@ export function workersByEngine(entries, startMs, endMs) {
  */
 export function daySummary(sessions, logEntries) {
   const rows = [];
+  const hostEvents = [];
+  const workerIds = workerSessionIds(logEntries);
   for (const session of Array.isArray(sessions) ? sessions : []) {
+    if (workerIds.has(String(session?.id))) continue;
     const events = Array.isArray(session?.events) ? session.events : [];
     const host = hostFromTranscript(events);
     if (host.startMs === null) continue;
+    hostEvents.push(...events.filter(event => event && typeof event === 'object' && event.type !== 'result'));
     rows.push({ id: String(session.id ?? '?'), host, workers: workersByEngine(logEntries, host.startMs, host.endMs) });
   }
   let ambiguousCalls = 0;
@@ -108,7 +141,11 @@ export function daySummary(sessions, logEntries) {
   const inside = logEntries.filter(entry => isWorkerEntry(entry) && rows.some(row => entry.ts >= row.host.startMs && entry.ts <= row.host.endMs));
   // Total sem dupla contagem: cada chamada do log entra uma vez, mesmo caindo em duas janelas.
   const workerTotals = workersByEngine(inside, -Infinity, Infinity);
-  return { sessions: rows.sort((a, b) => a.host.startMs - b.host.startMs), ambiguousCalls, outsideCalls, workerTotals };
+  // Total do dia com dedup global por message.id (máximo por campo): transcript copiado ou retomado repete
+  // mensagens, e somar as linhas por sessão contaria cada uma duas vezes. Linhas por sessão seguem independentes.
+  const hostTokens = summarizeEvents(hostEvents).streamTokens;
+  const hostTotal = { tokens: hostTokens, units: proxyUnits(hostTokens) };
+  return { sessions: rows.sort((a, b) => a.host.startMs - b.host.startMs), ambiguousCalls, outsideCalls, workerTotals, hostTotal };
 }
 
 const fmt = n => Math.round(n).toLocaleString('en-US');
@@ -117,20 +154,18 @@ const fmt = n => Math.round(n).toLocaleString('en-US');
 export function renderDayReport(day) {
   if (!day.sessions.length) return 'Host vs worker: nenhuma sessão do host com timestamp na janela pedida.';
   const lines = ['Host vs worker (tokens declarados pelos CLIs; unidades = proxy de preço da API, não fatura)'];
-  let totalUnits = 0;
   for (const row of day.sessions) {
     const t = row.host.tokens;
     const minutes = Math.round((row.host.endMs - row.host.startMs) / 60_000);
     lines.push('', `sessão ${row.id.slice(0, 8)} · ${new Date(row.host.startMs).toISOString().slice(0, 16)}Z · ${minutes} min`,
       `  host: in ${fmt(t.input_tokens)} · cache read ${fmt(t.cache_read_input_tokens)} · cache write ${fmt(t.cache_creation_input_tokens)} · out ${fmt(t.output_tokens)} · ${fmt(row.host.units)} unidades`);
-    totalUnits += row.host.units;
     for (const [engine, w] of Object.entries(row.workers)) {
       const cost = w.measuredCost ? ` · custo reportado $${w.costUsd.toFixed(4)}` : '';
       lines.push(`  worker ${engine}: ${w.calls} chamadas (${w.measured} medidas) · in ${fmt(w.inputTokens)} (cache ${fmt(w.cachedInputTokens)}) · out ${fmt(w.outputTokens)}${cost}`);
     }
     if (!Object.keys(row.workers).length) lines.push('  worker: nenhuma chamada na janela');
   }
-  lines.push('', `Total host: ${fmt(totalUnits)} unidades em ${day.sessions.length} sessões`);
+  lines.push('', `Total host: ${fmt(day.hostTotal.units)} unidades em ${day.sessions.length} sessões (sem contar duas vezes a mesma resposta repetida entre transcripts)`);
   for (const [engine, s] of Object.entries(day.workerTotals ?? {})) lines.push(`Total worker ${engine}: ${s.calls} chamadas (${s.measured} medidas) · in ${fmt(s.inputTokens)} (cache ${fmt(s.cachedInputTokens)}) · out ${fmt(s.outputTokens)}`);
   lines.push('', 'O que NÃO dá para concluir:',
     '- Sem baseline "host sozinho" para a mesma tarefa, a economia continua não demonstrada: este relatório mostra o que cada lado gastou, não o que se evitou.',
