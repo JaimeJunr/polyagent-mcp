@@ -124,10 +124,11 @@ describe("tool surface (US-003)", () => {
       "fan_out", "rate",
     ];
     for (const tool of alwaysLoad) {
-      expect(registeredToolBlock(tool)).toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
+      expect(registeredToolBlock(tool)).toContain(`_meta: alwaysLoadMeta(PROFILE, "${tool}")`);
     }
     for (const tool of ["read_slice", "generate_image", "follow_up", "bridge_stats", "decide"]) {
-      expect(registeredToolBlock(tool)).not.toMatch(/_meta:\s*\{\s*"anthropic\/alwaysLoad":\s*true\s*\}/);
+      expect(registeredToolBlock(tool)).not.toContain("alwaysLoadMeta(");
+      expect(registeredToolBlock(tool)).not.toMatch(/"anthropic\/alwaysLoad"/);
     }
   });
 

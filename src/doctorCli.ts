@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { DEFAULT_TIMEOUT_MS, engineHealthy, hasEngine, type Engine } from "./cli.js";
+import { PROFILE_ALWAYS_LOAD, resolveProfile } from "./profile.js";
 import { hookDisabled, renderDoctor, savingsVerdict, type DoctorReport, type EngineStatus, type FixedCost } from "./doctor.js";
 import { engineHealthReport, QUOTA_WINDOW_MS, readUsage } from "./usage.js";
 
@@ -38,6 +39,9 @@ async function measureFixedCost(): Promise<FixedCost> {
   }));
   try {
     const { tools } = await client.listTools();
+    const sizeOf = (names: readonly string[]): number => tools
+      .filter((t) => names.includes(t.name))
+      .reduce((sum, t) => sum + JSON.stringify(t).length, 0);
     const alwaysLoadChars = tools
       .filter((t) => (t._meta as Record<string, unknown> | undefined)?.["anthropic/alwaysLoad"] === true)
       .reduce((sum, t) => sum + JSON.stringify(t).length, 0);
@@ -47,6 +51,8 @@ async function measureFixedCost(): Promise<FixedCost> {
       instructionsChars: (client.getInstructions() ?? "").length,
       hookChars: off ? 0 : await hookChars(),
       hookDisabled: off,
+      profile: resolveProfile(process.env.POLYAGENT_PROFILE),
+      minimalAlwaysLoadChars: sizeOf(PROFILE_ALWAYS_LOAD.minimal),
     };
   } finally {
     await client.close();

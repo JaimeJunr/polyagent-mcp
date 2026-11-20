@@ -1,4 +1,5 @@
 import type { Engine } from "./cli.js";
+import type { Profile } from "./profile.js";
 
 // Lógica pura do `doctor`: veredito de economia e texto do relatório. Toda I/O (achar binários,
 // ler o log, subir o servidor para medir o custo fixo) fica em doctorCli.ts.
@@ -24,6 +25,9 @@ export interface FixedCost {
   hookChars: number | null;
   /** POLYAGENT_HOOK_MODE=off: o hook não emite nada, então não entra no custo. */
   hookDisabled?: boolean;
+  profile?: Profile;
+  /** Schemas que o perfil minimal manteria sempre carregados; base do "tiraria N". */
+  minimalAlwaysLoadChars?: number;
 }
 
 export function hookDisabled(mode: string | undefined): boolean {
@@ -103,7 +107,19 @@ function fixedCostLines(fixed: FixedCost | null, error?: string): string[] {
     `  schemas das tools sempre carregadas: ${fixed.alwaysLoadChars}`,
     `  instruções do servidor: ${fixed.instructionsChars}`,
     `  texto do hook no início da sessão: ${fixed.hookDisabled ? "desligado (POLYAGENT_HOOK_MODE=off)" : fixed.hookChars ?? "não instalado"}`,
+    ...profileLines(fixed),
   ];
+}
+
+function profileLines(fixed: FixedCost): string[] {
+  if (!fixed.profile) return [];
+  const lines = [`Perfil: ${fixed.profile}`];
+  const saved = fixed.minimalAlwaysLoadChars === undefined ? 0 : fixed.alwaysLoadChars - fixed.minimalAlwaysLoadChars;
+  if (fixed.profile === "full" && saved > 0) {
+    lines.push(`  POLYAGENT_PROFILE=minimal tiraria ${saved} caracteres (cerca de ${estimateTokens(saved)} tokens, estimativa): `
+      + "pouco perto de um contexto grande, e web_lookup, fan_out e rate passam a ser carregadas só sob demanda.");
+  }
+  return lines;
 }
 
 export function renderDoctor(report: DoctorReport): string {

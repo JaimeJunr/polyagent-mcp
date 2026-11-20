@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -9,9 +10,24 @@ export function resolveJevModel(env: NodeJS.ProcessEnv): string {
 }
 export const JEV_MODEL = resolveJevModel(process.env);
 export const JEV_URL = process.env.POLYAGENT_JEV_URL || "https://openrouter.ai/api/v1/systemone";
-// Ligadas por padrão (2026-10-24): o dono é o único usuário do MCP e flag desligada fica esquecida.
-// Desliga com 0/false/off/no; sem chave do OpenRouter cada caminho cai no fallback de sempre.
-const jevEnabled = (value: string | undefined): boolean => !/^(0|false|off|no)$/i.test(value?.trim() ?? "");
+// Padrão (2026-11-20): ligadas só se houver chave do OpenRouter no boot (env ou auth do opencode), para
+// que uma instalação nova não faça chamada externa nem procure no chaveiro a cada delegate. Quem guarda a
+// chave só no chaveiro liga com POLYAGENT_JEV_*=1. Desliga com 0/false/off/no.
+function openRouterKeyAtBoot(): boolean {
+  try {
+    resolveOpenRouterKey(process.env, (path) => readFileSync(path, "utf8"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+const keyAtBoot = openRouterKeyAtBoot();
+export function resolveJevFlag(value: string | undefined, keyAvailable: boolean): boolean {
+  const text = value?.trim() ?? "";
+  if (text === "") return keyAvailable;
+  return !/^(0|false|off|no)$/i.test(text);
+}
+const jevEnabled = (value: string | undefined): boolean => resolveJevFlag(value, keyAtBoot);
 const fanOutThresholdEnv = process.env.POLYAGENT_JEV_FANOUT_THRESHOLD;
 const fanOutThreshold = Number(fanOutThresholdEnv);
 export const JEV_FANOUT_ENABLED = jevEnabled(process.env.POLYAGENT_JEV_FANOUT);

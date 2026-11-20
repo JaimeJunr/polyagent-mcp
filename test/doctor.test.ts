@@ -88,3 +88,32 @@ describe("saúde igual à do roteador e hook desligado", () => {
     expect(text).toContain("desligado");
   });
 });
+
+describe("perfil no doctor", () => {
+  it("mostra o perfil em uso e quanto o minimal tiraria, como estimativa", () => {
+    const text = renderDoctor({
+      engines: [],
+      verdict: savingsVerdict(["codex"], []),
+      fixedCost: {
+        alwaysLoadChars: 13907, instructionsChars: 2414, hookChars: 2979,
+        profile: "full", minimalAlwaysLoadChars: 9388,
+      },
+    });
+    expect(text).toContain("Perfil: full");
+    expect(text).toContain("POLYAGENT_PROFILE=minimal");
+    expect(text).toContain("4519");
+  });
+
+  it("no perfil minimal não oferece trocar para minimal", () => {
+    const text = renderDoctor({
+      engines: [],
+      verdict: savingsVerdict(["codex"], []),
+      fixedCost: {
+        alwaysLoadChars: 9388, instructionsChars: 2414, hookChars: 2979,
+        profile: "minimal", minimalAlwaysLoadChars: 9388,
+      },
+    });
+    expect(text).toContain("Perfil: minimal");
+    expect(text).not.toContain("tiraria");
+  });
+});

@@ -6,7 +6,8 @@ afterEach(() => {
 });
 
 describe("Jev internal feature flags", () => {
-  it("turns all three paths on by default and keeps threshold at 0.85", async () => {
+  it("turns all three paths on by default when an OpenRouter key is available and keeps threshold at 0.85", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "sk-or-test");
     vi.stubEnv("POLYAGENT_JEV_FANOUT", "");
     vi.stubEnv("POLYAGENT_JEV_SHADOW", "");
     vi.stubEnv("POLYAGENT_JEV_VERIFY", "");
@@ -57,5 +58,31 @@ describe("Jev internal feature flags", () => {
     vi.resetModules();
     const invalid = await import("../src/jev.js");
     expect(invalid.JEV_FANOUT_THRESHOLD).toBe(0.85);
+  });
+});
+
+describe("Jev defaults for a fresh install", () => {
+  it("stays off by default when no OpenRouter key is available at boot", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("HOME", "/nonexistent-polyagent-home");
+    vi.stubEnv("POLYAGENT_JEV_FANOUT", "");
+    vi.stubEnv("POLYAGENT_JEV_SHADOW", "");
+    vi.stubEnv("POLYAGENT_JEV_VERIFY", "");
+    vi.resetModules();
+    const config = await import("../src/jev.js");
+    expect(config.JEV_FANOUT_ENABLED).toBe(false);
+    expect(config.JEV_SHADOW_ENABLED).toBe(false);
+    expect(config.JEV_VERIFY_ENABLED).toBe(false);
+  });
+
+  it("an explicit 1/on still forces a path on without a key (keyring-only setups)", async () => {
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("HOME", "/nonexistent-polyagent-home");
+    vi.stubEnv("POLYAGENT_JEV_SHADOW", "1");
+    vi.stubEnv("POLYAGENT_JEV_VERIFY", "");
+    vi.resetModules();
+    const config = await import("../src/jev.js");
+    expect(config.JEV_SHADOW_ENABLED).toBe(true);
+    expect(config.JEV_VERIFY_ENABLED).toBe(false);
   });
 });
