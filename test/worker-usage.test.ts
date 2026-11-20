@@ -109,6 +109,7 @@ describe("buildFormatRun: uso do worker no log do format()", () => {
   it("fan_out: uso já gravado pelo worker não é gravado de novo no format() extra (sem dupla contagem)", () => {
     const worker = buildUsageEntry("fan_out", 0, undefined, { engine: "codex", outcome: "success", workerUsage: usage });
     const extra = buildUsageEntry("fan_out", 120, undefined, buildFormatRun({ engine: "codex", usage }, { engine: "codex", outcome: "success" }, "codex:s1", true));
+    expect(extra.resultReceipt).toBe(true);
     expect(extra.workerUsage).toBeUndefined();
     const stats = aggregateWorkerUsage([worker, extra]);
     expect(Object.values(stats).reduce((n, s) => n + s.inputTokens, 0)).toBe(100);

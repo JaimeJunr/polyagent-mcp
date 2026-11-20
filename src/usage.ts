@@ -75,6 +75,8 @@ export interface UsageEntry {
   decision?: DecisionRecord;
   /** Tokens/custo que o worker declarou na saída do CLI; ausente em logs antigos ou engine sem dado. */
   workerUsage?: WorkerUsage;
+  /** true no recibo extra que o format() grava para o resultado do fan_out; o worker já tem a sua entrada. */
+  resultReceipt?: true;
 }
 
 export interface ToolStats {
@@ -101,6 +103,7 @@ export interface UsageRun {
   error?: string;
   /** Consumo do worker extraído do stdout do CLI (src/cli.ts); nunca contém prompt nem resultado. */
   workerUsage?: WorkerUsage;
+  resultReceipt?: true;
 }
 
 /**
@@ -117,7 +120,8 @@ export function buildFormatRun(
 ): UsageRun | undefined {
   const base: UsageRun | undefined = run?.engine || !res.engine ? run : { ...run, engine: res.engine };
   const withHandle = sessionHandle ? { ...base, sessionId: sessionHandle } : base;
-  return res.usage && !alreadyLogged ? { ...withHandle, workerUsage: res.usage } : withHandle;
+  if (alreadyLogged) return { ...withHandle, resultReceipt: true };
+  return res.usage ? { ...withHandle, workerUsage: res.usage } : withHandle;
 }
 
 /**

@@ -125,7 +125,7 @@ describe("tool surface (US-003)", () => {
 
   it("bridge_stats inclui o relatório de delegação calculado do log", () => {
     const stats = registeredToolBlock("bridge_stats");
-    expect(stats).toContain("renderDelegationReport(delegationReport(entries, Date.now()))");
+    expect(stats).toContain("if (entries.length || USAGE_LOG) sections.push(renderDelegationReport(delegationReport(entries, Date.now())));");
   });
 
   it("alwaysLoad inclui delegate, explore, run_filtered, web_lookup, fan_out e rate", () => {

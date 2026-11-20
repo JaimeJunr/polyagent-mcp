@@ -3,7 +3,6 @@ import type { UsageEntry } from "./usage.js";
 // Relatório de delegação calculado só do POLYAGENT_LOG: funciona com qualquer host e não lê transcript.
 // Não afirma economia nem perda: mostra uso, assinatura e fallback, que são o que decide se compensa.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const NON_WORKER_TOOLS = new Set(["rate", "decide", "blocked_exfil", "bridge_stats"]);
 
 export interface EngineCalls {
@@ -22,8 +21,8 @@ export interface DelegationReport {
   /** Chamadas na engine claude: a mesma assinatura de um host Claude Code. */
   hostSubscriptionCalls: number;
   hostSubscriptionShare: number;
-  /** Chamadas em que o nível caiu da engine preferida para outra (matchedRequest false). */
-  fallbackCalls: number;
+  /** Chamadas fora da engine preferida do nível: fallback automático ou `engine` explícito (o log não distingue). */
+  nonPrimaryEngineCalls: number;
   byLevel: Record<string, number>;
 }
 
@@ -33,12 +32,21 @@ function localDay(ms: number): string {
 }
 
 function isWorkerCall(entry: UsageEntry): boolean {
-  return Boolean(entry.engine) && entry.outcome !== "reset" && !NON_WORKER_TOOLS.has(entry.tool);
+  return Boolean(entry.engine) && entry.outcome !== "reset" && !entry.resultReceipt && !NON_WORKER_TOOLS.has(entry.tool);
+}
+
+/** Início do dia local de `ms`, `daysBack` dias antes; Date.setDate absorve mudança de horário de verão. */
+function startOfLocalDay(ms: number, daysBack: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysBack);
+  return d.getTime();
 }
 
 export function delegationReport(entries: UsageEntry[], now: number, windowDays = 7): DelegationReport {
-  const since = now - windowDays * DAY_MS;
-  const calls = entries.filter((e) => e.ts > since && e.ts <= now && isWorkerCall(e));
+  // Janela em dias de calendário locais (hoje e os 6 anteriores): casa com o denominador "N of 7 days".
+  const since = startOfLocalDay(now, windowDays - 1);
+  const calls = entries.filter((e) => e.ts >= since && e.ts <= now && isWorkerCall(e));
   const byEngine: Record<string, EngineCalls> = {};
   const byLevel: Record<string, number> = {};
   for (const e of calls) {
@@ -59,7 +67,7 @@ export function delegationReport(entries: UsageEntry[], now: number, windowDays 
     byEngine,
     hostSubscriptionCalls,
     hostSubscriptionShare: calls.length ? hostSubscriptionCalls / calls.length : 0,
-    fallbackCalls: calls.filter((e) => e.matchedRequest === false).length,
+    nonPrimaryEngineCalls: calls.filter((e) => e.matchedRequest === false).length,
     byLevel,
   };
 }
@@ -78,7 +86,7 @@ export function renderDelegationReport(report: DelegationReport): string {
   }
   lines.push(
     `Calls on the claude engine: ${report.hostSubscriptionCalls} of ${report.totalCalls}. With a Claude Code host this is the same subscription as the host, so those calls do not save quota.`,
-    `Calls that fell back from the level's preferred engine: ${report.fallbackCalls}.`,
+    `Calls on a non-primary engine for the requested level (automatic fallback or an explicit engine): ${report.nonPrimaryEngineCalls}.`,
     `Calls per requested level (only delegate records one): ${Object.entries(report.byLevel).map(([level, n]) => `${level} ${n}`).join(", ") || "none recorded"}.`,
     "Host cost with vs without delegation is not in this report: it needs the host's transcripts and compares different sessions.",
   );

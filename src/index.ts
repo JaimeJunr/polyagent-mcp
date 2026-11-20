@@ -692,7 +692,7 @@ server.registerTool(
     const sections: string[] = [];
     const health = engineHealthReport(entries, Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
     if (Object.keys(health).length) sections.push(renderEngineHealth(health));
-    if (entries.length) sections.push(renderDelegationReport(delegationReport(entries, Date.now())));
+    if (entries.length || USAGE_LOG) sections.push(renderDelegationReport(delegationReport(entries, Date.now())));
     const workerTable = renderWorkerUsage(aggregateWorkerUsage(entries));
     if (workerTable) sections.push(workerTable);
     if (tools.length) {

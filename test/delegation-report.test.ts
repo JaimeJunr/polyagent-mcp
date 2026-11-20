@@ -32,14 +32,32 @@ describe("delegationReport", () => {
     expect(report.hostSubscriptionShare).toBeCloseTo(2 / 3);
   });
 
-  it("conta fallback do nível quando matchedRequest é false", () => {
+  it("conta chamadas fora da engine preferida do nível (fallback ou engine explícita)", () => {
     const report = delegationReport([call(0), call(0, { matchedRequest: false, engine: "claude" })], NOW);
-    expect(report.fallbackCalls).toBe(1);
+    expect(report.nonPrimaryEngineCalls).toBe(1);
   });
 
   it("conta chamadas por nível pedido e tolera nível numérico de log antigo", () => {
     const report = delegationReport([call(0), call(0, { requestedLevel: "high" }), call(0, { requestedLevel: 3 })], NOW);
     expect(report.byLevel).toEqual({ low: 1, high: 1, other: 1 });
+  });
+
+  it("não conta o recibo do resultado do fan_out como chamada de worker", () => {
+    const report = delegationReport([
+      call(0, { tool: "fan_out", engine: "codex" }),
+      call(0, { tool: "fan_out", engine: "claude" }),
+      call(0, { tool: "fan_out", engine: "codex", resultReceipt: true }),
+    ], NOW);
+    expect(report.totalCalls).toBe(2);
+    expect(report.byEngine.codex.calls).toBe(1);
+  });
+
+  it("nunca passa de 7 dias de calendário quando há chamada todo dia", () => {
+    // Uma chamada logo depois do limite rolante de 168 h cai num oitavo dia de calendário.
+    const daily = [...Array.from({ length: 7 }, (_, i) => call(i)), call(7 - 1 / 24)];
+    const report = delegationReport(daily, NOW);
+    expect(report.daysWithCalls).toBeLessThanOrEqual(7);
+    expect(report.daysWithCalls).toBe(7);
   });
 
   it("ignora reset, rate, decide e entradas sem engine", () => {
@@ -54,6 +72,7 @@ describe("renderDelegationReport", () => {
   it("log vazio diz que não houve chamada de worker, sem veredito de economia", () => {
     const text = renderDelegationReport(delegationReport([], NOW));
     expect(text).toContain("0 of 7 days");
+    expect(text).toContain("npm run doctor");
     expect(text).not.toMatch(/saved|saves/i);
   });
 
@@ -61,5 +80,7 @@ describe("renderDelegationReport", () => {
     const text = renderDelegationReport(delegationReport([call(0, { engine: "claude" })], NOW));
     expect(text).toContain("same subscription");
     expect(text).toContain("1 of 1");
+    expect(text).toContain("non-primary engine");
+    expect(text).not.toContain("fell back");
   });
 });
