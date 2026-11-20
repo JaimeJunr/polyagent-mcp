@@ -39,6 +39,7 @@ import {
 import {
   CLAUDE_MD_BOOT_SYNC, CLAUDE_MD_PATH, nodeClaudeMdFs, PACKAGE_VERSION, renderPolyagentBlock, syncClaudeMd,
 } from "./claudeMd.js";
+import { delegationReport, renderDelegationReport } from "./delegationReport.js";
 import { alwaysLoadMeta, resolveProfile } from "./profile.js";
 import { nodeSkillFs, renderPolyagentSkill, SKILL_BOOT_SYNC, SKILL_ROOTS, syncSkill } from "./skill.js";
 
@@ -691,6 +692,7 @@ server.registerTool(
     const sections: string[] = [];
     const health = engineHealthReport(entries, Date.now(), 30 * 60 * 1000, DEFAULT_TIMEOUT_MS, QUOTA_WINDOW_MS);
     if (Object.keys(health).length) sections.push(renderEngineHealth(health));
+    if (entries.length || USAGE_LOG) sections.push(renderDelegationReport(delegationReport(entries, Date.now())));
     const workerTable = renderWorkerUsage(aggregateWorkerUsage(entries));
     if (workerTable) sections.push(workerTable);
     if (tools.length) {
