@@ -123,6 +123,11 @@ describe("tool surface (US-003)", () => {
     expect(delegate).toContain("TINY_GUARD_ENABLED");
   });
 
+  it("bridge_stats inclui o relatório de delegação calculado do log", () => {
+    const stats = registeredToolBlock("bridge_stats");
+    expect(stats).toContain("renderDelegationReport(delegationReport(entries, Date.now()))");
+  });
+
   it("alwaysLoad inclui delegate, explore, run_filtered, web_lookup, fan_out e rate", () => {
     // fast_delegate removido e read_slice rebaixada (deferred) em 2026-11-16.
     const alwaysLoad = [
