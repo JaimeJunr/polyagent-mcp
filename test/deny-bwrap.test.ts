@@ -16,11 +16,11 @@ const HAS_BWRAP = onHost("bwrap");
 const RULES = ["make db-up", "npx prisma migrate", "chmod", "python manage.py migrate", "git push"];
 
 /** Caso: comando de shell, comando exigido no host, exit esperado. */
-const CASES: Array<{ label: string; script: string; needs: string; exit: number }> = [
+const CASES: Array<{ label: string; script: string; needs: string; exit: number; needsNode?: boolean }> = [
   { label: "make -j4 db-up bloqueado", script: "make -j4 db-up", needs: "make", exit: 126 },
   { label: "make --version passa", script: "make --version", needs: "make", exit: 0 },
   { label: "npx -y prisma migrate deploy bloqueado", script: "npx -y prisma migrate deploy", needs: "npx", exit: 126 },
-  { label: "npx --version passa (script não foi realocado)", script: "npx --version", needs: "npx", exit: 0 },
+  { label: "npx --version passa (script não foi realocado)", script: "npx --version", needs: "npx", exit: 0, needsNode: true },
   { label: "chmod +x f bloqueado", script: "chmod +x f", needs: "chmod", exit: 126 },
   { label: "/usr/bin/chmod +x f bloqueado (overlay do ELF)", script: "/usr/bin/chmod +x f", needs: "chmod", exit: 126 },
   { label: "python manage.py migrate bloqueado", script: "python manage.py migrate", needs: "python", exit: 126 },
@@ -56,7 +56,10 @@ describe.skipIf(!HAS_BWRAP)("deny em bwrap real", () => {
   });
 
   for (const c of CASES) {
-    it.skipIf(!onHost(c.needs))(c.label, () => {
+    it.skipIf(!onHost(c.needs))(c.label, (ctx) => {
+      // npx é script `#!/usr/bin/env node`: se o node mora fora dos binds do sandbox (ex.:
+      // /opt/hostedtoolcache no runner do GitHub), o 127 é do ambiente, não do deny.
+      if (c.needsNode && run("node --version").code !== 0) ctx.skip();
       const r = run(c.script);
       expect(r.err, c.script).not.toMatch(/bwrap:/);
       expect([c.script, r.code]).toEqual([c.script, c.exit]);
