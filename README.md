@@ -49,7 +49,8 @@ Full parameters, levels and quota behavior: [docs/tools.md](docs/tools.md).
 ## Quick start
 
 You need Node ≥ 18, [`bubblewrap`](https://github.com/containers/bubblewrap) (Linux), and at
-least one authenticated worker CLI (Codex for `low`/`middle`, Claude Code for `high`).
+least one authenticated worker CLI. Codex is the primary engine for all three levels; Claude
+Code is the reserve when Codex is missing, unhealthy or out of quota.
 
 ```bash
 git clone https://github.com/JaimeJunr/polyagent-mcp.git
