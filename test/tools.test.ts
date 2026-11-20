@@ -5,7 +5,9 @@ import path from "node:path";
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const indexSrc = readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
-const readme = readFileSync(path.join(repoRoot, "README.md"), "utf8");
+// O README ficou curto; tabela de tools e escada AA moram em docs/.
+const readme = ["docs/tools.md", "docs/steering.md"]
+  .map((f) => readFileSync(path.join(repoRoot, f), "utf8")).join("\n");
 
 describe("tool surface (US-003)", () => {
   it("registra exatamente onze tools", () => {
@@ -154,7 +156,7 @@ describe("tool surface (US-003)", () => {
   // A mesma evidência deve chegar ao host por todas as superfícies de roteamento.
   it.each([
     "src/index.ts", "src/claudeMd.ts", "src/skill.ts", "hooks/prefer-polyagent.mjs",
-    "README.md", "CLAUDE.md",
+    "docs/steering.md", "CLAUDE.md",
   ])("%s preserves the shared AA v5 statement", (file) => {
     const text = readFileSync(path.join(repoRoot, file), "utf8");
     expect(text).toContain("AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated");

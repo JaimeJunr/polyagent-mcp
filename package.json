@@ -1,7 +1,7 @@
 {
   "name": "polyagent-mcp",
   "version": "0.5.0",
-  "description": "MCP server that lets any agent delegate to headless Codex, Grok, and Claude Code CLIs — cheap/fast delegation, exploration, surgical reads, filtered command output, and web lookup with model and effort control, with Cursor available as an opt-in fallback.",
+  "description": "MCP server that lets any coding agent delegate to cheaper coding-agent CLIs (Codex, Claude Code, Grok, OpenCode): delegation, exploration, filtered command output, web lookup and cross-model second opinions, with context economy as the design goal.",
   "type": "module",
   "bin": {
     "polyagent-mcp": "dist/index.js",
@@ -28,9 +28,16 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "cursor",
-    "cursor-agent",
-    "delegation"
+    "mcp-server",
+    "claude-code",
+    "codex",
+    "coding-agent",
+    "ai-agents",
+    "delegation",
+    "multi-agent",
+    "llm",
+    "context-engineering",
+    "developer-tools"
   ],
   "author": "JaimeJunr",
   "license": "MIT",
@@ -43,5 +50,13 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JaimeJunr/polyagent-mcp.git"
+  },
+  "homepage": "https://github.com/JaimeJunr/polyagent-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/JaimeJunr/polyagent-mcp/issues"
   }
 }
