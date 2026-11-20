@@ -2084,7 +2084,7 @@ export interface SkippedEngine {
   until?: number;
 }
 
-function engineHealthy(engine: Engine, health?: HealthInput): boolean {
+export function engineHealthy(engine: Engine, health?: HealthInput): boolean {
   const entry = health?.[engine];
   return entry === undefined || (typeof entry === "number"
     ? entry >= HEALTH_THRESHOLD : entry.score >= HEALTH_THRESHOLD || entry.probe);

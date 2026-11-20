@@ -97,6 +97,7 @@ the **pure logic is testable without spawning a worker process**:
   `<!-- polyagent-mcp-managed: routing-skill v=… -->` marker: a same-name file without it is user-owned
   and never written. `npm run install-skill` (`src/installSkill.ts`, `--dry-run`) creates it; boot only
   refreshes marked copies, never creates, never throws. `POLYAGENT_SKILL=off` disables the boot refresh.
+- `doctor.ts` / `doctorCli.ts` — `npm run doctor`: `savingsVerdict` (puro) diz se o setup poupa custo do host (codex saudável) ou "não poupa cota" (só claude: a reserva é a assinatura do host), e `doctorCli` mede o custo fixo subindo o servidor real com `POLYAGENT_CLAUDE_MD/SKILL=off`. Números e achado de `files: ["dist"]` (o hook não vai no npm) em `research/2026-11-20-custo-fixo.md`.
 
 ### Engines & tiers (multi-CLI)
 

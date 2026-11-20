@@ -85,6 +85,18 @@ Three optional pieces make the agent actually use polyagent, strongest first:
 
 Details: [docs/steering.md](docs/steering.md).
 
+### Will it save you anything? Run the doctor
+
+```bash
+npm run doctor
+```
+
+It lists the engines it found, tells you in plain words whether this setup saves anything
+("saves host cost on medium or larger tasks" or "does not save quota: the worker uses the same
+subscription as the host"), and measures the fixed context cost of the install. With only Claude
+installed the levels fall back to the host's own subscription, so delegating saves nothing there.
+Numbers behind the verdict are host API-cost proxies; subscription quota savings are not demonstrated.
+
 ## Documentation
 
 | Doc | Contents |
