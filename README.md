@@ -1,389 +1,121 @@
 # polyagent-mcp
 
-MCP server that lets **any** agent or MCP host delegate to headless **Codex, Grok, Claude Code, and
-OpenCode CLIs**, with Cursor available as an opt-in fallback. Use the fleet for implementation, planning,
-and project exploration without burning the caller's context on raw worker output.
+**Give your coding agent a team of cheaper workers.** polyagent-mcp is an MCP server that lets
+your main agent hand work to other coding-agent CLIs (Codex, Claude Code, Grok, OpenCode, …)
+and get back only the answer, not the worker's raw output.
 
-Worker tools take optional **model** and **effort** overrides, return a `session_id`, and support
-`follow_up`. Three named difficulty levels select distinct default models on the Codex and Claude
-subscriptions; `delegate` also accepts an explicit engine, including pay-per-token OpenCode.
+It does not replace your agent or its harness. It adds to it: cheaper web lookups, delegated
+implementation, cross-model second opinions, and filtered build/test output.
 
-## Evidence and limitations
+> **Status:** v0.5, used daily by its author. Works in any MCP host; the best-tested setup is
+> [Claude Code](https://claude.com/claude-code). Linux today, macOS is the next goal (see
+> [Roadmap](#roadmap)).
 
-**Reduced Claude Code subscription usage has not been demonstrated.** Existing local studies
-measure tool adoption and worker correctness/latency, not an end-to-end comparison with and
-without Polyagent. Returned characters and API-equivalent dollar estimates do not establish
-subscription quota savings. Cross-model review through `fan_out` is a separate capability;
-its quality benefit also needs a controlled comparison.
+## Why
 
-A [controlled local pilot](research/2026-11-15-piloto-controlado.md) found lower reported Claude
-API-equivalent cost when implementation was delegated before exploration (two repetitions per
-task). Making Polyagent available alone increased cost in that sample. These results support
-selective delegation; they do not establish subscription quota savings or generalize to long sessions.
+Claude Code has one of the best agent harnesses available, so the research behind this project
+starts from it instead of fighting it. The harness is great; the expensive part is spending the
+top model's tokens on work a cheaper model does just as well: reading large files, searching the
+web, running noisy test suites, doing a self-contained edit.
 
-See the [evidence assessment and evaluation protocol](research/2026-11-15-evidencia-economia-cota.md)
-for supporting artifacts, limitations, and the criteria for making stronger claims.
+polyagent-mcp routes that work to the model with the best cost/quality trade-off:
 
-## Tools
+- Models are placed on a **Pareto line** built from public intelligence benchmarks and local
+  measurements ([method and results](research/2026-09-23-tier-pareto.md)). Today that puts
+  mostly Codex models behind `delegate`.
+- Three named levels (`low`, `middle`, `high`) hide the model choice from the caller.
+- Every tool is designed for **context economy**: the worker's raw output never enters your
+  agent's context. `bridge_stats` reports how much did.
 
-The server exposes twelve tools:
+The goal is better cost-efficiency, not just lower cost. Honest limits of what has and has not
+been measured are in [docs/evidence.md](docs/evidence.md).
 
-| Tool | Purpose |
-|------|---------|
-| `delegate` | Run a task with full **read/edit/shell** access in `cwd`. Required `level`: low=GPT-6 Luna max (codex), middle=GPT-6.2 Sol medium (codex), high=GPT-6.2 Astra xhigh (codex). **Low/middle cover most work. High is expensive and runs on codex; its reserve shares the Claude Code host subscription; reserve it for tasks cheaper levels cannot do.** Optional `engine` overrides the tier; `opencode` requires a `provider/model` model. Optionally accepts an `agent` persona by name or inline `{prompt}`, and `deny` (commands such as `git push`, `rm`, `make db-up` or `npx prisma migrate`; args match as an ordered subsequence outside git) to block inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary; requires bwrap. |
-| `explore` | Read-only exploration on Codex with `gpt-6-luna` and explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). `question` alone → broad fan-out search returning `file:line` refs; `question`+`files` → answer about those files; neither → general project map. `breadth: "thorough"` sweeps wider. Locates, does not review. |
-| `read_slice` | Surgical read-only read: returns ONLY the code relevant to `want` (exact lines with `file:line`) from the given `files` — the full file never enters your context. Codex uses `gpt-6-luna` with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`). Use instead of reading large files whole. |
-| `run_filtered` | Run a shell `command` with full access and get back ONLY the lines relevant to `want` — semantic filtering of huge build/test/log output. Default engine is the same FAST_CANDIDATES cascade: codex GPT-6 Luna medium, then Claude Haiku 5.5 medium, then OpenRouter mercury-2. OpenRouter credit is spent only after both subscription candidates are missing, quota-exhausted or unhealthy. |
-| `web_lookup` | Web/docs lookup through Codex/GPT-6 Luna with explicit `medium` effort by default (`POLYAGENT_EXPLORE_EFFORT`), real web search enabled and a read-only filesystem. Falls back to Claude Haiku 5.5 medium (native WebSearch) when codex is unhealthy or out of quota. |
-| `decide` | Ask a System One decision model (default `baseten/elephant-1:free`; `typesafe/jev-1.13` via `POLYAGENT_JEV_MODEL`) for calibrated probabilities or a typed choice label through OpenRouter; useful for risky-call gates, classification, and verifying worker claims. |
-| `generate_image` | Generate or edit an image through Codex's built-in image tool and save it inside `cwd`. |
-| `fan_out` | Get independent opinions, compare approaches, cross-check a risky verdict, or split broad research. Avoid simple lookups, single-file edits, and tightly coupled sequential work; it runs several workers and costs several times one `delegate`. Required `levels` contains at least two names from `low`, `middle`, `high`; repeats are allowed. Start with `["low", "middle"]`; add `"high"` only after a cheaper consensus disagreed or for a costly verdict. With the optional Jev consensus gate, high agreement skips the Codex arbiter; uncertainty or Jev failure keeps it. |
-| `follow_up` | Continue a prior session by `session_id`. |
-| `bridge_stats` | Report calls and chars returned to context per tool, plus ratings; optional `export: true` writes `research/bench/<YYYY-MM-DD>-ratings.md` (needs `POLYAGENT_LOG`). |
-| `rate` | Grade a reviewed result from 1–5 by its `session_id`; ratings stay local and feed `bridge_stats`. |
+## What you get
 
-Worker tools accept `cwd`, `model`, and `effort` where applicable. `delegate` requires a **level**
-("low", "middle", or "high"). Explicit `model`/`effort`
-values override the selected tier.
+| Tool | Use it to |
+|------|-----------|
+| `delegate` | Hand a self-contained task (feature, bugfix, build fix) to a worker with read/edit/shell access. |
+| `explore` | Map or search a codebase read-only; get `file:line` references back. |
+| `read_slice` | Read only the relevant lines of a big file. |
+| `run_filtered` | Run a noisy command and keep only the signal. |
+| `web_lookup` | Look up docs, errors and current versions on the web, cheaply. |
+| `fan_out` | Get independent opinions from 2+ models and cross-check a risky call. |
+| `follow_up` | Continue a worker session by `session_id`. |
+| `rate`, `bridge_stats` | Grade results and see per-tool usage. |
+| `decide`, `generate_image` | Calibrated yes/no probabilities; image generation via Codex. |
 
-### When an engine runs out of quota
+Full parameters, levels and quota behavior: [docs/tools.md](docs/tools.md).
 
-A call that fails because the engine's plan quota is exhausted does **not** silently retry on
-another engine — spending the next subscription is your decision. The call fails with an actionable
-error naming the engines still available (installed, enabled, and capable of what that tool needs)
-and how to switch: `engine:"<x>"` on the four auxiliary tools and `delegate`, or the lowest
-still-usable `level:"<name>"` when a tier engine remains. Tools that pick the engine themselves (`fan_out`) and `follow_up`
-(pinned to the resumed session's engine) report the quota without suggesting a parameter, and
-`generate_image` reports it against the two engines that have an image tool at all (codex, grok). A transient rate limit is reported separately and asks you to wait, since switching
-engines would not help. Anything the classifier does not recognize — an expired login, for one —
-propagates as the raw CLI failure instead of being guessed at.
+## Quick start
 
-## Requirements
-
-- Node ≥ 18
-- `bubblewrap` (`bwrap`) installed — **required**, not recommended: the sandbox is mandatory and the
-  server refuses to start without it (`sudo apt install bubblewrap`). Only `POLYAGENT_SANDBOX=off`
-  waives it, as an explicit operator choice.
-- Codex installed and authenticated for low/middle; Claude Code for high. Read tools use the
-  fast candidate cascade. Grok and OpenCode are optional fallbacks or explicit engine overrides.
-- Optional Cursor fallback: install `cursor-agent` and set `POLYAGENT_ENABLE_CURSOR=1`.
-
-## Install
-
-> **Installing via an AI agent?** Point it at [`INSTALL.md`](INSTALL.md) — an agent-facing,
-> copy-paste guide that detects the host and registers the bridge in Claude Code, Cursor,
-> Codex, Grok, or any generic MCP host.
+You need Node ≥ 18, [`bubblewrap`](https://github.com/containers/bubblewrap) (Linux), and at
+least one authenticated worker CLI (Codex for `low`/`middle`, Claude Code for `high`).
 
 ```bash
 git clone https://github.com/JaimeJunr/polyagent-mcp.git
 cd polyagent-mcp
-npm install
-npm run build
+npm install && npm run build
+
+# Claude Code
+claude mcp add polyagent -s user -- node "$(pwd)/dist/index.js"
 ```
 
-## Register in an MCP host
+Any other MCP host: add this to its `mcp.json`.
 
-**Claude Code:**
-```bash
-claude mcp add polyagent -s user -- node /abs/path/to/polyagent-mcp/dist/index.js
-```
-
-**Any host** — add to its `mcp.json`:
 ```json
 {
   "mcpServers": {
-    "polyagent": {
-      "command": "node",
-      "args": ["/abs/path/to/polyagent-mcp/dist/index.js"]
-    }
+    "polyagent": { "command": "node", "args": ["/abs/path/to/polyagent-mcp/dist/index.js"] }
   }
 }
 ```
 
-**Permissions (Claude Code):** `claude mcp add` registers the server but does **not** grant
-tool permission — without an allowlist every bridge call prompts for approval. After
-registering, add either `"mcp__polyagent__*"` (full; also auto-approves mutating tools
-`delegate`/`run_filtered`/`follow_up`) or a read-only subset
-(`explore`/`read_slice`/`web_lookup`/`bridge_stats`) under
-`permissions.allow` in `settings.json`. Full options and trade-offs:
-[INSTALL.md §3](INSTALL.md#3-allowlist-the-bridge-tools-claude-code). Cursor/Codex/other hosts
-have their own approval settings — consult the host.
+Using an AI agent to install it? Point it at [INSTALL.md](INSTALL.md): a step-by-step guide for
+Claude Code, Cursor, Codex, Grok and generic hosts, including the permission allowlist.
 
-## Configuration (env)
+### Recommended setup (Claude Code)
 
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `POLYAGENT_CURSOR_BIN` | `cursor-agent` | Path to the optional Cursor CLI fallback. |
-| `POLYAGENT_GROK_BIN` | `grok` | Path to the Grok CLI. |
-| `POLYAGENT_CODEX_BIN` | `codex` | Path to the Codex CLI. |
-| `POLYAGENT_CLAUDE_BIN` | `claude` | Path to the Claude Code CLI. |
-| `POLYAGENT_OPENCODE_BIN` | `opencode` | Path to the OpenCode CLI used by explicit engine selection. |
-| `POLYAGENT_ENABLE_CURSOR` | _(off)_ | Set to `1`/`true` to allow Cursor fallback when a tier's preferred CLI is missing. Otherwise the call fails with the missing CLI named. |
-| `POLYAGENT_MODEL` | `composer-2.5-fast` | Default model for the optional Cursor path. |
-| `POLYAGENT_EXPLORE_MODEL` | `gpt-6-luna` | Codex model for `explore`, `read_slice`, and `web_lookup` when neither the call nor the tool-specific `_MODEL` sets one. `run_filtered` defaults to the `fast_delegate` cascade, not this. |
-| `POLYAGENT_EXPLORE_EFFORT` | `medium` | Explicit Codex effort for `explore`, `read_slice`, and `web_lookup` when the call omits `effort`; ignored for non-Codex engines and does not set the `run_filtered` cascade. |
-| `POLYAGENT_<TOOL>_ENGINE` | cascade | Per-tool engine for the four auxiliary tools — `<TOOL>` is `EXPLORE`, `READ_SLICE`, `RUN_FILTERED`, or `WEB_LOOKUP`. The call's own `engine` parameter beats it. Unset, all four use the FAST_CANDIDATES cascade (codex first), skipping engines that are missing, unhealthy or out of quota, and engines that lack what the tool needs. Refused when the engine lacks what the tool needs: read-only (`explore`/`read_slice`/`web_lookup`, which outside codex comes from the sandbox) or web search (`web_lookup`, codex or claude). |
-| `POLYAGENT_<TOOL>_MODEL` | _(see above)_ | Per-tool model, same four names. The call's `model` beats it. With a non-codex engine and no model set anywhere, the engine's own default model is used. |
-| `POLYAGENT_AGENT_PATHS` | _(off)_ | Additional `:`-separated roots for named agent personas, searched before project/home `.claude/agents` and `~/.claude/plugins`. |
-| `POLYAGENT_SANDBOX` | `bwrap` | Isolates every engine in a bubblewrap sandbox with an empty `$HOME`, preventing global config, MCP servers, hooks, and skills from loading. Only auth, required engine state, and toolchains are bound in. Set `off`/`0` to disable explicitly — with the sandbox off, the read-only tools (`explore`, `read_slice`, `web_lookup`) accept only the codex engine. A missing `bwrap` is a startup error, never a silent downgrade. |
-| `POLYAGENT_FORCE` | _(off)_ | If `1`/`true`, force-enable non-interactive approval for Cursor, Claude, and OpenCode runs. |
-| `POLYAGENT_TIMEOUT_MS` | `1800000` (30 min) | Per-call safety-net timeout (not a work budget). Execution tools (`delegate`) also get a prompt note so the worker returns partial results before being killed. |
-| `POLYAGENT_LOG` | _(off)_ | Path to a JSONL file; when set, calls log `{tool, outChars}` for `bridge_stats`. Internal Jev attempts also write `tool:"decide"`, `engine:"jev"`, zero returned chars, and a `decision` record with choice, confidence, acceptance, fallback, latency, cost, and requested level for shadow. |
-| `POLYAGENT_JEV_FANOUT` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Asks Jev whether 2+ successful `fan_out` consensus outputs substantially agree. At or above the threshold, return the first worker and session handles without the Codex arbiter. On low confidence, invalid answer, missing key, Jev error, or a 5-second timeout, use the arbiter. OpenRouter call (free with the default model; spends the daily `:free` quota). |
-| `POLYAGENT_JEV_FANOUT_THRESHOLD` | `0.85` | Minimum Jev agreement probability for skipping the arbiter; invalid values use 0.85. |
-| `POLYAGENT_CLAUDE_MD` | _(on)_ | Set to `off`/`0`/`false`/`no` to stop the server from refreshing an installed `CLAUDE.md` block on start. |
-| `POLYAGENT_CLAUDE_MD_PATH` | `~/.claude/CLAUDE.md` | File that holds the managed block. |
-| `POLYAGENT_JEV_SHADOW` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Asks Jev for a `delegate` level and a prompt-clarity check (target named, done defined, single task) in one parallel call with the worker. The suggestion never changes the requested level; a pending Jev call adds at most 5 seconds after the worker ends. OpenRouter call (free with the default model; spends the daily `:free` quota). |
-| `POLYAGENT_JEV_VERIFY` | _(on)_ | Set to `0`/`false`/`off`/`no` to disable. Judges each successful `delegate` result in the background: does it claim success, report how many items its checks covered, show evidence, and address the task? Logs a `delegate_result_verify_shadow` decision; never delays or changes the result. One decision-model call per worker result. |
-| `POLYAGENT_JEV_MODEL` | `baseten/elephant-1:free` | Decision model for `decide` and the two Jev flags (any `/v1/systemone` model). `typesafe/jev-1.13` restores the paid Jev; see `research/2026-10-24-modelos-decisao-gratis.md`. |
-| `OPENROUTER_API_KEY` | _(unset)_ | Key for `decide` and the Jev flags. Fallbacks, in order: `.openrouter.key` in `~/.local/share/opencode/auth.json`, then the system keyring item stored by `secret-request --keyring openrouter --env OPENROUTER_API_KEY` (read with `secret-tool`). |
-| `POLYAGENT_HOOK_MODE` | `nudge` | `off` desativa; `nudge` emite `additionalContext`; `redirect` bloqueia uma vez WebSearch/WebFetch, Read integral grande e Bash de busca de código, com retry fail-open. Grep/Glob/Edit/Write/MultiEdit/Agent/Task emitem apenas nudge. Skill não é tratada pelo hook desde 2026-10-25: o deny empurrava até skills básicas para um worker; usar Skill nativamente é válido. |
-| `POLYAGENT_HOOK_MIN_LINES` | `300` | Line threshold above which the optional hook (below) redirects/nudges whole-file Read toward `read_slice`. |
+Registering the tools is not enough: hosts tend to prefer their native `Read`/`Grep`/`WebSearch`.
+Three optional pieces make the agent actually use polyagent, strongest first:
 
-The three Jev flags are on by default (without an OpenRouter key each one falls back to the plain path) and pass truncated worker output or task text through the credential scrubber before sending it to OpenRouter.
-They use the same `OPENROUTER_API_KEY` or OpenCode auth-file key as `decide`.
+1. a `PreToolUse` hook that nudges at the moment of the native call,
+2. a managed `CLAUDE.md` routing block (`npm run install-claude-md`),
+3. a managed on-demand skill (`npm run install-skill`).
 
-### Breaking change: env var rename
+Details: [docs/steering.md](docs/steering.md).
 
-Every `CURSOR_BRIDGE_*` variable was renamed to `POLYAGENT_*` (same suffix), and `CURSOR_BIN`
-became `POLYAGENT_CURSOR_BIN`. This is a **clean cut**: the old names are no longer read at all —
-setting one has zero effect (no fallback, no warning). Update your host config (`mcp.json` /
-`settings.json` `"env"` blocks) and any shell profile before upgrading.
+## Documentation
 
-| Old (removed) | New |
-|---------------|-----|
-| `CURSOR_BIN` | `POLYAGENT_CURSOR_BIN` |
-| `CURSOR_BRIDGE_AGENT_PATHS` | `POLYAGENT_AGENT_PATHS` |
-| `CURSOR_BRIDGE_GROK_BIN` | `POLYAGENT_GROK_BIN` |
-| `CURSOR_BRIDGE_CODEX_BIN` | `POLYAGENT_CODEX_BIN` |
-| `CURSOR_BRIDGE_CLAUDE_BIN` | `POLYAGENT_CLAUDE_BIN` |
-| `CURSOR_BRIDGE_MODEL` | `POLYAGENT_MODEL` |
-| `CURSOR_BRIDGE_EXPLORE_MODEL` | `POLYAGENT_EXPLORE_MODEL` |
-| `CURSOR_BRIDGE_IMAGE_MODEL` | `POLYAGENT_IMAGE_MODEL` |
-| `CURSOR_BRIDGE_FORCE` | `POLYAGENT_FORCE` |
-| `CURSOR_BRIDGE_ENABLE_CURSOR` | `POLYAGENT_ENABLE_CURSOR` |
-| `CURSOR_BRIDGE_TIMEOUT_MS` | `POLYAGENT_TIMEOUT_MS` |
-| `CURSOR_BRIDGE_DEBUG` | `POLYAGENT_DEBUG` |
-| `CURSOR_BRIDGE_SANDBOX` | `POLYAGENT_SANDBOX` |
-| `CURSOR_BRIDGE_SANDBOX_EXTRA` | `POLYAGENT_SANDBOX_EXTRA` |
-| `CURSOR_BRIDGE_LOG` | `POLYAGENT_LOG` |
-| `CURSOR_BRIDGE_HOOK_MODE` | `POLYAGENT_HOOK_MODE` |
-| `CURSOR_BRIDGE_HOOK_MIN_LINES` | `POLYAGENT_HOOK_MIN_LINES` |
+| Doc | Contents |
+|-----|----------|
+| [docs/tools.md](docs/tools.md) | Every tool, the three levels, quota behavior |
+| [docs/configuration.md](docs/configuration.md) | All environment variables |
+| [docs/steering.md](docs/steering.md) | Hooks, `CLAUDE.md` block and skill |
+| [docs/evidence.md](docs/evidence.md) | What has and has not been measured |
+| [INSTALL.md](INSTALL.md) | Agent-friendly install guide per host |
+| [research/](research/README.md) | One dated study per design decision |
+| [CLAUDE.md](CLAUDE.md) | Architecture and invariants (read before changing code) |
 
-"cursor" survives only where it names the actual Cursor engine (`POLYAGENT_CURSOR_BIN`,
-`POLYAGENT_ENABLE_CURSOR`).
+## Safety
 
-> **Security:** `delegate` and `run_filtered` have full access and auto-approve
-> their work. `explore`, `read_slice`, and `web_lookup` use Codex's read-only sandbox. Named agents
-> are resolved on the host, reject path traversal, and are injected without mounting agent
-> directories.
+`delegate` and `run_filtered` give the worker full access and auto-approve its actions inside
+`cwd`. Every engine runs in a mandatory bubblewrap sandbox with an empty `$HOME`, so your global
+config, MCP servers, hooks and skills never load. `delegate` also accepts a `deny` list
+(for example `git push`, `rm`) as a guardrail against accidents; it is not a security boundary.
+`explore`, `read_slice` and `web_lookup` are read-only.
 
-## Make the agent actually use it
+## Roadmap
 
-**Managed `CLAUDE.md` block.** Run `npm run install-claude-md -- --dry-run` to preview, then
-`npm run install-claude-md` (or `npx -p polyagent-mcp polyagent-mcp-install-claude-md`). It appends a
-routing block to `~/.claude/CLAUDE.md` between `<!-- polyagent-mcp:begin … -->` and
-`<!-- polyagent-mcp:end -->`, replaces an old hand-written `<polyagent_preference>` section, and saves
-`CLAUDE.md.polyagent.bak`. From then on the server refreshes the block on each start (only when the
-markers exist). Set `POLYAGENT_CLAUDE_MD=off` to stop that, or delete both markers.
+- **macOS and optional sandbox.** The sandbox is Linux-only (`bwrap`) and mandatory today.
+  Supporting macOS is a goal; see the open issues.
+- Publish to npm so `npx` works without cloning.
+- More worker engines and keeping the Pareto line current as models ship.
 
-**Managed `polyagent` skill.** Run `npm run install-skill -- --dry-run` to preview, then
-`npm run install-skill` (or `npx -p polyagent-mcp polyagent-mcp-install-skill`). It writes
-`polyagent/SKILL.md` into `~/.claude/skills` (Claude Code) and `~/.agents/skills` (Codex, OpenCode and
-other AGENTS-aware clients); override the roots with `POLYAGENT_SKILL_ROOTS` (`:`-separated). The
-`CLAUDE.md` block stays short because it loads every session; the skill loads only when the task matches
-and carries the how-to: tool choice, a stand-alone worker prompt, levels, `deny`, handing over agents and
-skills, `follow_up` and `rate`. Like ai-memory's skills, the file carries an ownership marker
-(`<!-- polyagent-mcp-managed: routing-skill … -->`): a same-name skill without it is never overwritten,
-and the server refreshes marked copies on each start. Set `POLYAGENT_SKILL=off` to stop that.
+## Contributing
 
-Registering the tools is not enough. Two structural forces push the agent back to
-native tools: (1) the host rule "prefer the dedicated file/search tools", and (2) MCP
-tools used to be **deferred** — the agent had to run a tool-search to load their schemas,
-so always-loaded `Read`/`Grep`/`WebSearch` won by default. The server now publishes
-**startup `instructions`** (routing boundary) and marks `delegate`, `explore`, `run_filtered`, `web_lookup`,
-`fan_out`, and `rate` with
-`_meta: { "anthropic/alwaysLoad": true }` (Claude Code ≥2.1.121) so their schemas load
-eagerly. `fan_out` joined them after it was deferred and never got
-called — the same adoption bug. The remaining secondary tools (`read_slice`, `generate_image`, `follow_up`,
-`bridge_stats`, `decide`) stay deferred. Four fixes, strongest first:
-
-**1. Call-time hook (recommended).** A `PreToolUse` hook that steers the agent toward
-the bridge at the moment it reaches for a native tool — text in a config file loses under
-pressure, a call-time reminder does not. This repo ships one at
-[`hooks/prefer-polyagent.mjs`](hooks/prefer-polyagent.mjs): it runs on `node`
-(already required) and only fires where it pays. Default mode is **`nudge`**
-(`POLYAGENT_HOOK_MODE=nudge`): emite `additionalContext` sem bloquear. Com `POLYAGENT_HOOK_MODE=redirect`,
-WebSearch/WebFetch, Read grande e Bash de busca de código recebem `permissionDecision: "deny"` uma vez
-e a ferramenta do bridge é indicada. Configure no `settings.json` do host Claude Code:
-
-> **Breaking change (US-007):** The hook file was renamed from
-> `hooks/prefer-cursor-bridge.mjs` to `hooks/prefer-polyagent.mjs`. Update any host
-> `settings.json` entry that points to the old path.
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Read|Grep|Glob|WebSearch|WebFetch|Bash|Edit|Write|MultiEdit|Agent|Task",
-        "hooks": [
-          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }
-        ]
-      }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` runs on every submitted prompt. That event has no matcher field; the hook's
-`promptRouteContext()` detects routing cues and stays silent when none match. This path is
-intentionally not deduplicated: each prompt is judged on its own.
-
-For `PreToolUse`, each nudge/redirect fires **at most once per session** (deduplicated in a tmp
-file keyed by `session_id`), because a repeated fire is worse than none: the agent learns
-to ignore it *and* every fire costs tokens. Dedup keys are saved **before** emitting so
-redirect is one-shot and fail-open (a second identical call is allowed through).
-
-> - **`Read`** whole-file (no offset/limit) over `POLYAGENT_HOOK_MIN_LINES` lines →
->   **redirect** (default) or nudge toward `read_slice` (once per file). Partial reads are left alone.
-> - **`WebSearch`/`WebFetch`** → **redirect** (default) or nudge toward `web_lookup` (once).
-> - **`Grep`/`Glob`** → emits the one-time **preload** reminder to run the `ToolSearch` for any
->   still-deferred bridge tools (nudge only — never redirected). The dedup collapses them to a
->   single fire.
-> - **`Bash`** com busca de código no primeiro segmento da pipeline (`grep`/`rg`/`egrep`/`fgrep`/
->   `ag`/`ack`/`find` ou `git grep`, após `rtk` ou atribuições de ambiente) → redirect uma vez para
->   `explore`/`read_slice`; em `nudge`, apenas `additionalContext`. Cada `&&` inicia nova pipeline.
->   `npm test | grep FAIL` e `ps aux | grep x` não disparam. Comandos que também gravam artefatos
->   não são redirecionados. O nudge existente de `git commit`/`push`, `git worktree add`,
->   `gh pr create`, `gh issue create`, `bkt pr create` tem prioridade.
-> - **`Agent`/`Task`** → nudge uma vez por sessão para `delegate` com
->   `agent: "<subagent name>"`. A ferramenta nativa fica para etapas que exigem MCP servers ou
->   browser. Helpers `claude-code-guide` e
->   `statusline-setup` são isentos.
-> - **`Skill`** não é tratada pelo hook desde 2026-10-25: o deny fazia o host empurrar até skills
->   básicas para um worker, embora usar a tool nativa seja válido. `delegate` ainda aceita
->   `agent: { skill: "plugin:name" }` quando o chamador escolhe esse handoff; o hook não o sugere.
-> - **`Edit`/`Write`/`MultiEdit`** → once per session, reminds that a *self-contained* task
->   (feature, bugfix, mechanical multi-file change, build fix) can go **whole** to `delegate(prompt, level)`
->   — the selected worker edits with full access — instead of the orchestrator implementing
->   it on expensive tokens. It never blocks the edit (nudge only); the once-per-session dedup means
->   the orchestrator still edits inline freely (the nudge repositions execution, it doesn't police every edit).
-> - The **first** qualifying fire of the session (whichever tool triggers it) also carries
->   that preload reminder, so secondary schemas get loaded even in a Read-only or web-only session.
-> - Redirect deny reasons end with a fail-open suffix: if the bridge tool isn't loaded yet, run
->   ToolSearch first; if the native tool is genuinely needed, call it again and it will be allowed
->   (critical under headless `-p` so the agent never hard-stalls).
-
-Set `POLYAGENT_HOOK_MODE=redirect` for the old blocking behavior, or `off` to disable.
-To reset the dedup and see the fires again, start a new session (or delete
-`polyagent-nudged-<session_id>.json` from your OS temp dir — `os.tmpdir()`,
-e.g. `/tmp` on Linux, not necessarily `$TMPDIR`).
-
-### Preloading at session start (`SessionStart`)
-
-O `PreToolUse` cobre buscas via `Bash`, mas o hook de `SessionStart` injeta o preload
-**antes da primeira decisão de ferramenta**, independentemente de como o agente busca.
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs", "timeout": 5 }] }
-    ]
-  }
-}
-```
-
-On `SessionStart` the hook emits the `ToolSearch` preload as `additionalContext` and pre-marks
-`preload` as seen in the session's dedup file, so the PreToolUse piggyback never repeats it.
-
-### Reaching subagents too (`SubagentStart`)
-
-The nudges above only steer the **main loop**. Spawned subagents never see them,
-so wire the same hook for `SubagentStart` as well:
-
-```json
-{
-  "hooks": {
-    "SubagentStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "node /abs/path/to/polyagent-mcp/hooks/prefer-polyagent.mjs" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-On `SubagentStart` the hook injects a compact polyagent preference into every
-spawned subagent via `additionalContext` (`subagentStartContext(agent_type)`).
-When `agent_type` is `Explore` it appends an extra line: that Explore run was spawned on the
-orchestrator's expensive model (Explore inherits the session model, capped at Opus), so it should
-route **all** reading through `explore`/`read_slice` (which run on GPT-6 Luna) and
-keep the expensive shell to orchestration only.
-
-> **Coexisting with context-mode.** The bridge and context-mode use separate channels
-> (context-mode may still do its own thing; this hook only emits `additionalContext`),
-> so they coexist cleanly — no `updatedInput` race, no delay, no import of
-> context-mode's routing.
-
-**2. Load deferred tools when needed.** `delegate`, `explore`, `run_filtered`, `web_lookup`, `fan_out`, and
-`rate` are `alwaysLoad` on Claude Code ≥2.1.121. Older hosts may still defer their schemas. The
-secondary tools (`read_slice`, `generate_image`, `follow_up`, `bridge_stats`, `decide`) remain deferred; load only
-the ones a task needs. Add to your `CLAUDE.md`/`AGENTS.md`:
-
-```
-If a required core schema is missing on an older host, run tool-search for
-`delegate, explore, read_slice, run_filtered, web_lookup, fan_out, rate`.
-For secondary tools, load `generate_image`, `follow_up`, `bridge_stats`, or `decide` only when needed.
-```
-
-**3. Reconcile the conflict in `CLAUDE.md`.** State the precedence explicitly:
-
-```
-The host rule "prefer dedicated file/search tools" applies to the EDIT path (Edit needs the
-file content → native Read). For PURE reading/locating/web (no edit), polyagent takes
-precedence over native Read/Grep/Glob/WebSearch/WebFetch. Read a large file whole with native
-Read ONLY when you are about to edit it.
-```
-
-**4. Delegate execution, not just exploration.** The bridge is not only for reading — `delegate`
-runs implementation work with full read/edit/shell access, so the orchestrator shouldn't burn its
-own tokens on self-contained tasks. State this in `CLAUDE.md` so the agent routes *doing*, not just
-*finding*, to the cheap worker:
-
-```
-You are the ORCHESTRATOR. delegate(prompt, level) is the DEFAULT for BOTH execution AND judgment.
-`level` is required: low=GPT-6 Luna max (codex), middle=GPT-6.2 Sol medium (codex),
-high=GPT-6.2 Astra xhigh (codex). Numeric levels are rejected. Low/middle cover most work;
-high is expensive and runs on codex; its reserve shares the Claude Code host subscription, so reserve it for tasks cheaper
-levels cannot do. Codex holds all three primaries: exhausted Codex quota sends every level to its Claude reserve.
-Exhausted Claude quota affects those reserves and the Claude Code host together. The worker has full read/edit/shell access
-in cwd when you delegate. The constant win is context economy: the worker's raw output never enters
-your context. Delegate it, then review the result; edit inline only for a quick one-off you're
-already positioned for. Use delegate(prompt, level) for self-contained work. Pass agent:"name" or agent:{prompt:"..."} when the worker
-needs a specialized persona.
-```
-
-AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated.
-See the [GPT-6.2 decision and evidence](research/2026-11-17-gpt-6-2-sol-astra.md).
-
-## Develop
-
-```bash
-npm test       # vitest — unit tests for model resolution / arg building
-npm run dev    # run from source via tsx
-```
+Contributions are welcome: bug reports, new engines, benchmarks, docs. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

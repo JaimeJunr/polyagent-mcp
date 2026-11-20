@@ -94,7 +94,7 @@ describe("env var rename CURSOR_BRIDGE_* → POLYAGENT_* (US-002)", () => {
   });
 
   it("README documenta a migração como breaking change, old → new, para as 17 vars", () => {
-    const readme = read("README.md");
+    const readme = read("docs", "configuration.md");
     expect(readme).toMatch(/breaking change/i);
     for (const suffix of RENAMED_SUFFIXES) {
       expect(readme, suffix).toMatch(new RegExp(`CURSOR_BRIDGE_${suffix}\\b[\\s\\S]{0,80}POLYAGENT_${suffix}\\b`));
