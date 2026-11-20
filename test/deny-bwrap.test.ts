@@ -62,7 +62,7 @@ describe.skipIf(!HAS_BWRAP)("deny em bwrap real", () => {
       if (c.needsNode && run("node --version").code !== 0) ctx.skip();
       const r = run(c.script);
       expect(r.err, c.script).not.toMatch(/bwrap:/);
-      expect([c.script, r.code]).toEqual([c.script, c.exit]);
+      expect([c.script, r.code, r.code === c.exit ? "" : r.err]).toEqual([c.script, c.exit, ""]);
       if (c.exit === 126) expect(r.err).toContain("is blocked in this sandbox (deny list)");
     });
   }
