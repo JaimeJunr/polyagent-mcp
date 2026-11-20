@@ -233,3 +233,42 @@ export function appendDelegateRiskHint(text: string, level: Level): string {
   if (level !== "high") return text;
   return `${text}\nHigh-level verdicts are expensive single opinions — before acting on a risky one, cross-check with fan_out(mode: "consensus").`;
 }
+
+const TINY_MAX_CHARS = 400;
+// Plurais e palavras de lote: "todos os arquivos", "every file", refactor, migração, vários passos.
+const TINY_BATCH_PATTERN = /\b(all|every|each|across|several|multiple|batch|refactor\w*|migrat\w+|todos?|todas?|cada|v[áa]rios|v[áa]rias|lote|refatore?\w*|migre|migra[çc][ãa]o)\b|\b(files|arquivos)\b/i;
+// Trabalho braçal que vale delegar mesmo curto (commit, PR, build): o piloto de 2026-11-15 só mediu correção de código.
+const TINY_GRUNT_PATTERN = /\b(pull request|push|npm (run )?build|gradlew|cargo build)\b|\bPRs?\b|\b(build)\b/i;
+const NEGATION_BEFORE = /(n[ãa]o|not|never|nunca|sem|don'?t|do not)\s+$/i;
+const PATH_TOKEN = /[\w@.-]*\/[\w@./-]+|\b[\w-]+\.(?:mjs|cjs|js|jsx|ts|tsx|py|rb|rs|go|java|kt|groovy|json|ya?ml|md|toml|sh)\b/gi;
+
+/** Palavra de ação que o prompt manda fazer, ignorando "não commite"/"do not commit". */
+function asksTo(prompt: string, word: RegExp): boolean {
+  for (const match of prompt.matchAll(new RegExp(word.source, "gi"))) {
+    if (!NEGATION_BEFORE.test(prompt.slice(Math.max(0, match.index! - 12), match.index!))) return true;
+  }
+  return false;
+}
+
+/**
+ * Guarda de tamanho do delegate: prompt curto, com no máximo um caminho de arquivo e sem sinal de
+ * lote nem de trabalho braçal. Medido em research/2026-11-15-limiar-tamanho.md: delegar uma correção
+ * minúscula custou +67% no host (implement -7%, medium -27%, batch -40%).
+ * Heurística de superfície, só avisa: falso positivo custa uma linha, falso negativo é o status quo.
+ * Limite conhecido: um prompt curto que esconde trabalho grande ("refaça o módulo de auth") passa.
+ */
+export function isTinyTaskRequest(prompt: string): boolean {
+  const text = prompt.trim();
+  if (text === "" || text.length > TINY_MAX_CHARS) return false;
+  if (TINY_BATCH_PATTERN.test(text) || TINY_GRUNT_PATTERN.test(text) || asksTo(text, /\bcommit\w*/)) return false;
+  return (text.match(PATH_TOKEN) ?? []).length <= 1;
+}
+
+const TINY_TASK_HINT =
+  "Note: this was a very small task; delegating one like it usually costs more than doing it yourself "
+  + "(measured +67% host cost, research/2026-11-15-limiar-tamanho.md). Next time, do a one-line fix directly.";
+
+/** Anexa o aviso de tarefa minúscula ao resultado do delegate. Só avisa: a chamada já rodou. */
+export function appendTinyTaskHint(text: string, prompt: string, enabled: boolean): string {
+  return enabled && isTinyTaskRequest(prompt) ? `${text}\n${TINY_TASK_HINT}` : text;
+}
