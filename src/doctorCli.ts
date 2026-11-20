@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { DEFAULT_TIMEOUT_MS, hasEngine, type Engine } from "./cli.js";
-import { renderDoctor, savingsVerdict, type DoctorReport, type EngineStatus, type FixedCost } from "./doctor.js";
+import { DEFAULT_TIMEOUT_MS, engineHealthy, hasEngine, type Engine } from "./cli.js";
+import { hookDisabled, renderDoctor, savingsVerdict, type DoctorReport, type EngineStatus, type FixedCost } from "./doctor.js";
 import { engineHealthReport, QUOTA_WINDOW_MS, readUsage } from "./usage.js";
 
 // Diagnóstico explícito: lê engines e saúde, sobe uma cópia do servidor só para medir o custo fixo.
@@ -18,7 +18,7 @@ function engineStatuses(): EngineStatus[] {
   return ENGINES.map((engine) => ({
     engine,
     installed: hasEngine(engine),
-    healthy: (health[engine]?.cause ?? "ok") === "ok",
+    healthy: engineHealthy(engine, health),
   }));
 }
 
@@ -41,7 +41,13 @@ async function measureFixedCost(): Promise<FixedCost> {
     const alwaysLoadChars = tools
       .filter((t) => (t._meta as Record<string, unknown> | undefined)?.["anthropic/alwaysLoad"] === true)
       .reduce((sum, t) => sum + JSON.stringify(t).length, 0);
-    return { alwaysLoadChars, instructionsChars: (client.getInstructions() ?? "").length, hookChars: await hookChars() };
+    const off = hookDisabled(process.env.POLYAGENT_HOOK_MODE);
+    return {
+      alwaysLoadChars,
+      instructionsChars: (client.getInstructions() ?? "").length,
+      hookChars: off ? 0 : await hookChars(),
+      hookDisabled: off,
+    };
   } finally {
     await client.close();
   }

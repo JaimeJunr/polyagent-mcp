@@ -22,6 +22,12 @@ export interface FixedCost {
   instructionsChars: number;
   /** null quando o hook não vem com a instalação (o pacote npm publica só dist/). */
   hookChars: number | null;
+  /** POLYAGENT_HOOK_MODE=off: o hook não emite nada, então não entra no custo. */
+  hookDisabled?: boolean;
+}
+
+export function hookDisabled(mode: string | undefined): boolean {
+  return (mode ?? "").trim().toLowerCase() === "off";
 }
 
 export interface DoctorReport {
@@ -60,30 +66,43 @@ export function savingsVerdict(installed: Engine[], unhealthy: Engine[]): Saving
       reasons: ["O codex é o titular dos três níveis e é uma assinatura diferente da do host."],
     };
   }
-  const reasons: string[] = [];
-  if (installed.includes("codex")) reasons.push("O codex está instalado mas sem saúde (cota ou falhas recentes): os níveis caem na reserva.");
-  else reasons.push("Sem o codex, os três níveis dependem da reserva.");
-  if (usable.includes("claude")) reasons.push("A reserva é o claude, a mesma assinatura do host: o worker gasta a cota que você queria poupar.");
   const extra = usable.filter((e) => e !== "claude" && e !== "cursor");
-  if (extra.length > 0) {
-    reasons.push(`${extra.join(", ")} só entra com \`engine\` explícito no delegate; não faz parte dos níveis.`);
+  const explicit = extra.length > 0
+    ? [`${extra.join(", ")} só entra com \`engine\` explícito no delegate; não faz parte dos níveis.`]
+    : [];
+  if (!usable.includes("claude")) {
+    // Nem titular nem reserva: o roteador por nível lança erro, não cai na assinatura do host.
+    return {
+      verdict: "no-engine",
+      headline: "Nenhum nível consegue delegar neste setup: não há codex nem claude saudável para os níveis.",
+      reasons: [
+        installed.includes("codex") ? "O codex está instalado mas sem saúde (cota ou falhas recentes)." : "Instale o codex (recomendado) ou o claude.",
+        ...explicit,
+      ],
+    };
   }
   return {
     verdict: "no-saving",
     headline: "Com este setup o polyagent não poupa cota: o worker usa a mesma assinatura do host.",
-    reasons,
+    reasons: [
+      installed.includes("codex")
+        ? "O codex está instalado mas sem saúde (cota ou falhas recentes): os níveis caem na reserva."
+        : "Sem o codex, os três níveis dependem da reserva.",
+      "A reserva é o claude, a mesma assinatura do host: o worker gasta a cota que você queria poupar.",
+      ...explicit,
+    ],
   };
 }
 
 function fixedCostLines(fixed: FixedCost | null, error?: string): string[] {
   if (!fixed) return [`Custo fixo: não medido (${error ?? "servidor não subiu"}).`];
-  const hook = fixed.hookChars ?? 0;
+  const hook = fixed.hookDisabled ? 0 : fixed.hookChars ?? 0;
   const total = fixed.alwaysLoadChars + fixed.instructionsChars + hook;
   return [
     `Custo fixo por sessão (estimativa, 4 caracteres por token): ${total} caracteres, cerca de ${estimateTokens(total)} tokens.`,
     `  schemas das tools sempre carregadas: ${fixed.alwaysLoadChars}`,
     `  instruções do servidor: ${fixed.instructionsChars}`,
-    `  texto do hook no início da sessão: ${fixed.hookChars ?? "não instalado"}`,
+    `  texto do hook no início da sessão: ${fixed.hookDisabled ? "desligado (POLYAGENT_HOOK_MODE=off)" : fixed.hookChars ?? "não instalado"}`,
   ];
 }
 
