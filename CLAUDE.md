@@ -568,6 +568,7 @@ points, all in `cli.ts`:
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
 - **`alwaysLoad` follows the install profile** (`src/profile.ts`, env `POLYAGENT_PROFILE`, default `full`): every `_meta` is `alwaysLoadMeta(PROFILE, "<tool>")`; `minimal` keeps only `delegate`, `explore`, `run_filtered` (-4,519 chars, about 1.1k tokens, `research/2026-11-20-custo-fixo.md`). Do not hardcode `_meta: { "anthropic/alwaysLoad": true }` again.
+- **`delegate` warns on tiny tasks** (`isTinyTaskRequest`/`appendTinyTaskHint` in `prompts.ts`, env `POLYAGENT_TINY_GUARD`, default on): a deterministic surface heuristic (≤ 400 chars, ≤ 1 file path, no batch words, no commit/PR/build) that appends one line to the result. It warns after the run and never blocks; the limit (short prompt hiding big work passes) is in the code comment. Do not turn it into a block without new evidence.
 - **Core tools are `alwaysLoad`.** `delegate`, `explore`, `run_filtered`, `web_lookup`,
   `fan_out` and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas

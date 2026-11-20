@@ -19,6 +19,7 @@ import {
   isFullFileRequest, readSlicePrompt, runFilteredPrompt, explorePrompt, webLookupPrompt,
   generateImagePrompt, generateImageGrokPrompt, fanOutArbiterPrompt,
   appendDelegateRiskHint,
+  appendTinyTaskHint,
   type FanOutWorkerOutput,
 } from "./prompts.js";
 import {
@@ -51,6 +52,8 @@ const server = new McpServer(
 
 const PROCESS_ENV = process.env;
 const PROFILE = resolveProfile(PROCESS_ENV.POLYAGENT_PROFILE);
+// POLYAGENT_TINY_GUARD=off/0/false/no desliga o aviso de tarefa minúscula no delegate.
+const TINY_GUARD_ENABLED = !/^(0|false|off|no)$/i.test(PROCESS_ENV.POLYAGENT_TINY_GUARD?.trim() ?? "");
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // Só o acerto fica em cache: um chaveiro trancado agora pode estar destravado na próxima decisão.
@@ -293,7 +296,7 @@ server.registerTool(
       opts.engine!,
       async () => {
         const res = await runCursor(opts);
-        const text = appendDelegateRiskHint(res.text, level);
+        const text = appendTinyTaskHint(appendDelegateRiskHint(res.text, level), prompt, TINY_GUARD_ENABLED);
         return { ...res, text: note ? `${text}\n${note}` : text };
       },
       { requestedLevel: level, matchedRequest: isDefaultTierEngine(level, opts.engine!) },

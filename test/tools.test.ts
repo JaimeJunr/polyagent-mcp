@@ -117,6 +117,12 @@ describe("tool surface (US-003)", () => {
     expect(delegate).toContain("withDelegateShadow(verified, prompt, level");
   });
 
+  it("delegate anexa o aviso de tarefa minúscula controlado por POLYAGENT_TINY_GUARD", () => {
+    const delegate = registeredToolBlock("delegate");
+    expect(delegate).toContain("appendTinyTaskHint(");
+    expect(delegate).toContain("TINY_GUARD_ENABLED");
+  });
+
   it("alwaysLoad inclui delegate, explore, run_filtered, web_lookup, fan_out e rate", () => {
     // fast_delegate removido e read_slice rebaixada (deferred) em 2026-11-16.
     const alwaysLoad = [
