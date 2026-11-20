@@ -254,8 +254,9 @@ skips at 0.85), shadow exact 24/25 vs 19/25 for `typesafe/jev-1.13`. Trade-offs:
 32K) and the OpenRouter `:free` limit (20 req/min, 50/day; 1000/day with ≥ US$10 credit) — a
 429 is just a Jev error, so the existing fallbacks apply. `POLYAGENT_JEV_MODEL=typesafe/jev-1.13`
 brings back the pay-per-token Jev. `decide` is secondary/deferred and has no `anthropic/alwaysLoad` metadata.
-Three internal uses are **on by default** since 2026-10-24 (the owner is the only MCP user and an
-opt-in flag gets forgotten); `0`/`false`/`off`/`no` disables each. Without an OpenRouter key every
+Three internal uses were **on by default** since 2026-10-24 (the owner was the only MCP user); since 2026-11-20 the
+default is on **only when a key is resolvable at boot** (env or opencode auth, never the keyring: that spawns `secret-tool`),
+and an explicit `1`/`on` still forces it (`resolveJevFlag`); a fresh install makes no external call; `0`/`false`/`off`/`no` disables each. Without an OpenRouter key every
 call fails fast and takes the existing fallback. `POLYAGENT_JEV_FANOUT` asks Jev whether at least two
 successful `fan_out` consensus workers substantially agree; probability at or above
 `POLYAGENT_JEV_FANOUT_THRESHOLD` (default 0.85) returns the first successful output and worker
@@ -566,6 +567,7 @@ points, all in `cli.ts`:
   `execvp`) e o fallback de engine continua decidindo pelo
   `isCodexEnvError` sobre a message/stderr. Não colapse os canais de volta: a classificação de causa
   (cota, rate limit, auth) depende do stdout preservado.
+- **`alwaysLoad` follows the install profile** (`src/profile.ts`, env `POLYAGENT_PROFILE`, default `full`): every `_meta` is `alwaysLoadMeta(PROFILE, "<tool>")`; `minimal` keeps only `delegate`, `explore`, `run_filtered` (-4,519 chars, about 1.1k tokens, `research/2026-11-20-custo-fixo.md`). Do not hardcode `_meta: { "anthropic/alwaysLoad": true }` again.
 - **Core tools are `alwaysLoad`.** `delegate`, `explore`, `run_filtered`, `web_lookup`,
   `fan_out` and `rate` register with
   `_meta: { "anthropic/alwaysLoad": true }` so Claude Code (≥2.1.121) eagerly loads their schemas

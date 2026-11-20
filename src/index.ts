@@ -38,6 +38,7 @@ import {
 import {
   CLAUDE_MD_BOOT_SYNC, CLAUDE_MD_PATH, nodeClaudeMdFs, PACKAGE_VERSION, renderPolyagentBlock, syncClaudeMd,
 } from "./claudeMd.js";
+import { alwaysLoadMeta, resolveProfile } from "./profile.js";
 import { nodeSkillFs, renderPolyagentSkill, SKILL_BOOT_SYNC, SKILL_ROOTS, syncSkill } from "./skill.js";
 
 const server = new McpServer(
@@ -49,6 +50,7 @@ const server = new McpServer(
 );
 
 const PROCESS_ENV = process.env;
+const PROFILE = resolveProfile(PROCESS_ENV.POLYAGENT_PROFILE);
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // Só o acerto fica em cache: um chaveiro trancado agora pode estar destravado na próxima decisão.
@@ -235,7 +237,7 @@ async function runFanOutWorker(
 server.registerTool(
   "delegate",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "delegate"),
     description:
       "Delegate a task to a headless coding-agent CLI — the cheap/fast worker with full tool access (read, edit, shell) in cwd. As the orchestrator, offload grunt-work here instead of spending your own expensive tokens: commits, opening/updating PRs, writing tickets/comments, small mechanical or 2-line edits, running a build/test and fixing it, and routine implementation. The required `level` picks one of three named model+effort pairs on the codex/claude subscriptions, with AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated: low=GPT-6 Luna max (codex, cheapest), middle=GPT-6.2 Sol medium (codex), high=GPT-6.2 Astra xhigh (codex). Pick the lowest level that can do the job. An explicit `engine` overrides the tier, including `opencode`, `kimi` or `muse` for explicit provider/subscription calls; when it differs from the level's primary engine, pass the model expected by that engine because the tier model and effort are not inherited. COST WARNING: high is EXPENSIVE (~US$2.5/task estimated) and runs on codex; its reserve shares the Claude Code host subscription. Use high only when a cheaper level already failed or for frontier reasoning such as hard debugging, cross-file impact, or a costly review verdict. Low/middle cover most work, including implementation. Give a complete, self-contained instruction — the worker does not see your context. Optional `deny` blocks commands (e.g. 'git push', 'rm', 'make db-up', 'npx prisma migrate') inside the sandbox with exit 126 — a guardrail against accidents, not a security boundary.",
     inputSchema: {
@@ -308,7 +310,7 @@ server.registerTool(
 server.registerTool(
   "explore",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "explore"),
     description:
       `Read-only codebase exploration, the cheap Explore. Prefer this over spawning the Explore subagent for locating/mapping code: Codex uses ${EXPLORE_MODEL} with explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT), keeps file dumps out of your context, and returns only the conclusion plus concrete file:line references. Three modes: (a) \`question\` alone → broad fan-out search across the repo (follows naming conventions, checks multiple locations) returning file:line refs; (b) \`question\`+\`files\` → scoped answer about those files; (c) neither → a general project map. It LOCATES, it does not review/audit — use a Task subagent for judgment.`,
     inputSchema: {
@@ -395,7 +397,7 @@ server.registerTool(
 server.registerTool(
   "run_filtered",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "run_filtered"),
     description:
       "Run a shell command via the coding-agent worker and get back ONLY the relevant lines/summary — semantic filtering of huge output (build/test/log). Complements mechanical filters: use when the noise needs judgment to strip. The default cascade is codex GPT-6 Luna medium, then Claude Haiku 5.5 medium (both subscriptions); OpenRouter mercury-2 is only reached when both are missing, quota-exhausted or unhealthy, so the pay-per-token cost is a late fallback. The full output stays on the worker's side.",
     inputSchema: {
@@ -434,7 +436,7 @@ server.registerTool(
 server.registerTool(
   "web_lookup",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "web_lookup"),
     description:
       `Delegate a web/documentation lookup to Codex/${EXPLORE_MODEL} with real web search and explicit ${EXPLORE_EFFORT} effort by default (override with POLYAGENT_EXPLORE_EFFORT; Claude Haiku 5.5 medium when codex is out): library docs, API references, error messages, current versions. Cheap way to fetch info newer than your training data.`,
     inputSchema: {
@@ -468,7 +470,7 @@ server.registerTool(
   "fan_out",
   {
     // Schemas deferidos perdem adoção, o mesmo problema que levou as core a alwaysLoad.
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "fan_out"),
     description:
       "Use for independent second opinions, comparing 2+ approaches/designs/options/alternatives, cross-checking a risky verdict before acting (mode:'consensus'), or broad research that splits into independent parts. Do not use for simple lookups, single-file edits, or tightly coupled sequential work: it runs several workers and costs several times a single delegate. Levels: low=GPT-6 Luna max (codex), middle=GPT-6.2 Sol medium (codex), high=GPT-6.2 Astra xhigh (codex); AA index v5: Luna max 28 / US$0.15, Sol 6.2 medium 53 / cost not published, Astra xhigh 62 / ~US$2.5 estimated. Start with low/middle, which cover most work; add high only after a cheaper consensus disagreed or for a costly verdict. High is expensive and runs on codex; its reserve shares the Claude Code host subscription. It returns a compact digest; mode:'race' returns the first success, while mode:'consensus' compares all outputs and returns agreement/disagreement plus worker session_ids for follow_up.",
     inputSchema: {
@@ -724,7 +726,7 @@ server.registerTool(
 server.registerTool(
   "rate",
   {
-    _meta: { "anthropic/alwaysLoad": true },
+    _meta: alwaysLoadMeta(PROFILE, "rate"),
     description:
       "Rate after you reviewed the result; ratings stay local in POLYAGENT_LOG and feed bridge_stats. Anchored scale: 5 = correct and complete, no fixes needed; 4 = correct, small gaps; 3 = usable after fixes; 2 = mostly wrong or incomplete; 1 = wrong, harmful, or hollow evidence (claimed checks that proved nothing).",
     inputSchema: {
