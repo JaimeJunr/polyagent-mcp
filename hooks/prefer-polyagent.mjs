@@ -215,7 +215,14 @@ export function subagentNeedsHost(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   const line = m && /^tools:[ \t]*(.*)$/m.exec(m[1]);
   if (!line) return true; // sem `tools:` herda tudo
-  return line[1].split(/[\s,\[\]'"]+/).filter(Boolean).some(
+  let value = line[1];
+  if (!value.trim()) {
+    // lista YAML em bloco: `tools:` seguido de linhas `  - item`
+    const block = /^(?:\r?\n[ \t]*-[ \t]+\S.*)+/.exec(m[1].slice(line.index + line[0].length));
+    if (!block) return true; // nada parseável: mantém a tool nativa
+    value = block[0].replace(/^\s*-\s+/gm, ",");
+  }
+  return value.split(/[\s,\[\]'"]+/).filter(Boolean).some(
     (t) => t === "Agent" || t === "Task" ||
       (t.startsWith("mcp__") && !t.startsWith("mcp__plugin_context-mode_")), // inclui as tools de browser (mcp__)
   );

@@ -332,6 +332,25 @@ describe("decide — handoff vira redirect quando o worker assume o trabalho", (
     },
   );
 
+  it.each([
+    ["Read", "mcp__playwright__browser_click", "Agent"],
+    ["Read", "Task"],
+  ])("tools em lista YAML em bloco %j com MCP/Agent → nudge (issue 71)", (...tools) => {
+    const block = `---\nname: x\ntools:\n${tools.map((t) => `  - ${t}`).join("\n")}\n---\nBody`;
+    const files = { [PLUGIN_AGENT]: block };
+    expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(false);
+  });
+
+  it("tools em lista YAML em bloco só com tools de worker → redirect", () => {
+    const files = { [PLUGIN_AGENT]: `---\nname: x\ntools:\n  - Read\n  - Grep\n---\nBody` };
+    expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(true);
+  });
+
+  it("tools: vazio sem itens → herda tudo → nudge", () => {
+    const files = { [PLUGIN_AGENT]: `---\nname: x\ntools:\n---\nBody` };
+    expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(false);
+  });
+
   it("agent sem linha tools: herda tudo → nudge", () => {
     const files = { [PLUGIN_AGENT]: agentFile() };
     expect(call("Agent", { subagent_type: "pit:issue-investigator" }, files)?.redirect).toBe(false);
