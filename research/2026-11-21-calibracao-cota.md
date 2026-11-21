@@ -62,3 +62,28 @@ rollouts do Codex das três máquinas.
 - Para no primeiro erro de infraestrutura (MCP sem conectar, cota, timeout) e investiga.
 - Para quando `k` tiver erro relativo abaixo de 10% em duas janelas independentes, ou quando o orçamento aprovado
   acabar; nesse caso documenta o erro obtido.
+
+### Emenda antes da fase B (2026-11-21, 03:40, antes de gastar cota)
+
+Dois fatos achados na fase A mudam o desenho:
+
+- **São duas contas.** O `claude -p` deste PC e da note2 usa a conta Team (`rateLimitTier: default_claude_max_5x`
+  no `.credentials.json`); o app desktop usa outra conta, plano Max. No mesmo minuto (03:31), a sonda `claude -p`
+  leu 12% na janela de 5 h e 12% na semanal, e o `get_usage` do app leu 64% e 39%. Os transcripts separam as duas
+  pelo campo `entrypoint` (`claude-desktop` contra `sdk-cli`/`cli`). O bench (e o experimento da issue #110) gasta a
+  conta Team; o uso do dia a dia com host Opus gasta a conta do app. A conversão é medida para cada conta.
+- **A leitura do bench é automática:** cada trial traz um `rate_limit_event`, então a fase B não depende do
+  `get_usage`, que fica como controle da conta do app.
+
+Desenho da fase B, conta Team, numa única janela de 5 h:
+
+| Bloco | Trial | Modelo | Para quando |
+|---|---|---|---|
+| S-med | `MEDIUM_TASK` braço `lean` (mistura igual à do bench) | Sonnet 5.5 medium | +8 pontos na janela de 5 h |
+| S-out | texto longo sem ferramentas (quase só saída) | Sonnet 5.5 medium | +8 pontos |
+| O-med | `MEDIUM_TASK` braço `lean` | Opus 5.5 medium | +8 pontos |
+
+S-med contra S-out testa se a cota pesa os tipos de token como o preço; S-med contra O-med testa o peso do modelo.
+Runner: `bench/quota-calibration-run.mjs`, 4 trials em paralelo, teto de 85% na janela de 5 h. O gasto fica limitado
+em pontos pelo próprio critério de parada, não em dólar. Sem worker Codex: o lado Codex sai da fase A.
+A conta do app é calibrada passivamente: leituras do `get_usage` desta sessão contra os transcripts `claude-desktop`.
