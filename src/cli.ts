@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { scrubSecrets } from "./scrub.js";
-import { HEALTH_THRESHOLD, healthLocalTime, type EngineHealth, type HealthCause } from "./usage.js";
-import { accessSync, constants, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { HEALTH_THRESHOLD, USAGE_LOG, healthLocalTime, type EngineHealth, type HealthCause } from "./usage.js";
+import { accessSync, constants, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 
@@ -46,6 +46,7 @@ export class ProcessError extends Error {
     readonly stdout: string,
     readonly stderr: string,
     readonly exitCode: number | null,
+    readonly workerQuota?: WorkerQuota,
   ) {
     super(message);
     this.name = "ProcessError";
@@ -78,6 +79,12 @@ export const POLYAGENT_CURSOR_BIN = process.env.POLYAGENT_CURSOR_BIN ?? "cursor-
 export const GROK_BIN = process.env.POLYAGENT_GROK_BIN ?? "grok";
 /** Binário do Codex CLI. Override via POLYAGENT_CODEX_BIN. */
 export const CODEX_BIN = process.env.POLYAGENT_CODEX_BIN ?? "codex";
+const CODEX_HOME = process.env.CODEX_HOME;
+
+/** Home do Codex como o CLI enxerga: CODEX_HOME (relativo ao cwd do worker) ou ~/.codex. */
+function codexHomeDir(workspace: string, codexHome = CODEX_HOME): string {
+  return resolve(workspace, codexHome || join(process.env.HOME ?? homedir(), ".codex"));
+}
 /** Binário do Claude Code CLI. Override via POLYAGENT_CLAUDE_BIN. */
 export const CLAUDE_BIN = process.env.POLYAGENT_CLAUDE_BIN ?? "claude";
 /** Binário do OpenCode CLI. Override via POLYAGENT_OPENCODE_BIN. */
@@ -1114,6 +1121,7 @@ export class QuotaError extends Error {
     readonly kind: QuotaErrorKind,
     readonly engine: Engine,
     message: string,
+    readonly workerQuota?: WorkerQuota,
   ) {
     super(message);
     this.name = "QuotaError";
@@ -1219,6 +1227,7 @@ export function buildSandboxSpec(
   workspaceRo = false,
   roBinds: string[] = [],
   deny: DenyRule[] = [],
+  codexHome = CODEX_HOME,
 ): { spec: SandboxSpec; cleanup: () => void } {
   const home = process.env.HOME ?? homedir();
   const isoHome = mkdtempSync(join(tmpdir(), "cbx-home-"));
@@ -1311,7 +1320,7 @@ export function buildSandboxSpec(
       // ~/.codex bindado acima. Sem isso, o sandbox esconde a conta ativa (isoHome cobre $HOME) e o
       // codex falha ao inicializar (CODEX_HOME inexistente, ou "Read-only file system" — ver
       // isCodexEnvError). Só o engine codex precisa enxergá-lo, e só se o path existir de fato.
-      ...(engine === "codex" && process.env.CODEX_HOME ? [process.env.CODEX_HOME] : []),
+      ...(engine === "codex" && codexHome ? [codexHomeDir(workspace, codexHome)] : []),
     ].filter((p) => existsSync(p)),
     // só os que existem e não são o próprio workspace (esse já é o último bind)
     extraBinds: SANDBOX_EXTRA.filter((p) => p !== workspace && existsSync(p)),
@@ -1600,6 +1609,7 @@ export interface FallbackAttempt {
   cause: string;
   stderr: string;
   durationMs: number;
+  workerQuota?: WorkerQuota;
 }
 
 /** A falha do retry mantém a identidade da engine e o diagnóstico da tentativa original. */
@@ -1619,6 +1629,17 @@ export interface WorkerUsage {
   outputTokens: number | null;
   reasoningTokens?: number | null;
   costUsd: number | null;
+}
+
+/** Snapshot do rollout do Codex. A primeira porcentagem também abrange turnos anteriores em resumes. */
+export interface WorkerQuota {
+  usedPercent: number;
+  usedPercentFirst: number;
+  windowMinutes: number | null;
+  resetsAt: number | null;
+  planType: string | null;
+  limitId: string | null;
+  secondaryUsedPercent: number | null;
 }
 
 /** Número finito e não negativo, senão null (campo ausente, string ou NaN não viram zero). */
@@ -1650,6 +1671,7 @@ export interface CliResult {
   sessionId?: string;
   /** Tokens/custo do worker quando o CLI informa; ausente quando não informa ou veio malformado. */
   usage?: WorkerUsage;
+  workerQuota?: WorkerQuota;
   engine?: Engine;
   fallbackFrom?: FallbackAttempt;
 }
@@ -1723,6 +1745,66 @@ export function parseCodexJsonl(raw: string): CliResult {
     } catch { /* linha de log não-JSON — ignora */ }
   }
   return usage ? { text: text || raw.trim(), sessionId, usage } : { text: text || raw.trim(), sessionId };
+}
+
+/** Usa a primeira porcentagem válida e os metadados do último snapshot em ordem de arquivo. */
+export function parseCodexRateLimits(text: string): WorkerQuota | null {
+  let snapshot: WorkerQuota | null = null;
+  let usedPercentFirst: number | null = null;
+  for (const line of text.split("\n")) {
+    // filtro barato antes do JSON.parse: o rollout cresce a cada turno e quase toda linha é outro evento
+    if (!line.includes('"token_count"')) continue;
+    let event: JsonObject | undefined;
+    try { event = record(JSON.parse(line)); } catch { continue; }
+    if (event?.type !== "event_msg") continue;
+    const payload = record(event.payload);
+    if (payload?.type !== "token_count") continue;
+    const limits = record(payload.rate_limits);
+    const primary = record(limits?.primary);
+    const usedPercent = tokenCount(primary?.used_percent);
+    if (!limits || !primary || usedPercent === null) continue;
+    usedPercentFirst ??= usedPercent;
+    snapshot = {
+      usedPercent,
+      usedPercentFirst,
+      windowMinutes: tokenCount(primary.window_minutes),
+      resetsAt: tokenCount(primary.resets_at),
+      planType: typeof limits.plan_type === "string" ? limits.plan_type : null,
+      limitId: typeof limits.limit_id === "string" ? limits.limit_id : null,
+      secondaryUsedPercent: tokenCount(record(limits.secondary)?.used_percent),
+    };
+  }
+  return snapshot;
+}
+
+/** Limita a busca às três datas UTC mais recentes. */
+export function findCodexRollout(
+  threadId: string,
+  codexHome: string,
+  now = new Date(),
+  fs: { readdirSync(path: string): string[] } = { readdirSync },
+): string | null {
+  const day = new Date(now);
+  const suffix = `-${threadId}.jsonl`;
+  for (let age = 0; age < 3; age++, day.setUTCDate(day.getUTCDate() - 1)) {
+    const dir = join(codexHome, "sessions", ...day.toISOString().slice(0, 10).split("-"));
+    try {
+      const name = fs.readdirSync(dir).find((file) => file.startsWith("rollout-") && file.endsWith(suffix));
+      if (name) return join(dir, name);
+    } catch { /* diretório ausente ou inacessível */ }
+  }
+  return null;
+}
+
+function readCodexQuota(threadId: string | undefined, workspace: string): WorkerQuota | undefined {
+  // sem log o snapshot seria descartado: não lê nada
+  if (!threadId || !USAGE_LOG) return undefined;
+  try {
+    const rollout = findCodexRollout(threadId, codexHomeDir(workspace));
+    return rollout ? parseCodexRateLimits(readFileSync(rollout, "utf8")) ?? undefined : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Uso do evento `turn.completed` do codex: `input_tokens` já inclui `cached_input_tokens`. */
@@ -2402,8 +2484,10 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
 
       let stdout = "";
       let stderr = "";
+      let timedOut = false;
       const timeoutMs = runOpts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const timer = setTimeout(() => {
+        timedOut = true;
         child.kill("SIGKILL");
         cleanup();
         reject(new Error(`${engine} agent timed out after ${timeoutMs}ms: ${stderr.trim().slice(-500)}`));
@@ -2422,6 +2506,9 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
       child.on("close", (code) => {
         clearTimeout(timer);
         cleanup();
+        if (timedOut) return;
+        const codexResult = engine === "codex" ? parseCodexJsonl(stdout) : undefined;
+        const workerQuota = codexResult ? readCodexQuota(codexResult.sessionId, workspace) : undefined;
         if (code !== 0) {
           const detail = stderr.trim() || stdout.trim();
           reject(new ProcessError(
@@ -2429,10 +2516,15 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
             stdout,
             stderr,
             code,
+            workerQuota,
           ));
           return;
         }
-        resolve({ ...parseOutput(engine, stdout), engine });
+        resolve({
+          ...(codexResult ?? parseOutput(engine, stdout)),
+          engine,
+          ...(workerQuota ? { workerQuota } : {}),
+        });
       });
     });
   };
@@ -2452,7 +2544,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     );
     if (!kind) return err;
     const candidates = quotaCandidates(opts.tool, failedEngine, hasEngine, CURSOR_ENABLED, SANDBOX_ON, opts.health);
-    return new QuotaError(kind, failedEngine, quotaErrorMessage(kind, failedEngine, opts.tool, candidates));
+    return new QuotaError(kind, failedEngine, quotaErrorMessage(kind, failedEngine, opts.tool, candidates), err.workerQuota);
   };
 
   const started = Date.now();
@@ -2471,6 +2563,7 @@ export function runCursor(opts: RunOpts): Promise<CliResult> {
     const fallbackFrom: FallbackAttempt = {
       engine: "codex", cause: codexEnvCause(stderr), stderr: diagnostic.slice(-500),
       durationMs: Date.now() - started,
+      ...(originalError instanceof ProcessError && originalError.workerQuota ? { workerQuota: originalError.workerQuota } : {}),
     };
     return runOnce(fallbackOpts(opts, fallback)).catch((fallbackError: unknown) => {
       const error = asQuotaError(fallbackError, fallback);

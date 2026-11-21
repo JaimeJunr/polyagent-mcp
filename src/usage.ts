@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { scrubSecrets } from "./scrub.js";
-import type { Level, WorkerUsage } from "./cli.js";
+import type { Level, WorkerQuota, WorkerUsage } from "./cli.js";
 import { estimateCostPerTask } from "./costs.js";
 
 /** Arquivo de log de uso (JSONL). Logging só acontece se esta env estiver setada. */
@@ -75,6 +75,8 @@ export interface UsageEntry {
   decision?: DecisionRecord;
   /** Tokens/custo que o worker declarou na saída do CLI; ausente em logs antigos ou engine sem dado. */
   workerUsage?: WorkerUsage;
+  /** Snapshot da cota do Codex no rollout da sessão. */
+  workerQuota?: WorkerQuota;
   /** true no recibo extra que o format() grava para o resultado do fan_out; o worker já tem a sua entrada. */
   resultReceipt?: true;
 }
@@ -103,6 +105,7 @@ export interface UsageRun {
   error?: string;
   /** Consumo do worker extraído do stdout do CLI (src/cli.ts); nunca contém prompt nem resultado. */
   workerUsage?: WorkerUsage;
+  workerQuota?: WorkerQuota;
   resultReceipt?: true;
 }
 
@@ -113,7 +116,7 @@ export interface UsageRun {
  * - sem `run` (follow_up), a engine vem de `res.engine`: sem ela os agregadores descartam a entrada.
  */
 export function buildFormatRun(
-  res: { engine?: string; usage?: WorkerUsage },
+  res: { engine?: string; usage?: WorkerUsage; workerQuota?: WorkerQuota },
   run: UsageRun | undefined,
   sessionHandle: string | undefined,
   alreadyLogged = false,
@@ -121,7 +124,12 @@ export function buildFormatRun(
   const base: UsageRun | undefined = run?.engine || !res.engine ? run : { ...run, engine: res.engine };
   const withHandle = sessionHandle ? { ...base, sessionId: sessionHandle } : base;
   if (alreadyLogged) return { ...withHandle, resultReceipt: true };
-  return res.usage ? { ...withHandle, workerUsage: res.usage } : withHandle;
+  if (!res.usage && !res.workerQuota) return withHandle;
+  return {
+    ...withHandle,
+    ...(res.usage ? { workerUsage: res.usage } : {}),
+    ...(res.workerQuota ? { workerQuota: res.workerQuota } : {}),
+  };
 }
 
 /**

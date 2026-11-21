@@ -1,15 +1,23 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
 
 // Sandbox off: o spawn é fake, então bwrap/bind mounts não teriam o que isolar aqui.
 process.env.POLYAGENT_SANDBOX = "off";
+const codexHome = mkdtempSync(join(tmpdir(), "polyagent-rollout-"));
+vi.stubEnv("CODEX_HOME", codexHome);
+// a cota só é lida com o log ligado (sem log o snapshot seria descartado)
+vi.stubEnv("POLYAGENT_LOG", join(codexHome, "usage.jsonl"));
 const { runCursor, ProcessError } = await import("../src/cli.js");
+afterAll(() => {
+  vi.unstubAllEnvs();
+  rmSync(codexHome, { recursive: true, force: true });
+});
 
 /** Child fake que emite stdout/stderr e fecha com o código pedido. */
 function fakeChild(stdout: string, stderr: string, code: number) {
@@ -85,5 +93,32 @@ describe("erro de processo", () => {
     expect(result.text).toContain("ok");
     expect(result.text).toContain("[note: codex unavailable");
     expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("cota lida depois de o worker fechar", () => {
+  it.each([0, 1])("anexa a cota do Codex com código de saída %s", async (code) => {
+    const thread = `019f7049-22af-79a2-aaaa-123456789ab${code}`;
+    const day = new Date().toISOString().slice(0, 10);
+    const dir = join(codexHome, "sessions", ...day.split("-"));
+    mkdirSync(dir, { recursive: true });
+    const rollout = join(dir, `rollout-${day}T00-00-00-${thread}.jsonl`);
+    spawnMock.mockImplementationOnce(() => {
+      const child = fakeChild(JSON.stringify({ type: "thread.started", thread_id: thread }), "boom", code);
+      child.prependOnceListener("close", () => {
+        writeFileSync(rollout, JSON.stringify({
+          type: "event_msg",
+          payload: { type: "token_count", rate_limits: { primary: { used_percent: 24 }, limit_id: "codex" } },
+        }));
+      });
+      return child;
+    });
+
+    const result = await runCursor({ prompt: "x", engine: "codex" }).catch((error: unknown) => error);
+    if (code !== 0) expect(result).toBeInstanceOf(ProcessError);
+    expect(result).toMatchObject({ workerQuota: { usedPercent: 24, usedPercentFirst: 24, limitId: "codex" } });
+
+    spawnMock.mockImplementationOnce(() => fakeChild(JSON.stringify({ result: "ok", session_id: thread }), "", 0));
+    await expect(runCursor({ prompt: "x", engine: "claude" })).resolves.not.toHaveProperty("workerQuota");
   });
 });

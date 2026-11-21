@@ -219,6 +219,7 @@ persona resolution, timeout budget note, and explicit `model`/`effort` overrides
   `webLookupPrompt`, `generateImagePrompt`, `fanOutArbiterPrompt`). The tools' behavior lives in these prompt strings,
   so changing a tool's contract usually means editing a prompt here (and its test), not `cli.ts`.
 - `usage.ts` — JSONL usage log behind `POLYAGENT_LOG`; drives the `bridge_stats` and `rate` tools.
+  `workerQuota` guarda o percentual inteiro da cota do Codex a partir de `token_count` no rollout, como snapshot em vez de delta (issue #108).
   New delegate/fan_out receipts store named `requestedLevel`; old `fast_delegate` receipts keep neutral `0`.
   Readers/stats tolerate numeric `requestedLevel` in old logs and skip malformed JSONL lines.
   `bridge_stats` mostra tabela de saúde só das engines vistas no log (score com duas casas,
