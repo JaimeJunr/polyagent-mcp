@@ -1,0 +1,6 @@
+{"ts":"2026-11-21T05:40:00Z","source":"brief","fiveHour":32,"sevenDay":35}
+{"ts":"2026-11-21T06:23:30Z","source":"get_usage","fiveHour":59,"sevenDay":38}
+{"ts":"2026-11-21T06:31:00Z","source":"get_usage","fiveHour":64,"sevenDay":39}
+{"ts":"2026-11-21T06:38:00Z","source":"get_usage","fiveHour":67,"sevenDay":39}
+{"ts":"2026-11-21T14:11:00Z","fiveHour":2,"sevenDay":42,"fiveHourResetsAt":"2026-11-21T19:10:00Z","note":"antes da fase B"}
+{"ts":"2026-11-21T14:58:30Z","source":"get_usage","fiveHour":16,"sevenDay":44,"fiveHourResetsAt":"2026-11-21T19:10:00Z","note":"depois da fase B"}
