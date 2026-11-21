@@ -20,15 +20,25 @@ opt-in fallback. See [`README.md`](README.md) for the tool list and env vars.
 ```bash
 node -v                 # need >= 18
 bwrap --version         # bubblewrap is REQUIRED: the server refuses to start without it
-agent --version         # Cursor CLI must be installed as `agent`
-agent status            # must be authenticated; if not: run `agent login`
 ```
 
 If `bwrap` is missing, install it (`sudo apt install bubblewrap`) — **stop and report**, do not proceed:
 the sandbox is mandatory and startup fails without it.
 
-If `agent` is missing, tell the user to install the Cursor CLI (`curl https://cursor.com/install -fsS | bash`)
-and authenticate — **stop and report**, do not proceed.
+Verify that the worker CLI you intend to use is installed and authenticated. The default
+delegation tiers use Codex, with Claude Code as the reserve; see `TIERS` in `src/cli.ts`
+for the current mapping. Installing a host does not necessarily provide a worker CLI.
+
+Cursor's `agent` CLI is only required if you explicitly choose the Cursor fallback:
+
+```bash
+agent --version
+agent status            # if not authenticated: run `agent login`
+```
+
+If you want that fallback, install and authenticate the Cursor CLI and set
+`POLYAGENT_ENABLE_CURSOR=1` in the server environment. A missing `agent` binary does
+not block installation when using the default worker engines.
 
 ## 1. Get the code and build
 
