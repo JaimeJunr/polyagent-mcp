@@ -4,14 +4,13 @@
 import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { hostname, homedir } from 'node:os';
-import { claudeUsageRecords, claudeReading, codexRecords } from './quota-calibration-core.mjs';
+import { claudeUsageRecords, claudeReading, codexRecords, parseJsonLines } from './quota-calibration-core.mjs';
 
-/** @param {string} path */
-function jsonLines(path) {
-  return readFileSync(path, 'utf8').split('\n').filter(Boolean).flatMap(line => {
-    try { return [JSON.parse(line)]; } catch { return []; }
-  });
-}
+// Pré-filtro antes do JSON.parse: só essas linhas importam, e os tool_result dominam os bytes dos transcripts.
+const CLAUDE_LINE = line => line.includes('"usage"');
+const CODEX_LINE = line => line.includes('"token_count"') || line.includes('"session_meta"') || line.includes('"turn_context"');
+/** @param {string} path @param {(line:string)=>boolean} [keep] */
+const jsonLines = (path, keep) => parseJsonLines(readFileSync(path, 'utf8'), keep);
 
 /** @param {string} directory @param {number} sinceMs @param {(name:string)=>boolean} accept */
 function filesSince(directory, sinceMs, accept) {
@@ -42,14 +41,14 @@ const sinceMs = Date.parse(`${since}T00:00:00Z`);
 const machine = hostname();
 const lines = [];
 for (const file of filesSince(join(homedir(), '.claude/projects'), sinceMs, name => name.endsWith('.jsonl'))) {
-  for (const record of claudeUsageRecords(jsonLines(file))) if (record.ts >= sinceMs) lines.push({ kind: 'claude-usage', machine, ...record });
+  for (const record of claudeUsageRecords(jsonLines(file, CLAUDE_LINE))) if (record.ts >= sinceMs) lines.push({ kind: 'claude-usage', machine, ...record });
 }
 // Contas do orca (CODEX_HOME por conta) também contam; o creator_account_id separa as contas na análise.
 const orca = join(homedir(), '.config/orca/codex-accounts');
 const codexHomes = [join(homedir(), '.codex'), ...(existsSync(orca) ? readdirSync(orca).map(id => join(orca, id, 'home')) : [])];
 for (const home of codexHomes) {
   for (const file of filesSince(join(home, 'sessions'), sinceMs, name => name.startsWith('rollout-') && name.endsWith('.jsonl'))) {
-    for (const record of codexRecords(jsonLines(file), basename(file))) if (record.ts >= sinceMs) lines.push({ kind: 'codex', machine, ...record });
+    for (const record of codexRecords(jsonLines(file, CODEX_LINE), basename(file))) if (record.ts >= sinceMs) lines.push({ kind: 'codex', machine, ...record });
   }
 }
 for (const directory of benchDirs) lines.push(...benchReadings(directory).map(reading => ({ machine, ...reading })));

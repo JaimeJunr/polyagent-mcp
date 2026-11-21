@@ -1,3 +1,5 @@
+// Instrução do braço `lean` do host; o runner da calibração (issue #108) usa a mesma para medir a mesma mistura.
+export const LEAN = 'Complete only the requested task. Use efficient native tools when appropriate. Do not commit, push, contact external services, or change files outside this workspace. Return the requested JSON. For edits, first run a failing behavior test, then fix and rerun. Tool and worker claims require verification.';
 const TOKEN_FIELDS = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'];
 
 /** @param {Record<string, unknown>[]} events */

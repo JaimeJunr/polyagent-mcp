@@ -10,6 +10,13 @@ export function sonnetUsd(r) {
     + r.cacheWrite5m * SONNET_PRICE.cacheWrite5m + r.cacheWrite1h * SONNET_PRICE.cacheWrite1h;
 }
 
+/** JSONL tolerante: linha vazia ou inválida é ignorada. `keep` filtra por substring antes do parse (transcripts grandes). @param {string} text @param {(line:string)=>boolean} [keep] */
+export function parseJsonLines(text, keep = () => true) {
+  return text.split('\n').filter(line => line && keep(line)).flatMap(line => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+}
+
 const num = value => (Number.isFinite(value) ? value : 0);
 
 /**
@@ -29,7 +36,8 @@ export function claudeUsageRecords(events) {
     const oneHour = num(split.ephemeral_1h_input_tokens);
     // Sem o detalhamento, a escrita de cache conta como 5 min (o padrão da API).
     const fiveMin = split.ephemeral_5m_input_tokens !== undefined ? num(split.ephemeral_5m_input_tokens) : total - oneHour;
-    // `entrypoint` separa a conta: o app desktop e o CLI (`claude -p`, terminal) podem estar logados em contas diferentes.
+    // `entrypoint` ajuda a separar a conta (app desktop × CLI), mas é herdado pelo ambiente: um `claude -p` lançado
+    // de dentro do app sai como `claude-desktop` mesmo usando a conta do CLI (fase B, 2026-11-21). Confira pela pasta do projeto.
     const next = { id: message.id, ts, model: message.model ?? 'unknown', entrypoint: event.entrypoint ?? null, input: num(usage.input_tokens), output: num(usage.output_tokens),
       cacheRead: num(usage.cache_read_input_tokens), cacheWrite5m: fiveMin, cacheWrite1h: oneHour };
     const prior = byId.get(message.id);

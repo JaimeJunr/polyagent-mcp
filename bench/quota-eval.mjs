@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync, rea
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
-import { summarizeEvents, answerMatches, pairedSummary, trialAccepted, parseRepetitions, resolveWorker } from './quota-eval-core.mjs';
+import { LEAN, summarizeEvents, answerMatches, pairedSummary, trialAccepted, parseRepetitions, resolveWorker } from './quota-eval-core.mjs';
 import { ARMS, HOST_MODEL, HOST_EFFORT, REPETITIONS, TASKS, createFixtures, ledgerCheckScript } from './quota-eval-fixtures.mjs';
 import { BATCH_TASK, createBatchFixture, batchCheckScript } from './quota-batch-fixture.mjs';
 import { TINY_TASK, MEDIUM_TASK, createSizeFixture, tinyCheckScript, mediumCheckScript } from './quota-size-fixtures.mjs';
@@ -20,7 +20,6 @@ const ARM_SET = SIZE_FOCUSED ? ['lean','coarse'] : FOCUSED ? ['lean','coarse','s
 const COMPARISONS = SIZE_FOCUSED ? [['lean','coarse']] : FOCUSED ? [['lean','coarse'],['lean','slim'],['coarse','slim']] : [['habitual-instructions','lean'],['lean','bridge'],['lean','coarse']];
 const WORKER = resolveWorker(process.env.QUOTA_WORKER);
 const OUT = join(ROOT,(SIZE_FOCUSED ? 'output-size' : FOCUSED ? 'output-focused' : 'output')+WORKER.suffix);
-const LEAN = 'Complete only the requested task. Use efficient native tools when appropriate. Do not commit, push, contact external services, or change files outside this workspace. Return the requested JSON. For edits, first run a failing behavior test, then fix and rerun. Tool and worker claims require verification.';
 const COARSE = `For this trial, before reading or searching source or running the task command, delegate the entire task once with mcp__polyagent__delegate, level:"${WORKER.level}", engine:"codex", model:"${WORKER.model}", effort:"${WORKER.effort}", and cwd equal to this workspace. Include the complete task and requested JSON in its prompt. After the worker returns, verify the concrete answer or changed behavior with one targeted native check, then return the requested JSON. Do not repeat its exploration.`;
 const SLIM = 'For this trial, before reading or searching source, delegate the entire task once using mcp__polyagent__delegate with a complete prompt. The tool already fixes the workspace and Codex model. After it returns, verify the changed behavior with one targeted native check, then return the requested JSON. Do not repeat its exploration.';
 

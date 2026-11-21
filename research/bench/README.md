@@ -1,12 +1,13 @@
 # research/bench/ — dado bruto de medição
 
-Quatro tipos de arquivo; três são JSONL (uma linha por evento, sem prompt nem resposta):
+Cinco tipos de arquivo; quatro são JSONL (uma linha por evento, sem prompt nem resposta):
 
 | Arquivo | Origem | Uma linha é |
 |---|---|---|
 | `AAAA-MM-DD-aux.jsonl` | `npm run bench` (`bench/aux-bench.mjs`) | uma rodada de uma tarefa com gabarito: `task`, `cand`, `engine`, `model`, `effort`, `rep`, `ms`, `ok`, `chars`, `err` |
 | `AAAA-MM-DD-jev-bench.jsonl` | `npm run bench:jev -- [reps] [all\|fanout\|shadow] [--arbiter]` | uma chamada Jev ou arbiter: `suite`, `kind`, `id`, `rep`, `label`/`expected`, `p`/`choice`, `confidence`, `ms`, `cost`, `err` |
 | `AAAA-MM-DD-adoption.jsonl` | `node bench/adoption-eval.mjs` | uma sessão Claude Code por prompt: ferramentas escolhidas, contagens `bridge`/`native`/`other`, `hit`, `violation`, custo, duração, turnos, erro e timeout |
+| `2026-11-21-calibracao-*.jsonl` | `bench/quota-calibration-run.mjs` e `bench/quota-calibration.mjs` | um trial da fase B (uso por modelo, custo, cota no início e no fim), uma leitura de cota do Codex com o uso acumulado, ou uma leitura do `get_usage` do app |
 | `AAAA-MM-DD-ratings.md` | `bridge_stats` com export | resumo das notas dadas via `rate` (agregado por engine/modelo/tool, sem dado cru) |
 
 ## Avaliação de adoção

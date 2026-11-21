@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { claudeUsageRecords, claudeReading, codexRecords, leastSquares, cumulativeAt, sonnetUsd } from './quota-calibration-core.mjs';
+import { claudeUsageRecords, claudeReading, codexRecords, leastSquares, cumulativeAt, sonnetUsd, parseJsonLines } from './quota-calibration-core.mjs';
 
 describe('claudeUsageRecords', () => {
   it('junta as linhas repetidas da mesma mensagem e separa a escrita de cache de 1 h', () => {
@@ -87,5 +87,13 @@ describe('cumulativeAt', () => {
     const records = [{ ts: 5, m: 'a', v: 100 }, { ts: 10, m: 'a', v: 1 }, { ts: 20, m: 'b', v: 2 }, { ts: 30, m: 'a', v: 4 }];
     const points = cumulativeAt(records, [{ ts: 25 }, { ts: 15 }, { ts: 40 }], r => r.m, r => r.v, ['a', 'b'], 8);
     expect(points.map(p => p.totals)).toEqual([{ a: 1, b: 0 }, { a: 1, b: 2 }, { a: 5, b: 2 }]);
+  });
+});
+
+describe('parseJsonLines', () => {
+  it('ignora linha vazia ou inválida e aplica o pré-filtro antes do parse', () => {
+    const text = '{"a":1,"usage":{}}\n\nnão é json "usage"\n{"b":2}\n';
+    expect(parseJsonLines(text)).toEqual([{ a: 1, usage: {} }, { b: 2 }]);
+    expect(parseJsonLines(text, line => line.includes('"usage"'))).toEqual([{ a: 1, usage: {} }]);
   });
 });
