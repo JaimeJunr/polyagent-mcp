@@ -11,6 +11,7 @@ import {
   resolveDelegate, runWithReserve, isDefaultTierEngine, withTerseStyle, LEVELS, legacyLevel,
   raceFirstSuccess, CURSOR_ENABLED, sandboxPreflight, resolveReadTool, resolveRunFiltered,
   lookupKeyringSecret, OPENROUTER_KEYRING_ATTRS, engineSwitchLine,
+  ProcessError, QuotaError,
   type SkippedEngine,
   type CliResult, type Engine, type Level, type RunOpts, type FallbackFailure,
 } from "./cli.js";
@@ -121,6 +122,7 @@ function logFallbackAttempt(opts: RunOpts, attempt: CliResult["fallbackFrom"]): 
   logUsage(opts.tool ?? "delegate", 0, undefined, {
     engine: attempt.engine, outcome: "failure", durationMs: attempt.durationMs,
     model: opts.model, effort: opts.effort, error: attempt.stderr,
+    ...(attempt.workerQuota ? { workerQuota: attempt.workerQuota } : {}),
   });
 }
 
@@ -129,6 +131,19 @@ function actualRunMetadata(
   engine: Engine, actual: Engine | undefined, metadata?: Pick<UsageRun, "model" | "effort">,
 ): UsageRun {
   return actual && actual !== engine ? { engine: actual } : { model: metadata?.model, effort: metadata?.effort, engine };
+}
+
+function failedRun(
+  error: unknown, engine: Engine, durationMs: number, metadata?: Pick<UsageRun, "model" | "effort">,
+): UsageRun {
+  const failure = error as Partial<FallbackFailure> | null;
+  const workerQuota = error instanceof ProcessError || error instanceof QuotaError ? error.workerQuota : undefined;
+  return {
+    ...actualRunMetadata(engine, failure?.engine, metadata),
+    outcome: classifyOutcome(error),
+    durationMs,
+    ...(workerQuota ? { workerQuota } : {}),
+  };
 }
 
 /**
@@ -191,11 +206,8 @@ async function formatRun(
       durationMs: Date.now() - started - (res.fallbackFrom?.durationMs ?? 0),
     }, skipped);
   } catch (err) {
-    logUsage(tool, 0, receipt, {
-      ...actualRunMetadata(engine, (err as Partial<FallbackFailure> | null)?.engine, metadata),
-      outcome: classifyOutcome(err),
-      durationMs: Date.now() - started - ((err as Partial<FallbackFailure> | null)?.fallbackFrom?.durationMs ?? 0),
-    });
+    const durationMs = Date.now() - started - ((err as Partial<FallbackFailure> | null)?.fallbackFrom?.durationMs ?? 0);
+    logUsage(tool, 0, receipt, failedRun(err, engine, durationMs, metadata));
     throw err;
   }
 }
@@ -219,20 +231,14 @@ async function runFanOutWorker(
       const sessionId = res.sessionId
         ? formatSessionHandle(res.engine ?? attempt.engine, res.sessionId)
         : undefined;
-      logUsage("fan_out", 0, receipt, {
+      logUsage("fan_out", 0, receipt, buildFormatRun(output, {
         ...actualRunMetadata(attempt.engine, res.engine, attempt),
-        sessionId,
         outcome: "success",
         durationMs: Date.now() - started,
-        ...(output.usage ? { workerUsage: output.usage } : {}),
-      });
+      }, sessionId));
       return { level, tier: attempt, res };
     } catch (err) {
-      logUsage("fan_out", 0, receipt, {
-        ...actualRunMetadata(attempt.engine, (err as Partial<FallbackFailure> | null)?.engine, attempt),
-        outcome: classifyOutcome(err),
-        durationMs: Date.now() - started,
-      });
+      logUsage("fan_out", 0, receipt, failedRun(err, attempt.engine, Date.now() - started, attempt));
       throw err;
     }
   });
@@ -560,11 +566,7 @@ server.registerTool(
             tool: "fan_out",
           });
         } catch (err) {
-          logUsage("fan_out", 0, undefined, {
-            ...actualRunMetadata(arbiterTier.engine, (err as Partial<FallbackFailure> | null)?.engine, arbiterTier),
-            outcome: classifyOutcome(err),
-            durationMs: Date.now() - arbiterStarted,
-          });
+          logUsage("fan_out", 0, undefined, failedRun(err, arbiterTier.engine, Date.now() - arbiterStarted, arbiterTier));
           throw err;
         }
         return format(

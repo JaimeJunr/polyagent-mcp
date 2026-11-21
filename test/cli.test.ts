@@ -680,13 +680,11 @@ describe("buildSandboxArgs", () => {
 
   it("monta CODEX_HOME (roteado por apps externos como o orca) como bind RW quando existe", () => {
     const oldHome = process.env.HOME;
-    const oldCodexHome = process.env.CODEX_HOME;
     const fakeHome = mkdtempSync(join(tmpdir(), "cbx-test-home-"));
     const orcaAccountHome = mkdtempSync(join(tmpdir(), "cbx-test-orca-account-"));
     process.env.HOME = fakeHome;
-    process.env.CODEX_HOME = orcaAccountHome;
-    const codex = buildSandboxSpec("/repo", "codex");
-    const grok = buildSandboxSpec("/repo", "grok");
+    const codex = buildSandboxSpec("/repo", "codex", false, [], [], orcaAccountHome);
+    const grok = buildSandboxSpec("/repo", "grok", false, [], [], orcaAccountHome);
     try {
       expect(codex.spec.homeRw).toContain(orcaAccountHome);
       // engine != codex não precisa enxergar CODEX_HOME
@@ -695,22 +693,18 @@ describe("buildSandboxArgs", () => {
       codex.cleanup();
       grok.cleanup();
       if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
-      if (oldCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = oldCodexHome;
       rmSync(fakeHome, { recursive: true, force: true });
       rmSync(orcaAccountHome, { recursive: true, force: true });
     }
   });
 
   it("ignora CODEX_HOME quando o diretório não existe (evita bind quebrado)", () => {
-    const oldCodexHome = process.env.CODEX_HOME;
     const gone = join(tmpdir(), "cbx-test-codex-home-that-does-not-exist");
-    process.env.CODEX_HOME = gone;
-    const codex = buildSandboxSpec("/repo", "codex");
+    const codex = buildSandboxSpec("/repo", "codex", false, [], [], gone);
     try {
       expect(codex.spec.homeRw).not.toContain(gone);
     } finally {
       codex.cleanup();
-      if (oldCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = oldCodexHome;
     }
   });
 });
