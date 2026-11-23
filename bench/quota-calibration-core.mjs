@@ -1,5 +1,7 @@
 // Calibração do proxy de custo contra a cota real (issue #108). Funções puras; o I/O fica em quota-calibration.mjs.
 
+import { join, resolve } from 'node:path';
+
 // Preço de lista do Sonnet 5.5 por token (US$), ajustado nos 140 `modelUsage.costUSD` do bench (resíduo 3e-16).
 // Serve de régua comum: os outros modelos entram com coeficiente próprio na regressão, sem supor preço.
 export const SONNET_PRICE = { input: 2e-6, output: 10e-6, cacheRead: 0.1e-6, cacheWrite5m: 2.5e-6, cacheWrite1h: 4e-6 };
@@ -60,6 +62,32 @@ export function claudeReading(events, startMs) {
   const pct = value => (Number.isFinite(value) ? Math.round(value * 100) : null);
   return { ts: startMs, fiveHour: pct(windows.five_hour?.utilization), fiveHourResetsAt: windows.five_hour?.resetsAt ?? null,
     sevenDay: pct(windows.seven_day?.utilization), sevenDayResetsAt: windows.seven_day?.resetsAt ?? null };
+}
+
+/**
+ * Orçamento de um bloco depois de mais um trial. `stopReason` preenchido encerra o bloco: sem leitura ou com a janela
+ * de 5 h trocada não há como cobrar o alvo, e o gasto seguiria sem limite (revisão do PR #115).
+ * @typedef {{base:number|null, peak:number|null, resetsAt:number|null, stopReason:string|null}} BlockBudget
+ * @param {BlockBudget|null} previous @param {{first:any, last:any}} row @param {{target:number, cap:number}} limits
+ * @returns {BlockBudget}
+ */
+export function nextBlockBudget(previous, row, { target, cap }) {
+  const budget = previous ?? { base: null, peak: null, resetsAt: null, stopReason: null };
+  if (budget.stopReason) return budget;
+  const readings = [row.first, row.last].filter(reading => reading?.fiveHour != null);
+  if (!readings.length) return { ...budget, stopReason: 'no usable five-hour quota reading' };
+  const resetsAt = previous ? budget.resetsAt : readings[0].fiveHourResetsAt;
+  const changed = readings.find(reading => reading.fiveHourResetsAt !== resetsAt);
+  if (changed) return { ...budget, resetsAt, stopReason: `five-hour window changed (resetsAt ${resetsAt} -> ${changed.fiveHourResetsAt})` };
+  const base = budget.base ?? readings[0].fiveHour;
+  const peak = Math.max(budget.peak ?? 0, readings.at(-1).fiveHour);
+  const stopReason = peak - base >= target ? `target reached (${base} -> ${peak})` : peak >= cap ? `cap reached (${peak})` : null;
+  return { base, peak, resetsAt, stopReason };
+}
+
+/** Homes do Codex a varrer: o padrão, as contas do orca e o CODEX_HOME configurado, sem repetir. @param {string} home @param {string[]} orcaHomes @param {string|undefined} configured */
+export function codexHomes(home, orcaHomes, configured) {
+  return [...new Set([join(home, '.codex'), ...orcaHomes, ...(configured ? [configured] : [])].map(path => resolve(path)))];
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { claudeUsageRecords, claudeReading, codexRecords, leastSquares, cumulativeAt, sonnetUsd, parseJsonLines } from './quota-calibration-core.mjs';
+import { claudeUsageRecords, claudeReading, codexHomes, codexRecords, leastSquares, cumulativeAt, nextBlockBudget, sonnetUsd, parseJsonLines } from './quota-calibration-core.mjs';
 
 describe('claudeUsageRecords', () => {
   it('junta as linhas repetidas da mesma mensagem e separa a escrita de cache de 1 h', () => {
@@ -95,5 +95,52 @@ describe('parseJsonLines', () => {
     const text = '{"a":1,"usage":{}}\n\nnão é json "usage"\n{"b":2}\n';
     expect(parseJsonLines(text)).toEqual([{ a: 1, usage: {} }, { b: 2 }]);
     expect(parseJsonLines(text, line => line.includes('"usage"'))).toEqual([{ a: 1, usage: {} }]);
+  });
+});
+
+describe('nextBlockBudget', () => {
+  const limits = { target: 8, cap: 85 };
+  const reading = (fiveHour, fiveHourResetsAt = 1000) => ({ ts: 1, fiveHour, fiveHourResetsAt, sevenDay: 1, sevenDayResetsAt: 9 });
+  const trial = (first, last = first) => ({ first, last });
+  const run = rows => rows.reduce((budget, row) => nextBlockBudget(budget, row, limits), null);
+
+  it('segue abaixo do alvo e para ao subir o alvo em pontos', () => {
+    expect(run([trial(reading(10)), trial(reading(12), reading(14))])).toMatchObject({ base: 10, peak: 14, stopReason: null });
+    expect(run([trial(reading(10)), trial(reading(12), reading(18))]).stopReason).toContain('target');
+  });
+
+  it('para no teto mesmo sem ter atingido o alvo', () => {
+    expect(run([trial(reading(84), reading(85))]).stopReason).toContain('cap');
+  });
+
+  it('para quando o trial não traz leitura de cota utilizável', () => {
+    expect(run([trial(null)]).stopReason).toContain('reading');
+    expect(run([trial(reading(10)), trial(reading(null))])).toMatchObject({ base: 10, peak: 10, stopReason: expect.stringContaining('reading') });
+  });
+
+  it('usa a leitura do início quando só a do fim falta', () => {
+    expect(run([trial(reading(10), null)])).toMatchObject({ base: 10, peak: 10, stopReason: null });
+    expect(run([trial(reading(10), reading(null))])).toMatchObject({ base: 10, peak: 10, stopReason: null });
+  });
+
+  it('para quando a janela de 5 h vira entre trials ou dentro de um trial', () => {
+    expect(run([trial(reading(70)), trial(reading(72)), trial(reading(0, 2000))])).toMatchObject({ base: 70, peak: 72, stopReason: expect.stringContaining('window') });
+    expect(run([trial(reading(70), reading(0, 2000))]).stopReason).toContain('window');
+  });
+
+  it('mantém o motivo da parada quando trials já em voo terminam depois', () => {
+    expect(run([trial(reading(70)), trial(reading(0, 2000)), trial(reading(71))]).stopReason).toContain('window');
+  });
+});
+
+describe('codexHomes', () => {
+  it('inclui o CODEX_HOME configurado além do padrão e das contas do orca', () => {
+    expect(codexHomes('/home/u', ['/home/u/.config/orca/a/home'], '/opt/codex')).toEqual(['/home/u/.codex', '/home/u/.config/orca/a/home', '/opt/codex']);
+  });
+
+  it('não repete o home já listado e ignora CODEX_HOME ausente ou vazio', () => {
+    expect(codexHomes('/home/u', ['/o/a/home'], '/o/a/home/')).toEqual(['/home/u/.codex', '/o/a/home']);
+    expect(codexHomes('/home/u', [], '')).toEqual(['/home/u/.codex']);
+    expect(codexHomes('/home/u', [], undefined)).toEqual(['/home/u/.codex']);
   });
 });

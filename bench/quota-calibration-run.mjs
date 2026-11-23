@@ -1,13 +1,14 @@
 // Fase B da calibração de cota (issue #108): blocos de trials `claude -p` idênticos, lendo a cota em cada trial.
 //   node bench/quota-calibration-run.mjs <bloco> <medium|output> <modelo> <alvo em pontos> <teto 5h> <concorrência> <dir de saída> [máx. trials]
-// Para de lançar trials quando a janela de 5 h subiu `alvo` pontos desde a primeira leitura ou chegou ao teto.
+// Para de lançar trials quando a janela de 5 h subiu `alvo` pontos desde a primeira leitura, chegou ao teto, virou,
+// ou quando um trial volta sem leitura de cota.
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MEDIUM_TASK, createSizeFixture } from './quota-size-fixtures.mjs';
 import { LEAN } from './quota-eval-core.mjs';
-import { claudeReading, parseJsonLines } from './quota-calibration-core.mjs';
+import { claudeReading, nextBlockBudget, parseJsonLines } from './quota-calibration-core.mjs';
 
 // Um tipo de bloco por entrada; o bloco de saída longa muda a mistura de tokens (pouco cache, muita saída)
 // para testar se a cota pesa os tipos como o preço.
@@ -56,22 +57,18 @@ function trial(index) {
 
 const rows = [];
 let launched = 0;
-let base = null;
-let peak = null;
+let budget = null;
 let stop = false;
 async function lane() {
   while (!stop && launched < Number(maxTrials)) {
     const row = await trial(launched++);
     rows.push(row);
-    const five = (row.last ?? row.first)?.fiveHour;
-    if (five != null) {
-      base ??= row.first?.fiveHour ?? five;
-      peak = Math.max(peak ?? five, five);
-    }
-    console.log(JSON.stringify({ block, index: row.index, costUsd: row.costUsd, fiveHour: five, sevenDay: (row.last ?? row.first)?.sevenDay, isError: row.isError }));
+    budget = nextBlockBudget(budget, row, { target: Number(target), cap: Number(cap) });
+    const reading = row.last ?? row.first;
+    console.log(JSON.stringify({ block, index: row.index, costUsd: row.costUsd, fiveHour: reading?.fiveHour, sevenDay: reading?.sevenDay, isError: row.isError }));
     if (row.isError || row.exitCode !== 0) { stop = true; console.error(`trial ${row.index} failed (exit ${row.exitCode}); stopping block`); }
-    if (peak !== null && (peak - base >= Number(target) || peak >= Number(cap))) stop = true;
+    if (budget.stopReason && !stop) { stop = true; console.error(`stopping block: ${budget.stopReason}`); }
   }
 }
 await Promise.all(Array.from({ length: Number(concurrency) }, lane));
-console.log(JSON.stringify({ block, trials: rows.length, costUsd: rows.reduce((sum, row) => sum + (row.costUsd ?? 0), 0), base, peak }));
+console.log(JSON.stringify({ block, trials: rows.length, costUsd: rows.reduce((sum, row) => sum + (row.costUsd ?? 0), 0), base: budget?.base, peak: budget?.peak, stopReason: budget?.stopReason }));

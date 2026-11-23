@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { hostname, homedir } from 'node:os';
-import { claudeUsageRecords, claudeReading, codexRecords, parseJsonLines } from './quota-calibration-core.mjs';
+import { claudeUsageRecords, claudeReading, codexHomes, codexRecords, parseJsonLines } from './quota-calibration-core.mjs';
 
 // Pré-filtro antes do JSON.parse: só essas linhas importam, e os tool_result dominam os bytes dos transcripts.
 const CLAUDE_LINE = line => line.includes('"usage"');
@@ -45,8 +45,8 @@ for (const file of filesSince(join(homedir(), '.claude/projects'), sinceMs, name
 }
 // Contas do orca (CODEX_HOME por conta) também contam; o creator_account_id separa as contas na análise.
 const orca = join(homedir(), '.config/orca/codex-accounts');
-const codexHomes = [join(homedir(), '.codex'), ...(existsSync(orca) ? readdirSync(orca).map(id => join(orca, id, 'home')) : [])];
-for (const home of codexHomes) {
+const orcaHomes = existsSync(orca) ? readdirSync(orca).map(id => join(orca, id, 'home')) : [];
+for (const home of codexHomes(homedir(), orcaHomes, process.env.CODEX_HOME)) {
   for (const file of filesSince(join(home, 'sessions'), sinceMs, name => name.startsWith('rollout-') && name.endsWith('.jsonl'))) {
     for (const record of codexRecords(jsonLines(file, CODEX_LINE), basename(file))) if (record.ts >= sinceMs) lines.push({ kind: 'codex', machine, ...record });
   }
