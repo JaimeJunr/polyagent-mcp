@@ -18,6 +18,7 @@ matriz `TIERS` em `src/cli.ts`). Não substitui benchmark público: junta o que 
 
 | Data | Estudo | Decidiu / cobre |
 |---|---|---|
+| 2026-11-21 | [Calibração do proxy de custo contra a cota real](2026-11-21-calibracao-cota.md) | **Medido:** Codex 5,46 M tokens-equivalentes por 1% semanal (erro 1,5%); Claude conta Team, janela de 5 h: Sonnet 0,574 %/US$ na tarefa média, 0,761 na saída longa, Opus 0,411 (erro 1%); saída pesa 1,8× o cache por dólar; conta Max do app só passiva (~0,67 %/US$) |
 | 2026-11-15 | [Base externa de custo e cota (Anthropic + terceiros)](2026-11-15-base-externa-custo-cota.md) | Páginas oficiais de custo/subagentes lidas: sem custo por subagente publicado; único multiplicador oficial é agent teams ~7x (não subagente comum); overheads publicados (15k tokens de descrições, MEMORY.md 200 linhas/25KB, 32 skills, autoCompact 100k-1M); confirma que delegar só compensa em tarefa grande/autocontida |
 | 2026-11-16 | [Ferramentas de leitura: explore, read_slice, run_filtered, web_lookup](2026-11-16-ferramentas-de-leitura.md) | **Economia de cota não demonstrada:** log 5.864 linhas: adoção, chars devolvidos, latência (21–49 s de mediana) e nota por tool; manter `explore` e `web_lookup`, rebaixar `read_slice`, `run_filtered` sem promover |
 | 2026-11-20 | [Custo fixo de instalar o polyagent](2026-11-20-custo-fixo.md) | ~19,3 mil caracteres (~4,8 mil tokens estimados) por sessão: 13,9 mil de schemas sempre carregados, 2,4 mil de instruções, 3 mil do hook; `minimal` tiraria só ~1,1 mil tokens; o hook não vai no pacote npm |
